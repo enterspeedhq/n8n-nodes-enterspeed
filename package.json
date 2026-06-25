@@ -21,7 +21,7 @@
     "url": "https://github.com/enterspeedhq/n8n-nodes-enterspeed.git"
   },
   "engines": {
-    "node": ">=18.10"
+    "node": ">=20.19"
   },
   "main": "index.js",
   "scripts": {
