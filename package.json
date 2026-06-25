@@ -55,7 +55,7 @@
     "gulp": "^4.0.2",
     "n8n-workflow": "*",
     "typescript": "^5.4.0",
-    "vitest": "^1.6.0"
+    "vitest": "^3.2.6"
   },
   "peerDependencies": {
     "n8n-workflow": "*"
