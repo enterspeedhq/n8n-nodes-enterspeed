@@ -1,0 +1,21 @@
+# Source — only dist/ ships
+nodes/
+credentials/
+tests/
+coverage/
+
+# Config / tooling
+.eslintrc.js
+tsconfig.json
+vitest.config.ts
+gulpfile.js
+.nvmrc
+.env
+.DS_Store
+*.log
+
+# CI / GitHub
+.github/
+
+# Dev dependencies lockfile (npm resolves from package.json at install time)
+package-lock.json

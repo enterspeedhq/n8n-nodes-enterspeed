@@ -34,6 +34,17 @@ export class EnterspeedTrigger implements INodeType {
 		inputs: [],
 		outputs: ['main'],
 		credentials: [{ name: 'enterspeedApi', required: true }],
+		codex: {
+			categories: ['Data & Storage'],
+			subcategories: {
+				'Data & Storage': ['Content Management'],
+			},
+			resources: {
+				primaryDocumentation: [
+					{ url: 'https://docs.enterspeed.com' },
+				],
+			},
+		},
 		properties: [
 			{
 				displayName: 'Index Alias',

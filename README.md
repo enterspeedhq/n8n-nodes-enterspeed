@@ -73,6 +73,107 @@ Starter implementation, verified against the public Enterspeed OpenAPI spec
 (v0.4.0). Before publishing: run in a local n8n against a real tenant, run
 `npm run lint`, then `npm publish` and submit for n8n's verified-node program.
 
+## Releasing
+
+### Pre-release checklist
+
+- [ ] Tested against a real Enterspeed tenant in a local n8n instance
+- [ ] `npm run lint` passes with no errors
+- [ ] `npm test` passes
+- [ ] `npm run build` succeeds and `dist/` is populated
+- [ ] `package.json` version is bumped appropriately (see below)
+
+### Versioning
+
+Follow [semver](https://semver.org):
+
+| Change | Version bump |
+|---|---|
+| Bug fix, doc update | `patch` — e.g. `0.1.0` → `0.1.1` |
+| New operation or node, backwards-compatible | `minor` — e.g. `0.1.0` → `0.2.0` |
+| Breaking credential or API shape change | `major` — e.g. `0.1.0` → `1.0.0` |
+
+### Manual release
+
+```bash
+# 1. Bump version, commit, and tag in one step
+npm version patch   # or minor / major
+
+# 2. Build
+npm run build
+
+# 3. Publish to npm (requires npm login with an account that has publish access)
+npm publish --access public
+
+# 4. Push the version commit and tag to GitHub
+git push --follow-tags
+```
+
+After publishing, users who installed the package via n8n's Community Nodes UI
+can update through **Settings → Community Nodes** once the new version is live
+on npm (usually within a few minutes).
+
+### Automated releases (GitHub Actions)
+
+When the project is ready for automated CD, the following two-workflow setup
+covers CI on every push/PR and publishes to npm on version tags:
+
+**`.github/workflows/ci.yml`** — runs on every push and pull request to `main`:
+
+```yaml
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+```
+
+**`.github/workflows/release.yml`** — triggered by pushing a version tag (`v*`):
+
+```yaml
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+```
+
+Add an `NPM_TOKEN` secret in GitHub repo **Settings → Secrets → Actions** — a
+granular npm access token scoped to `n8n-nodes-enterspeed` with publish
+permission. With this in place, `git push --follow-tags` is the only manual
+step needed to ship a release.
+
 ## Licence
 
 MIT © Enterspeed A/S
