@@ -1,0 +1,184 @@
+[
+  {
+    "updatedAt": "2026-06-25T09:08:42.013Z",
+    "createdAt": "2026-06-25T08:46:23.941Z",
+    "id": "3UFUWSKYOseyWbX9",
+    "name": "Fetch, Transform and Re-ingest",
+    "description": null,
+    "active": false,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {},
+        "type": "n8n-nodes-base.manualTrigger",
+        "typeVersion": 1,
+        "position": [
+          0,
+          0
+        ],
+        "id": "f9bf6b21-622e-4918-9723-189a4eb5f54b",
+        "name": "When clicking \u2018Execute workflow\u2019"
+      },
+      {
+        "parameters": {
+          "url": "/"
+        },
+        "type": "CUSTOM.enterspeed",
+        "typeVersion": 1,
+        "position": [
+          208,
+          0
+        ],
+        "id": "70b1a470-bd54-4cbf-8e86-0cfa3d7fdc74",
+        "name": "Get content",
+        "credentials": {
+          "enterspeedApi": {
+            "id": "fquuuryPxoJjcUtK",
+            "name": "Enterspeed account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const slug = (url) => (url ? url.split('/').filter(Boolean).pop() : null);\n\nconst out = [];\n\nfor (const item of $input.all()) {\n  const route = item.json.route ?? {};\n  const cta = route.heroCTALink ?? {};\n\n  // The source origin id is NOT in the Delivery payload \u2014 resolve it from\n  // the best source available, in priority order:\n  const baseId =\n    route.originId ??            // if you expose it via the schema (see below)\n    item.json.originId ??        // if an upstream node carried it\n    slug(cta.url) ??             // fallback: derive from a url in the data\n    route.type ??                // last resort\n    'unknown';\n\n  // Namespaced so we DON'T overwrite/loop the original 'home' entity:\n  const originId = route.originId;\n\n  const properties = {\n    heroHeader: route.heroHeader ?? '',\n    heroDescription: route.heroDescription ?? '',\n    heroCTACaption: route.heroCTACaption ?? '',\n    bodyText: (route.heroDescription ?? '')\n      .split(/(?<=\\.)\\s+/).map((s) => s.trim()).filter(Boolean)\n      .map((s) => ({ type: 'paragraph', text: s })),\n    sitename: (cta.name ?? '').split(':')[0].trim(),\n  };\n\n  out.push({\n    json: {\n      originId,               // -> \"Origin ID\" on the Save node\n      type: route.type ?? 'page', // -> \"Entity Type\"\n      properties,             // -> \"Properties (JSON)\"\n    },\n  });\n}\n\nreturn out;\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          416,
+          0
+        ],
+        "id": "9b4c136e-5bbb-4e24-a138-58c31f45c9a6",
+        "name": "Code in JavaScript"
+      },
+      {
+        "parameters": {
+          "resource": "entity",
+          "originId": "={{ $json.originId }}",
+          "entityType": "={{ $json.type }}",
+          "properties": "={{ $json.properties }}"
+        },
+        "type": "CUSTOM.enterspeed",
+        "typeVersion": 1,
+        "position": [
+          624,
+          0
+        ],
+        "id": "f593836c-faf1-4742-ac2a-525ef91e6b44",
+        "name": "Save an entity",
+        "credentials": {
+          "enterspeedApi": {
+            "id": "fquuuryPxoJjcUtK",
+            "name": "Enterspeed account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "url": "/"
+        },
+        "type": "CUSTOM.enterspeed",
+        "typeVersion": 1,
+        "position": [
+          816,
+          0
+        ],
+        "id": "f970437a-fe5d-4a4f-8e86-0f55c29aa3a9",
+        "name": "Get content1",
+        "credentials": {
+          "enterspeedApi": {
+            "id": "fquuuryPxoJjcUtK",
+            "name": "Enterspeed account"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "When clicking \u2018Execute workflow\u2019": {
+        "main": [
+          [
+            {
+              "node": "Get content",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get content": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript": {
+        "main": [
+          [
+            {
+              "node": "Save an entity",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Save an entity": {
+        "main": [
+          [
+            {
+              "node": "Get content1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "binaryMode": "separate",
+      "availableInMCP": false
+    },
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "nodeGroups": [],
+    "pinData": {},
+    "versionId": "65d3833c-ca5a-475c-98d2-ee0323bc6f5b",
+    "activeVersionId": null,
+    "versionCounter": 20,
+    "triggerCount": 0,
+    "sourceWorkflowId": null,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-06-25T08:46:23.946Z",
+        "createdAt": "2026-06-25T08:46:23.946Z",
+        "role": "workflow:owner",
+        "workflowId": "3UFUWSKYOseyWbX9",
+        "projectId": "hKM57410LbcX92A7",
+        "project": {
+          "updatedAt": "2026-06-25T08:33:57.760Z",
+          "createdAt": "2026-06-25T08:22:55.608Z",
+          "id": "hKM57410LbcX92A7",
+          "name": "test test <test@test.com>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "customTelemetryTags": [],
+          "creatorId": "5c540a82-5105-4780-8d4d-1aaf0165a5ab"
+        }
+      }
+    ],
+    "versionMetadata": {
+      "name": null,
+      "description": null
+    }
+  }
+]

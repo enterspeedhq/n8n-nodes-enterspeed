@@ -40,6 +40,44 @@ npm link n8n-nodes-enterspeed
 
 Then restart n8n — the Enterspeed nodes will appear in the palette. Test each operation against a real Enterspeed environment before opening a PR.
 
+## Testing with Docker
+
+If you'd rather not install n8n globally, you can spin up a local instance with Docker Compose. A `docker-compose.yml` is included in the repo. Before starting, copy the example env file:
+
+```bash
+cp .env.example .env
+# edit .env and set N8N_ENCRYPTION_KEY to any random string
+```
+
+Then:
+
+```bash
+npm run build           # compile to dist/
+docker compose up       # open http://localhost:5678
+```
+
+The `dist/` directory is mounted directly into n8n's custom-extensions path, so n8n picks up the nodes on startup. After changing code:
+
+```bash
+npm run build && docker compose restart n8n
+```
+
+## Example workflows
+
+The `workflows/` directory contains example n8n workflows you can import to try the nodes against a real Enterspeed environment.
+
+**Import a workflow:**
+
+```bash
+# Via the n8n UI: Menu → Import from file → select a .json from workflows/
+```
+
+**Export a workflow to share it:**
+
+1. Open the workflow in n8n
+2. Menu → Download — saves a `.json` file
+3. Move it into `workflows/` and commit it
+
 ## Branch and PR conventions
 
 - Branch from `main`: `feat/<short-description>`, `fix/<short-description>`, `chore/<short-description>`
