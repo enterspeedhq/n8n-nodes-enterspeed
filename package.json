@@ -1,0 +1,63 @@
+{
+  "name": "n8n-nodes-enterspeed",
+  "version": "0.1.0",
+  "description": "n8n community nodes for Enterspeed — ingest, delivery, query and routes.",
+  "keywords": [
+    "n8n-community-node-package",
+    "enterspeed",
+    "headless",
+    "cms",
+    "pim",
+    "feed"
+  ],
+  "license": "MIT",
+  "homepage": "https://www.enterspeed.com",
+  "author": {
+    "name": "Enterspeed A/S",
+    "email": "support@enterspeed.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/enterspeedhq/n8n-nodes-enterspeed.git"
+  },
+  "engines": {
+    "node": ">=18.10"
+  },
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc && gulp build:icons",
+    "dev": "tsc --watch",
+    "lint": "eslint nodes credentials package.json",
+    "lintfix": "eslint nodes credentials package.json --fix",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "files": [
+    "dist",
+    "index.js"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/EnterspeedApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/Enterspeed/Enterspeed.node.js",
+      "dist/nodes/Enterspeed/EnterspeedTrigger.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@types/node": "^18.16.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.57.0",
+    "eslint-plugin-n8n-nodes-base": "^1.16.0",
+    "gulp": "^4.0.2",
+    "n8n-workflow": "*",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  }
+}
