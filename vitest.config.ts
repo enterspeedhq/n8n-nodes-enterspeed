@@ -5,5 +5,14 @@ export default defineConfig({
 		environment: 'node',
 		include: ['tests/**/*.test.ts'],
 		clearMocks: true,
+		coverage: {
+			provider: 'v8',
+			include: ['nodes/**', 'credentials/**'],
+			thresholds: {
+				lines: 80,
+				functions: 80,
+				branches: 70,
+			},
+		},
 	},
 });
