@@ -9,6 +9,8 @@ services:
     environment:
       - N8N_CUSTOM_EXTENSIONS=/home/node/.n8n/custom
       - N8N_ENCRYPTION_KEY
+      - N8N_OWNER_EMAIL
+      - N8N_OWNER_PASSWORD
     volumes:
       - n8n_data:/home/node/.n8n
       - ./dist:/home/node/.n8n/custom/n8n-nodes-enterspeed

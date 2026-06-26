@@ -61,6 +61,8 @@ jobs:
       - name: Start n8n
         env:
           N8N_ENCRYPTION_KEY: ${{ secrets.N8N_ENCRYPTION_KEY }}
+          N8N_OWNER_EMAIL: ${{ secrets.N8N_OWNER_EMAIL }}
+          N8N_OWNER_PASSWORD: ${{ secrets.N8N_OWNER_PASSWORD }}
         run: |
           docker compose up -d
           # Wait until n8n is accepting requests
@@ -74,11 +76,45 @@ jobs:
         run: node scripts/setup.mjs
 
       - name: Execute workflow
+        env:
+          N8N_OWNER_EMAIL: ${{ secrets.N8N_OWNER_EMAIL }}
+          N8N_OWNER_PASSWORD: ${{ secrets.N8N_OWNER_PASSWORD }}
         run: |
+          # Sign in and get a session cookie
+          COOKIE=$(curl -sf -c - -X POST http://localhost:5678/api/v1/auth/sign-in \
+            -H "Content-Type: application/json" \
+            -d "{\"email\":\"${N8N_OWNER_EMAIL}\",\"password\":\"${N8N_OWNER_PASSWORD}\"}" \
+            | grep n8n-auth | awk '{print $NF}')
+
+          # Create a temporary API key
+          N8N_API_KEY=$(curl -sf -X POST http://localhost:5678/api/v1/users/api-keys \
+            -H "Content-Type: application/json" \
+            -b "n8n-auth=${COOKIE}" \
+            -d '{"label":"ci-run"}' | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8'); console.log(JSON.parse(d).apiKey)")
+
+          # Get the workflow ID
           WORKFLOW_ID=$(docker exec n8n-nodes-enterspeed-n8n-1 \
             n8n export:workflow --all 2>/dev/null | \
             node -e "const d=require('fs').readFileSync('/dev/stdin','utf8'); console.log(JSON.parse(d)[0].id)")
-          docker exec n8n-nodes-enterspeed-n8n-1 n8n execute --id="$WORKFLOW_ID"
+
+          # Trigger and poll until execution completes
+          EXEC_ID=$(curl -sf -X POST "http://localhost:5678/api/v1/workflows/${WORKFLOW_ID}/run" \
+            -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d '{}' | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8'); console.log(JSON.parse(d).executionId)")
+          echo "Execution ID: $EXEC_ID"
+
+          for i in $(seq 1 30); do
+            STATUS=$(curl -sf "http://localhost:5678/api/v1/executions/${EXEC_ID}" \
+              -H "X-N8N-API-KEY: ${N8N_API_KEY}" | \
+              node -e "const d=require('fs').readFileSync('/dev/stdin','utf8'); console.log(JSON.parse(d).status)")
+            echo "Status: $STATUS"
+            if [ "$STATUS" = "success" ]; then exit 0; fi
+            if [ "$STATUS" = "error" ] || [ "$STATUS" = "crashed" ]; then exit 1; fi
+            sleep 3
+          done
+          echo "Timed out waiting for workflow execution"
+          exit 1
 
       - name: Stop n8n
         if: always()
