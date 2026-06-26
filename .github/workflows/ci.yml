@@ -78,17 +78,19 @@ jobs:
       - name: Execute workflow
         run: |
           # Set up the owner account on the fresh instance (no auth required on first call)
-          N8N_API_KEY=$(curl -sf -X POST http://localhost:5678/api/v1/owners/setup \
+          # Set up owner account (only works on fresh instance, idempotent otherwise)
+          SETUP_RESPONSE=$(curl -s -X POST http://localhost:5678/api/v1/owners/setup \
             -H "Content-Type: application/json" \
-            -d '{"email":"ci@enterspeed.com","password":"Enterspeed123!","firstName":"CI","lastName":"Runner","accept":true}' | \
-            node -e "const d=require('fs').readFileSync('/dev/stdin','utf8'); console.log(JSON.parse(d).data?.apiKey ?? '')")
+            -d '{"email":"runner@n8n.local","password":"N8nRunner99!","firstName":"CI","lastName":"Runner","accept":true}')
+          echo "Setup response: $SETUP_RESPONSE"
+          N8N_API_KEY=$(echo "$SETUP_RESPONSE" | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8'); const r=JSON.parse(d); console.log(r.data?.apiKey ?? r.apiKey ?? '')" 2>/dev/null || true)
 
-          # If no apiKey in setup response, create one via sign-in
+          # If no apiKey returned (owner already existed), sign in and create one
           if [ -z "$N8N_API_KEY" ]; then
             COOKIE_JAR=$(mktemp)
             curl -sf -c "$COOKIE_JAR" -X POST http://localhost:5678/api/v1/auth/sign-in \
               -H "Content-Type: application/json" \
-              -d '{"email":"ci@enterspeed.com","password":"Enterspeed123!"}' > /dev/null
+              -d '{"email":"runner@n8n.local","password":"N8nRunner99!"}' > /dev/null
             N8N_API_KEY=$(curl -sf -X POST http://localhost:5678/api/v1/users/api-keys \
               -H "Content-Type: application/json" \
               -b "$COOKIE_JAR" \
