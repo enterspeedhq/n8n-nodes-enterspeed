@@ -46,17 +46,25 @@ If you'd rather not install n8n globally, you can spin up a local instance with 
 
 ```bash
 cp .env.example .env
-# edit .env and set N8N_ENCRYPTION_KEY to any random string
+# Fill in N8N_ENCRYPTION_KEY (any random string) and the Enterspeed API keys
 ```
 
 Then:
 
 ```bash
 npm run build           # compile to dist/
-docker compose up       # open http://localhost:5678
+docker compose up -d    # start n8n at http://localhost:5678
 ```
 
-The `dist/` directory is mounted directly into n8n's custom-extensions path, so n8n picks up the nodes on startup. After changing code:
+Once n8n is running, generate an API key under **Settings → API → Create API Key**, add it to `.env` as `N8N_API_KEY`, then run the setup script to create the credential and import all example workflows in one step:
+
+```bash
+./scripts/setup.sh
+```
+
+The script creates the `Enterspeed account` credential from your `.env` values, substitutes the credential ID into the workflow templates in memory, and imports them — the template files on disk are never modified.
+
+After changing code:
 
 ```bash
 npm run build && docker compose restart n8n
@@ -64,19 +72,19 @@ npm run build && docker compose restart n8n
 
 ## Example workflows
 
-The `workflows/` directory contains example n8n workflows you can import to try the nodes against a real Enterspeed environment.
+The `workflows/templates/` directory contains example workflows. These are templates — they contain a credential placeholder and require `./scripts/setup.sh` to be usable (see above).
 
-**Import a workflow:**
+The included `fetch-transform-reingest.json` is configured against the **N8N demo tenant** (`gid://Tenant/d6e26ed1-163f-48f4-88bb-3501ed45d9b5`). Ask the team for the API keys.
 
-```bash
-# Via the n8n UI: Menu → Import from file → select a .json from workflows/
-```
-
-**Export a workflow to share it:**
+**Export a workflow to add a new template:**
 
 1. Open the workflow in n8n
 2. Menu → Download — saves a `.json` file
-3. Move it into `workflows/` and commit it
+3. Strip personal/environment-specific fields before committing: `id`, `versionId`, `shared`, `creatorId`, `projectId`, `workflowId`, and any real credential IDs
+4. Replace the credential ID with `__ENTERSPEED_CREDENTIAL_ID__`
+5. Move it into `workflows/templates/` and commit it
+
+> **Note:** templates use the node type `CUSTOM.enterspeed`, which is the prefix n8n assigns when loading via `N8N_CUSTOM_EXTENSIONS` (the Docker path). If you load the package via `npm link` instead, your nodes will be registered as `n8n-nodes-enterspeed.enterspeed` and the imported template will show the nodes as unknown. Use the Docker setup when working with example workflows.
 
 ## Branch and PR conventions
 
