@@ -41,8 +41,6 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    # Only run when the secrets are available (skipped on forks).
-    if: ${{ vars.E2E_ENABLED == 'true' }}
     needs: build
 
     steps:
