@@ -33,31 +33,35 @@ const CONTAINER = process.env.N8N_CONTAINER ?? 'n8n-nodes-enterspeed-n8n-1';
 if (!SOURCE_KEY) { console.error('Error: ENTERSPEED_SOURCE_API_KEY is required'); process.exit(1); }
 if (!ENV_KEY)    { console.error('Error: ENTERSPEED_ENVIRONMENT_API_KEY is required'); process.exit(1); }
 
-// Import the credential via the n8n CLI inside the container.
-console.log('Creating Enterspeed credential...');
-const credential = JSON.stringify([{
-  id: crypto.randomUUID(),
-  name: 'Enterspeed account',
-  type: 'enterspeedApi',
-  data: { sourceApiKey: SOURCE_KEY, environmentApiKey: ENV_KEY },
-}]);
-const importResult = execSync(
-  `docker exec -i ${CONTAINER} n8n import:credentials --input=/dev/stdin`,
-  { input: credential, encoding: 'utf-8' },
-);
-console.log(importResult.trim());
+// Check if the credential already exists.
+const exported = execSync(`docker exec ${CONTAINER} n8n export:credentials --all`, { encoding: 'utf-8' });
+const existing = JSON.parse(exported);
+let cred = existing.find((c) => c.name === 'Enterspeed account' && c.type === 'enterspeedApi');
 
-// Retrieve the credential ID by exporting and finding our credential.
-const exported = execSync(
-  `docker exec ${CONTAINER} n8n export:credentials --all`,
-  { encoding: 'utf-8' },
-);
-const creds = JSON.parse(exported);
-const cred = creds.find((c) => c.name === 'Enterspeed account' && c.type === 'enterspeedApi');
-if (!cred) {
-  console.error('Error: could not find imported credential in export');
-  process.exit(1);
+if (cred) {
+  console.log(`Enterspeed credential already exists (ID: ${cred.id}), skipping creation.`);
+} else {
+  console.log('Creating Enterspeed credential...');
+  const credential = JSON.stringify([{
+    id: crypto.randomUUID(),
+    name: 'Enterspeed account',
+    type: 'enterspeedApi',
+    data: { sourceApiKey: SOURCE_KEY, environmentApiKey: ENV_KEY },
+  }]);
+  const importResult = execSync(
+    `docker exec -i ${CONTAINER} n8n import:credentials --input=/dev/stdin`,
+    { input: credential, encoding: 'utf-8' },
+  );
+  console.log(importResult.trim());
+
+  const refreshed = execSync(`docker exec ${CONTAINER} n8n export:credentials --all`, { encoding: 'utf-8' });
+  cred = JSON.parse(refreshed).find((c) => c.name === 'Enterspeed account' && c.type === 'enterspeedApi');
+  if (!cred) {
+    console.error('Error: could not find imported credential after creation');
+    process.exit(1);
+  }
 }
+
 const credentialId = cred.id;
 console.log(`Credential created with ID: ${credentialId}`);
 
