@@ -4,7 +4,8 @@ services:
     ports:
       - "5678:5678"
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       - N8N_CUSTOM_EXTENSIONS=/home/node/.n8n/custom
     volumes:
