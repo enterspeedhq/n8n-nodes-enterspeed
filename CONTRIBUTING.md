@@ -56,10 +56,10 @@ npm run build           # compile to dist/
 docker compose up -d    # start n8n at http://localhost:5678
 ```
 
-Once n8n is running, generate an API key under **Settings → API → Create API Key**, add it to `.env` as `N8N_API_KEY`, then run the setup script to create the credential and import all example workflows in one step:
+Once n8n is running, run the setup script to create the credential and import all example workflows in one step:
 
 ```bash
-./scripts/setup.sh
+node scripts/setup.mjs
 ```
 
 The script creates the `Enterspeed account` credential from your `.env` values, substitutes the credential ID into the workflow templates in memory, and imports them — the template files on disk are never modified.

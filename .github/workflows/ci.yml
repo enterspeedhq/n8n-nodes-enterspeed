@@ -68,16 +68,10 @@ jobs:
 
       - name: Create credential and import workflows
         env:
-          N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
-          N8N_ENCRYPTION_KEY: ${{ secrets.N8N_ENCRYPTION_KEY }}
           ENTERSPEED_SOURCE_API_KEY: ${{ secrets.ENTERSPEED_SOURCE_API_KEY }}
           ENTERSPEED_ENVIRONMENT_API_KEY: ${{ secrets.ENTERSPEED_ENVIRONMENT_API_KEY }}
           N8N_CONTAINER: n8n-nodes-enterspeed-n8n-1
-        run: |
-          # Write .env for setup.sh
-          printf 'N8N_API_KEY=%s\nN8N_ENCRYPTION_KEY=%s\nENTERSPEED_SOURCE_API_KEY=%s\nENTERSPEED_ENVIRONMENT_API_KEY=%s\n' \
-            "$N8N_API_KEY" "$N8N_ENCRYPTION_KEY" "$ENTERSPEED_SOURCE_API_KEY" "$ENTERSPEED_ENVIRONMENT_API_KEY" > .env
-          bash scripts/setup.sh
+        run: node scripts/setup.mjs
 
       - name: Execute workflow
         run: |
