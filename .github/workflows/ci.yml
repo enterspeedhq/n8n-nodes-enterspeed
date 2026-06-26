@@ -76,21 +76,25 @@ jobs:
         run: node scripts/setup.mjs
 
       - name: Execute workflow
-        env:
-          N8N_OWNER_EMAIL: ${{ secrets.N8N_OWNER_EMAIL }}
-          N8N_OWNER_PASSWORD: ${{ secrets.N8N_OWNER_PASSWORD }}
         run: |
-          # Sign in and get a session cookie
-          COOKIE=$(curl -sf -c - -X POST http://localhost:5678/api/v1/auth/sign-in \
+          # Set up the owner account on the fresh instance (no auth required on first call)
+          N8N_API_KEY=$(curl -sf -X POST http://localhost:5678/api/v1/owners/setup \
             -H "Content-Type: application/json" \
-            -d "{\"email\":\"${N8N_OWNER_EMAIL}\",\"password\":\"${N8N_OWNER_PASSWORD}\"}" \
-            | grep n8n-auth | awk '{print $NF}')
+            -d '{"email":"ci@enterspeed.com","password":"Enterspeed123!","firstName":"CI","lastName":"Runner","accept":true}' | \
+            node -e "const d=require('fs').readFileSync('/dev/stdin','utf8'); console.log(JSON.parse(d).data?.apiKey ?? '')")
 
-          # Create a temporary API key
-          N8N_API_KEY=$(curl -sf -X POST http://localhost:5678/api/v1/users/api-keys \
-            -H "Content-Type: application/json" \
-            -b "n8n-auth=${COOKIE}" \
-            -d '{"label":"ci-run"}' | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8'); console.log(JSON.parse(d).apiKey)")
+          # If no apiKey in setup response, create one via sign-in
+          if [ -z "$N8N_API_KEY" ]; then
+            COOKIE_JAR=$(mktemp)
+            curl -sf -c "$COOKIE_JAR" -X POST http://localhost:5678/api/v1/auth/sign-in \
+              -H "Content-Type: application/json" \
+              -d '{"email":"ci@enterspeed.com","password":"Enterspeed123!"}' > /dev/null
+            N8N_API_KEY=$(curl -sf -X POST http://localhost:5678/api/v1/users/api-keys \
+              -H "Content-Type: application/json" \
+              -b "$COOKIE_JAR" \
+              -d '{"label":"ci-run"}' | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8'); console.log(JSON.parse(d).apiKey)")
+          fi
+          echo "API key acquired"
 
           # Get the workflow ID
           WORKFLOW_ID=$(docker exec n8n-nodes-enterspeed-n8n-1 \
