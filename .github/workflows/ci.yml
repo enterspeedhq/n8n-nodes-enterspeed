@@ -61,11 +61,8 @@ jobs:
       - name: Start n8n
         env:
           N8N_ENCRYPTION_KEY: ${{ secrets.N8N_ENCRYPTION_KEY }}
-          N8N_OWNER_EMAIL: ${{ secrets.N8N_OWNER_EMAIL }}
-          N8N_OWNER_PASSWORD: ${{ secrets.N8N_OWNER_PASSWORD }}
         run: |
           docker compose up -d
-          # Wait until n8n is accepting requests
           timeout 120 bash -c 'until curl -sf http://localhost:5678/healthz; do sleep 2; done'
 
       - name: Create credential and import workflows
@@ -76,51 +73,9 @@ jobs:
         run: node scripts/setup.mjs
 
       - name: Execute workflow
-        run: |
-          # Set up the owner account on the fresh instance (no auth required on first call)
-          # Set up owner account (only works on fresh instance, idempotent otherwise)
-          SETUP_RESPONSE=$(curl -s -X POST http://localhost:5678/api/v1/owners/setup \
-            -H "Content-Type: application/json" \
-            -d '{"email":"runner@n8n.local","password":"N8nRunner99!","firstName":"CI","lastName":"Runner","accept":true}')
-          echo "Setup response: $SETUP_RESPONSE"
-          N8N_API_KEY=$(echo "$SETUP_RESPONSE" | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8'); const r=JSON.parse(d); console.log(r.data?.apiKey ?? r.apiKey ?? '')" 2>/dev/null || true)
-
-          # If no apiKey returned (owner already existed), sign in and create one
-          if [ -z "$N8N_API_KEY" ]; then
-            COOKIE_JAR=$(mktemp)
-            curl -sf -c "$COOKIE_JAR" -X POST http://localhost:5678/api/v1/auth/sign-in \
-              -H "Content-Type: application/json" \
-              -d '{"email":"runner@n8n.local","password":"N8nRunner99!"}' > /dev/null
-            N8N_API_KEY=$(curl -sf -X POST http://localhost:5678/api/v1/users/api-keys \
-              -H "Content-Type: application/json" \
-              -b "$COOKIE_JAR" \
-              -d '{"label":"ci-run"}' | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8'); console.log(JSON.parse(d).apiKey)")
-          fi
-          echo "API key acquired"
-
-          # Get the workflow ID
-          WORKFLOW_ID=$(docker exec n8n-nodes-enterspeed-n8n-1 \
-            n8n export:workflow --all 2>/dev/null | \
-            node -e "const d=require('fs').readFileSync('/dev/stdin','utf8'); console.log(JSON.parse(d)[0].id)")
-
-          # Trigger and poll until execution completes
-          EXEC_ID=$(curl -sf -X POST "http://localhost:5678/api/v1/workflows/${WORKFLOW_ID}/run" \
-            -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
-            -H "Content-Type: application/json" \
-            -d '{}' | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8'); console.log(JSON.parse(d).executionId)")
-          echo "Execution ID: $EXEC_ID"
-
-          for i in $(seq 1 30); do
-            STATUS=$(curl -sf "http://localhost:5678/api/v1/executions/${EXEC_ID}" \
-              -H "X-N8N-API-KEY: ${N8N_API_KEY}" | \
-              node -e "const d=require('fs').readFileSync('/dev/stdin','utf8'); console.log(JSON.parse(d).status)")
-            echo "Status: $STATUS"
-            if [ "$STATUS" = "success" ]; then exit 0; fi
-            if [ "$STATUS" = "error" ] || [ "$STATUS" = "crashed" ]; then exit 1; fi
-            sleep 3
-          done
-          echo "Timed out waiting for workflow execution"
-          exit 1
+        env:
+          N8N_CONTAINER: n8n-nodes-enterspeed-n8n-1
+        run: node scripts/execute-workflow.mjs
 
       - name: Stop n8n
         if: always()
