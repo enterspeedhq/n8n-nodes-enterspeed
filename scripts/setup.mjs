@@ -33,20 +33,32 @@ const CONTAINER = process.env.N8N_CONTAINER ?? 'n8n-nodes-enterspeed-n8n-1';
 if (!SOURCE_KEY) { console.error('Error: ENTERSPEED_SOURCE_API_KEY is required'); process.exit(1); }
 if (!ENV_KEY)    { console.error('Error: ENTERSPEED_ENVIRONMENT_API_KEY is required'); process.exit(1); }
 
-// Create the credential via the n8n CLI inside the container.
+// Import the credential via the n8n CLI inside the container.
 console.log('Creating Enterspeed credential...');
-const data = JSON.stringify({ sourceApiKey: SOURCE_KEY, environmentApiKey: ENV_KEY });
-const result = execSync(
-  `docker exec ${CONTAINER} n8n credentials:create --type enterspeedApi --name "Enterspeed account" --data '${data}'`,
+const credential = JSON.stringify([{
+  id: crypto.randomUUID(),
+  name: 'Enterspeed account',
+  type: 'enterspeedApi',
+  data: { sourceApiKey: SOURCE_KEY, environmentApiKey: ENV_KEY },
+}]);
+const importResult = execSync(
+  `docker exec -i ${CONTAINER} n8n import:credentials --input=/dev/stdin`,
+  { input: credential, encoding: 'utf-8' },
+);
+console.log(importResult.trim());
+
+// Retrieve the credential ID by exporting and finding our credential.
+const exported = execSync(
+  `docker exec ${CONTAINER} n8n export:credentials --all`,
   { encoding: 'utf-8' },
 );
-
-const match = result.match(/id[:\s]+([A-Za-z0-9]+)/i);
-if (!match) {
-  console.error('Error: could not parse credential ID from output:\n', result);
+const creds = JSON.parse(exported);
+const cred = creds.find((c) => c.name === 'Enterspeed account' && c.type === 'enterspeedApi');
+if (!cred) {
+  console.error('Error: could not find imported credential in export');
   process.exit(1);
 }
-const credentialId = match[1];
+const credentialId = cred.id;
 console.log(`Credential created with ID: ${credentialId}`);
 
 // Import each template with the placeholder substituted in memory.
@@ -55,8 +67,13 @@ const templates = readdirSync(templatesDir).filter((f) => f.endsWith('.json'));
 
 for (const file of templates) {
   console.log(`Importing ${file}...`);
-  const patched = readFileSync(join(templatesDir, file), 'utf-8')
-    .replaceAll('__ENTERSPEED_CREDENTIAL_ID__', credentialId);
+  const template = JSON.parse(
+    readFileSync(join(templatesDir, file), 'utf-8')
+      .replaceAll('__ENTERSPEED_CREDENTIAL_ID__', credentialId),
+  );
+  // n8n import requires a workflow id
+  template[0].id = crypto.randomUUID();
+  const patched = JSON.stringify(template);
   execSync(`docker exec -i ${CONTAINER} n8n import:workflow --input=/dev/stdin`, {
     input: patched,
     encoding: 'utf-8',
