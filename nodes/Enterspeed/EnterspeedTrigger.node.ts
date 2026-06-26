@@ -10,15 +10,13 @@ import { NodeOperationError } from 'n8n-workflow';
 /**
  * Enterspeed Trigger (polling).
  *
- * Enterspeed generates views at publish time and does not push outbound
- * webhooks to subscribers, so the robust trigger is to poll an index on a
- * schedule and emit items that are new or changed since the last run.
+ * Enterspeed pushes outbound webhooks for *views* (deploy / remove) — use the
+ * Enterspeed Webhook Trigger for those. Routes and indices do not emit
+ * webhooks, so the robust trigger for an index is to poll it on a schedule and
+ * emit items that are new or changed since the last run.
  *
  * State is kept per-workflow: a map of itemId -> change marker. On the first
  * run nothing is emitted (baseline), so you don't get a flood of existing items.
- *
- * If you later expose an outbound webhook from your own integration layer,
- * a separate webhook trigger can be added alongside this one.
  */
 export class EnterspeedTrigger implements INodeType {
 	description: INodeTypeDescription = {

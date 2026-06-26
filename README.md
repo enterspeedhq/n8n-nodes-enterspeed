@@ -4,9 +4,10 @@
 
 n8n community nodes for [Enterspeed](https://www.enterspeed.com) — get data **into** Enterspeed and feeds **out** of it, then wire it to any of n8n's 1,100+ destinations.
 
-This package ships two nodes:
+This package ships three nodes:
 
 - **Enterspeed** (action) — Ingest, Delivery, Query and Routes operations.
+- **Enterspeed Webhook Trigger** (push) — starts a workflow when a view is deployed or removed.
 - **Enterspeed Trigger** (polling) — starts a workflow when items in an index change.
 
 No keys are bundled. The customer enters their own Enterspeed credentials at runtime.
@@ -46,13 +47,37 @@ Create an **Enterspeed API** credential with:
 **Route — Get Many** — `GET https://api.enterspeed.com/routes/v1`
 - Page size 100–500.
 
-## Trigger (polling)
+## Webhook trigger (views)
 
-Enterspeed builds views at publish time and does not push outbound webhooks, so
-the trigger polls a Query index on a schedule and emits items that are new or
-changed since the last run. The first run sets a baseline (no flood) unless
-*Emit On First Poll* is enabled. Change detection uses a configurable marker
-field (e.g. `updatedAt`) and ID field.
+Enterspeed pushes a webhook whenever a **view** is deployed (published/updated) or
+removed (deleted). Configure the webhook manually in Enterspeed, pointing it at this
+node's production URL, and optionally set an **access key** (the node verifies it
+against the `X-Api-Key` header and rejects mismatches with 403).
+
+Enterspeed POSTs a lightweight notification — not the full view:
+
+```jsonc
+{
+  "Id": "<view id>",
+  "OriginId": "<source entity id>",
+  "Type": "<view handle>",
+  "Action": "Deploy" | "Remove",
+  "Url": "<absolute Delivery API URL>"   // present only on Deploy
+}
+```
+
+With *Fetch Full View* enabled (default), the node fetches the view from that `Url`
+using the Environment API Key and attaches it as `view`. Removals carry no `Url`, so
+nothing is fetched. Use *Actions* to react to only deploys, only removals, or both.
+
+Routes and indices do **not** emit webhooks — use the polling trigger below for those.
+
+## Polling trigger (indices)
+
+For indices (which have no webhooks), the polling trigger queries a Query index on a
+schedule and emits items that are new or changed since the last run. The first run sets
+a baseline (no flood) unless *Emit On First Poll* is enabled. Change detection uses a
+configurable marker field (e.g. `updatedAt`) and ID field.
 
 ## Typical flows
 

@@ -43,7 +43,8 @@
     ],
     "nodes": [
       "dist/nodes/Enterspeed/Enterspeed.node.js",
-      "dist/nodes/Enterspeed/EnterspeedTrigger.node.js"
+      "dist/nodes/Enterspeed/EnterspeedTrigger.node.js",
+      "dist/nodes/Enterspeed/EnterspeedWebhookTrigger.node.js"
     ]
   },
   "devDependencies": {

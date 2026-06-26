@@ -1,5 +1,10 @@
 import { vi, type Mock } from 'vitest';
-import type { IExecuteFunctions, IPollFunctions, IDataObject } from 'n8n-workflow';
+import type {
+	IExecuteFunctions,
+	IPollFunctions,
+	IWebhookFunctions,
+	IDataObject,
+} from 'n8n-workflow';
 
 type ParamMap = Record<string, unknown>;
 
@@ -45,6 +50,40 @@ export function createPollMock(opts: {
 		helpers: { httpRequest: opts.httpRequest },
 	} as unknown as IPollFunctions;
 	return { ctx, staticData };
+}
+
+/**
+ * Builds a minimal IWebhookFunctions stand-in for the webhook trigger.
+ * `returnJsonArray` mirrors n8n's helper (wraps each object as { json }).
+ * `responseStatus`/`responseBody` capture what the node sent on the rejection
+ * path so tests can assert on the 403 without a real HTTP layer.
+ */
+export function createWebhookMock(opts: {
+	params: ParamMap;
+	creds: IDataObject;
+	body: IDataObject;
+	headers?: IDataObject;
+	httpRequest: Mock;
+}): { ctx: IWebhookFunctions; response: { status?: number; body?: unknown } } {
+	const response: { status?: number; body?: unknown } = {};
+	const ctx = {
+		getCredentials: vi.fn(async () => opts.creds),
+		getNodeParameter: (name: string) => opts.params[name],
+		getNode: () => ({ name: 'Enterspeed Webhook Trigger' }),
+		getBodyData: () => opts.body,
+		getHeaderData: () => opts.headers ?? {},
+		getResponseObject: () => ({
+			status: (code: number) => {
+				response.status = code;
+				return { send: (b: unknown) => { response.body = b; } };
+			},
+		}),
+		helpers: {
+			httpRequest: opts.httpRequest,
+			returnJsonArray: (data: IDataObject[]) => data.map((json) => ({ json })),
+		},
+	} as unknown as IWebhookFunctions;
+	return { ctx, response };
 }
 
 export const defaultCreds: IDataObject = {
