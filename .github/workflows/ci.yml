@@ -59,6 +59,8 @@ jobs:
         run: npm run build
 
       - name: Start n8n
+        env:
+          N8N_ENCRYPTION_KEY: ${{ secrets.N8N_ENCRYPTION_KEY }}
         run: |
           docker compose up -d
           # Wait until n8n is accepting requests
