@@ -78,7 +78,7 @@ jobs:
           WORKFLOW_ID=$(docker exec n8n-nodes-enterspeed-n8n-1 \
             n8n export:workflow --all 2>/dev/null | \
             node -e "const d=require('fs').readFileSync('/dev/stdin','utf8'); console.log(JSON.parse(d)[0].id)")
-          docker exec n8n-nodes-enterspeed-n8n-1 n8n execute:workflow --id="$WORKFLOW_ID"
+          docker exec n8n-nodes-enterspeed-n8n-1 n8n execute --id="$WORKFLOW_ID"
 
       - name: Stop n8n
         if: always()
