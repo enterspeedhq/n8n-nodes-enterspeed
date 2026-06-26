@@ -34,8 +34,13 @@ if (!SOURCE_KEY) { console.error('Error: ENTERSPEED_SOURCE_API_KEY is required')
 if (!ENV_KEY)    { console.error('Error: ENTERSPEED_ENVIRONMENT_API_KEY is required'); process.exit(1); }
 
 // Check if the credential already exists.
-const exported = execSync(`docker exec ${CONTAINER} n8n export:credentials --all`, { encoding: 'utf-8' });
-const existing = JSON.parse(exported);
+let exportedRaw;
+try {
+  exportedRaw = execSync(`docker exec ${CONTAINER} n8n export:credentials --all`, { encoding: 'utf-8' });
+} catch {
+  exportedRaw = '[]';
+}
+const existing = JSON.parse(exportedRaw);
 let cred = existing.find((c) => c.name === 'Enterspeed account' && c.type === 'enterspeedApi');
 
 if (cred) {
