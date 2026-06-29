@@ -40,6 +40,52 @@ npm link n8n-nodes-enterspeed
 
 Then restart n8n — the Enterspeed nodes will appear in the palette. Test each operation against a real Enterspeed environment before opening a PR.
 
+## Testing with Docker
+
+If you'd rather not install n8n globally, you can spin up a local instance with Docker Compose. A `docker-compose.yml` is included in the repo. Before starting, copy the example env file:
+
+```bash
+cp .env.example .env
+# Fill in N8N_ENCRYPTION_KEY (any random string) and the Enterspeed API keys
+```
+
+Then:
+
+```bash
+npm run build           # compile to dist/
+docker compose up -d    # start n8n at http://localhost:5678
+```
+
+Once n8n is running, run the setup script to create the credential and import all example workflows in one step:
+
+```bash
+node scripts/setup.mjs
+```
+
+The script creates the `Enterspeed account` credential from your `.env` values, substitutes the credential ID into the workflow templates in memory, and imports them — the template files on disk are never modified.
+
+After changing code:
+
+```bash
+npm run build && docker compose restart n8n
+```
+
+## Example workflows
+
+The `workflows/templates/` directory contains example workflows. These are templates — they contain a credential placeholder and require `node scripts/setup.mjs` to be usable (see above).
+
+The included `fetch-transform-reingest.json` is configured against the **N8N demo tenant** (`gid://Tenant/d6e26ed1-163f-48f4-88bb-3501ed45d9b5`). Ask the team for the API keys.
+
+**Export a workflow to add a new template:**
+
+1. Open the workflow in n8n
+2. Menu → Download — saves a `.json` file
+3. Strip personal/environment-specific fields before committing: `id`, `versionId`, `shared`, `creatorId`, `projectId`, `workflowId`, and any real credential IDs
+4. Replace the credential ID with `__ENTERSPEED_CREDENTIAL_ID__`
+5. Move it into `workflows/templates/` and commit it
+
+> **Note:** templates use the node type `CUSTOM.enterspeed`, which is the prefix n8n assigns when loading via `N8N_CUSTOM_EXTENSIONS` (the Docker path). If you load the package via `npm link` instead, your nodes will be registered as `n8n-nodes-enterspeed.enterspeed` and the imported template will show the nodes as unknown. Use the Docker setup when working with example workflows.
+
 ## Branch and PR conventions
 
 - Branch from `main`: `feat/<short-description>`, `fix/<short-description>`, `chore/<short-description>`

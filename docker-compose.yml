@@ -1,0 +1,17 @@
+services:
+  n8n:
+    image: n8nio/n8n:2.27.4
+    ports:
+      - "5678:5678"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - N8N_CUSTOM_EXTENSIONS=/home/node/.n8n/custom
+      - N8N_ENCRYPTION_KEY
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./dist:/home/node/.n8n/custom/n8n-nodes-enterspeed
+
+volumes:
+  n8n_data:

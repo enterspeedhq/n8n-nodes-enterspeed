@@ -1,0 +1,98 @@
+[
+  {
+    "name": "Fetch, Transform and Re-ingest",
+    "active": false,
+    "nodes": [
+      {
+        "parameters": {},
+        "type": "n8n-nodes-base.manualTrigger",
+        "typeVersion": 1,
+        "position": [0, 0],
+        "id": "f9bf6b21-622e-4918-9723-189a4eb5f54b",
+        "name": "When clicking ‘Execute workflow’"
+      },
+      {
+        "parameters": {
+          "url": "/"
+        },
+        "type": "CUSTOM.enterspeed",
+        "typeVersion": 1,
+        "position": [208, 0],
+        "id": "70b1a470-bd54-4cbf-8e86-0cfa3d7fdc74",
+        "name": "Get content",
+        "credentials": {
+          "enterspeedApi": {
+            "id": "__ENTERSPEED_CREDENTIAL_ID__",
+            "name": "Enterspeed account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const slug = (url) => (url ? url.split('/').filter(Boolean).pop() : null);\n\nconst out = [];\n\nfor (const item of $input.all()) {\n  const route = item.json.route ?? {};\n  const cta = route.heroCTALink ?? {};\n\n  // originId is not part of the Delivery API response — derive it from\n  // whatever is available in the data, in priority order.\n  const baseId =\n    route.originId ??\n    item.json.originId ??\n    slug(cta.url) ??\n    route.type ??\n    'unknown';\n\n  // Namespace the id so we don't overwrite the original source entity.\n  const originId = `${baseId}-enriched`;\n\n  const properties = {\n    url: $('Get content').params.url,\n    heroHeader: route.heroHeader ?? '',\n    heroDescription: route.heroDescription ?? '',\n    heroCTACaption: route.heroCTACaption ?? '',\n    bodyText: (route.heroDescription ?? '')\n      .split(/(?<=\\.)\\s+/).map((s) => s.trim()).filter(Boolean)\n      .map((s) => ({ type: 'paragraph', text: s })),\n    sitename: (cta.name ?? '').split(':')[0].trim(),\n  };\n\n  out.push({\n    json: {\n      originId,\n      type: route.type ?? 'page',\n      properties,\n    },\n  });\n}\n\nreturn out;\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [416, 0],
+        "id": "9b4c136e-5bbb-4e24-a138-58c31f45c9a6",
+        "name": "Code in JavaScript"
+      },
+      {
+        "parameters": {
+          "resource": "entity",
+          "originId": "={{ $json.originId }}",
+          "entityType": "={{ $json.type }}",
+          "properties": "={{ $json.properties }}"
+        },
+        "type": "CUSTOM.enterspeed",
+        "typeVersion": 1,
+        "position": [624, 0],
+        "id": "f593836c-faf1-4742-ac2a-525ef91e6b44",
+        "name": "Save an entity",
+        "credentials": {
+          "enterspeedApi": {
+            "id": "__ENTERSPEED_CREDENTIAL_ID__",
+            "name": "Enterspeed account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "url": "={{ $('Get content').params.url }}"
+        },
+        "type": "CUSTOM.enterspeed",
+        "typeVersion": 1,
+        "position": [816, 0],
+        "id": "f970437a-fe5d-4a4f-8e86-0f55c29aa3a9",
+        "name": "Get content1",
+        "credentials": {
+          "enterspeedApi": {
+            "id": "__ENTERSPEED_CREDENTIAL_ID__",
+            "name": "Enterspeed account"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "When clicking ‘Execute workflow’": {
+        "main": [[{ "node": "Get content", "type": "main", "index": 0 }]]
+      },
+      "Get content": {
+        "main": [[{ "node": "Code in JavaScript", "type": "main", "index": 0 }]]
+      },
+      "Code in JavaScript": {
+        "main": [[{ "node": "Save an entity", "type": "main", "index": 0 }]]
+      },
+      "Save an entity": {
+        "main": [[{ "node": "Get content1", "type": "main", "index": 0 }]]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1"
+    },
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "pinData": {}
+  }
+]

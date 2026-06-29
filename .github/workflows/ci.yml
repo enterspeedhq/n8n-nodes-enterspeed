@@ -38,3 +38,45 @@ jobs:
 
       - name: Test
         run: npm test
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build
+        run: npm run build
+
+      - name: Start n8n
+        env:
+          N8N_ENCRYPTION_KEY: ${{ secrets.N8N_ENCRYPTION_KEY }}
+        run: |
+          docker compose up -d
+          timeout 120 bash -c 'until curl -sf http://localhost:5678/healthz; do sleep 2; done'
+
+      - name: Create credential and import workflows
+        env:
+          ENTERSPEED_SOURCE_API_KEY: ${{ secrets.ENTERSPEED_SOURCE_API_KEY }}
+          ENTERSPEED_ENVIRONMENT_API_KEY: ${{ secrets.ENTERSPEED_ENVIRONMENT_API_KEY }}
+          N8N_CONTAINER: n8n-nodes-enterspeed-n8n-1
+        run: node scripts/setup.mjs
+
+      - name: Execute workflow
+        env:
+          N8N_CONTAINER: n8n-nodes-enterspeed-n8n-1
+        run: node scripts/execute-workflow.mjs
+
+      - name: Stop n8n
+        if: always()
+        run: docker compose down
