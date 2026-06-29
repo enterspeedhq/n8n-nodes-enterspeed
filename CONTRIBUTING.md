@@ -72,7 +72,7 @@ npm run build && docker compose restart n8n
 
 ## Example workflows
 
-The `workflows/templates/` directory contains example workflows. These are templates — they contain a credential placeholder and require `./scripts/setup.sh` to be usable (see above).
+The `workflows/templates/` directory contains example workflows. These are templates — they contain a credential placeholder and require `node scripts/setup.mjs` to be usable (see above).
 
 The included `fetch-transform-reingest.json` is configured against the **N8N demo tenant** (`gid://Tenant/d6e26ed1-163f-48f4-88bb-3501ed45d9b5`). Ask the team for the API keys.
 

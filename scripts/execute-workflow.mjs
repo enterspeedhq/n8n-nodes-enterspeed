@@ -2,17 +2,23 @@
 // Creates an n8n owner account (fresh instance only), signs in, triggers
 // the most recently imported workflow, and polls until it completes.
 //
+// NOTE: This script uses n8n's internal /rest/* API, which is unversioned and
+// private. The pinned image in docker-compose.yml keeps it stable — revisit
+// these endpoints after any n8n image version bump.
+//
 // Usage:
 //   node scripts/execute-workflow.mjs
 //
 // Optional env vars:
-//   N8N_URL       (default: http://localhost:5678)
-//   N8N_CONTAINER (default: n8n-nodes-enterspeed-n8n-1)
+//   N8N_URL            (default: http://localhost:5678)
+//   N8N_CONTAINER      (default: n8n-nodes-enterspeed-n8n-1)
+//   N8N_WORKFLOW_NAME  (default: Fetch, Transform and Re-ingest)
 
 import { execSync } from 'child_process';
 
 const N8N_URL = process.env.N8N_URL ?? 'http://localhost:5678';
 const CONTAINER = process.env.N8N_CONTAINER ?? 'n8n-nodes-enterspeed-n8n-1';
+const WORKFLOW_NAME = process.env.N8N_WORKFLOW_NAME ?? 'Fetch, Transform and Re-ingest';
 const EMAIL = 'runner@n8n.local';
 const PASSWORD = 'N8nRunner99!';
 
@@ -48,11 +54,16 @@ if (!cookie) {
 }
 const authHeader = { Cookie: cookie };
 
-// Get the most recently imported workflow ID.
+// Find the workflow by name.
 const exported = execSync(`docker exec ${CONTAINER} n8n export:workflow --all 2>/dev/null`, { encoding: 'utf-8' });
 const workflows = JSON.parse(exported);
-const workflowId = workflows[workflows.length - 1].id;
-console.log(`Triggering workflow: ${workflowId}`);
+const workflow = workflows.find((w) => w.name === WORKFLOW_NAME);
+if (!workflow) {
+  console.error(`Workflow "${WORKFLOW_NAME}" not found. Available: ${workflows.map((w) => w.name).join(', ')}`);
+  process.exit(1);
+}
+const workflowId = workflow.id;
+console.log(`Triggering workflow: ${workflow.name} (${workflowId})`);
 
 // Trigger execution.
 const runRes = await post(
