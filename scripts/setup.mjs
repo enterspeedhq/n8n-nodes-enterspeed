@@ -16,12 +16,14 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-
 // Load .env if present
 const envFile = join(ROOT, '.env');
+console.error(envFile);
+
 if (existsSync(envFile)) {
-  for (const line of readFileSync(envFile, 'utf-8').split('\n')) {
-    const match = line.match(/^([^#=]+)=(.*)$/);
+  const content = readFileSync(envFile, 'utf-8').replace(/\r\n/g, '\n');
+  for (const line of content.split('\n')) {
+    const match = line.trim().match(/^([^#=]+)=(.*)$/);
     if (match) process.env[match[1].trim()] ??= match[2].trim();
   }
 }
@@ -41,34 +43,26 @@ try {
   exportedRaw = '[]';
 }
 const existing = JSON.parse(exportedRaw);
-let cred = existing.find((c) => c.name === 'Enterspeed account' && c.type === 'enterspeedApi');
+const cred = existing.find((c) => c.name === 'Enterspeed account' && c.type === 'enterspeedApi');
 
-if (cred) {
-  console.log(`Enterspeed credential already exists (ID: ${cred.id}), skipping creation.`);
-} else {
-  console.log('Creating Enterspeed credential...');
-  const credential = JSON.stringify([{
-    id: crypto.randomUUID(),
-    name: 'Enterspeed account',
-    type: 'enterspeedApi',
-    data: { sourceApiKey: SOURCE_KEY, environmentApiKey: ENV_KEY },
-  }]);
-  const importResult = execSync(
-    `docker exec -i ${CONTAINER} n8n import:credentials --input=/dev/stdin`,
-    { input: credential, encoding: 'utf-8' },
-  );
-  console.log(importResult.trim());
+// Reuse the existing credential's id so re-running this script (e.g. after
+// rotating the keys in .env) updates it in place instead of creating a
+// duplicate — n8n's import:credentials upserts by id.
+const credentialId = cred?.id ?? crypto.randomUUID();
+console.log(cred ? `Updating Enterspeed credential (ID: ${credentialId})...` : 'Creating Enterspeed credential...');
 
-  const refreshed = execSync(`docker exec ${CONTAINER} n8n export:credentials --all`, { encoding: 'utf-8' });
-  cred = JSON.parse(refreshed).find((c) => c.name === 'Enterspeed account' && c.type === 'enterspeedApi');
-  if (!cred) {
-    console.error('Error: could not find imported credential after creation');
-    process.exit(1);
-  }
-}
-
-const credentialId = cred.id;
-console.log(`Credential created with ID: ${credentialId}`);
+const credential = JSON.stringify([{
+  id: credentialId,
+  name: 'Enterspeed account',
+  type: 'enterspeedApi',
+  data: { sourceApiKey: SOURCE_KEY, environmentApiKey: ENV_KEY },
+}]);
+const importResult = execSync(
+  `docker exec -i ${CONTAINER} n8n import:credentials --input=/dev/stdin`,
+  { input: credential, encoding: 'utf-8' },
+);
+console.log(importResult.trim());
+console.log(`Credential ready with ID: ${credentialId}`);
 
 // Import each template with the placeholder substituted in memory.
 const templatesDir = join(ROOT, 'workflows', 'templates');
@@ -81,7 +75,7 @@ for (const file of templates) {
       .replaceAll('__ENTERSPEED_CREDENTIAL_ID__', credentialId),
   );
   // n8n import requires a workflow id
-  template[0].id = crypto.randomUUID();
+  template.id = crypto.randomUUID();
   const patched = JSON.stringify(template);
   execSync(`docker exec -i ${CONTAINER} n8n import:workflow --input=/dev/stdin`, {
     input: patched,
