@@ -75,7 +75,7 @@ for (const file of templates) {
       .replaceAll('__ENTERSPEED_CREDENTIAL_ID__', credentialId),
   );
   // n8n import requires a workflow id
-  template.id = crypto.randomUUID();
+  template[0].id = crypto.randomUUID();
   const patched = JSON.stringify(template);
   execSync(`docker exec -i ${CONTAINER} n8n import:workflow --input=/dev/stdin`, {
     input: patched,
