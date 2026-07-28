@@ -88,7 +88,7 @@ The included `fetch-transform-reingest.json` is configured against the **N8N dem
 
 ## Branch and PR conventions
 
-- Branch from `main`: `feat/<short-description>`, `fix/<short-description>`, `chore/<short-description>`
+- Branch from `main`: `feature/<short-description>`, `fix/<short-description>`, `chore/<short-description>`
 - Keep commits focused — one logical change per commit
 - Run `npm run lint` and `npm test` before pushing
 - Fill in the PR template; include which operations you tested and against which n8n version
