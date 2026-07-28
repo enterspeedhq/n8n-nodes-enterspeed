@@ -6,8 +6,9 @@ import type {
 	IDataObject,
 	IHttpRequestMethods,
 	IHttpRequestOptions,
+	JsonObject,
 } from 'n8n-workflow';
-import { NodeOperationError } from 'n8n-workflow';
+import { NodeApiError, NodeOperationError } from 'n8n-workflow';
 
 /**
  * Enterspeed action node.
@@ -278,11 +279,18 @@ export class Enterspeed implements INodeType {
 				const response = await this.helpers.httpRequest(options);
 				out.push({ json: response as IDataObject, pairedItem: { item: i } });
 			} catch (error) {
+				const nodeError =
+					error instanceof NodeOperationError
+						? error
+						: new NodeApiError(this.getNode(), error as JsonObject, { itemIndex: i });
 				if (this.continueOnFail()) {
-					out.push({ json: { error: (error as Error).message }, pairedItem: { item: i } });
+					out.push({
+						json: { error: nodeError.message, description: nodeError.description },
+						pairedItem: { item: i },
+					});
 					continue;
 				}
-				throw error;
+				throw nodeError;
 			}
 		}
 
