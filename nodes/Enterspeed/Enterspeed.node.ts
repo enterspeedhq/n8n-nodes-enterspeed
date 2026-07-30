@@ -6,8 +6,11 @@ import type {
 	IDataObject,
 	IHttpRequestMethods,
 	IHttpRequestOptions,
+	JsonObject,
 } from 'n8n-workflow';
-import { NodeOperationError } from 'n8n-workflow';
+import { NodeApiError, NodeOperationError } from 'n8n-workflow';
+
+const MAX_BULK_ENTITIES = 50;
 
 /**
  * Enterspeed action node.
@@ -67,6 +70,18 @@ export class Enterspeed implements INodeType {
 				options: [
 					{ name: 'Save', value: 'save', action: 'Save an entity', description: 'Ingest / update a source entity' },
 					{ name: 'Delete', value: 'delete', action: 'Delete an entity' },
+					{
+						name: 'Save Entities (Bulk)',
+						value: 'saveBulk',
+						action: 'Save entities in bulk',
+						description: `Ingest / update up to ${MAX_BULK_ENTITIES} source entities in one call`,
+					},
+					{
+						name: 'Delete Entities (Bulk)',
+						value: 'deleteBulk',
+						action: 'Delete entities in bulk',
+						description: `Delete up to ${MAX_BULK_ENTITIES} source entities in one call`,
+					},
 				],
 				default: 'save',
 			},
@@ -76,7 +91,7 @@ export class Enterspeed implements INodeType {
 				type: 'string',
 				required: true,
 				default: '',
-				displayOptions: { show: { resource: ['entity'] } },
+				displayOptions: { show: { resource: ['entity'], operation: ['save', 'delete'] } },
 				description: 'Unique ID of the entity in your source system',
 			},
 			{
@@ -92,9 +107,42 @@ export class Enterspeed implements INodeType {
 				displayName: 'Properties (JSON)',
 				name: 'properties',
 				type: 'json',
+				required: true,
 				default: '{}',
 				displayOptions: { show: { resource: ['entity'], operation: ['save'] } },
 				description: 'The source entity body sent to Enterspeed',
+			},
+			{
+				displayName: 'Entities (JSON Array)',
+				name: 'entities',
+				type: 'json',
+				default: '',
+				required: true,
+				hint: "See https://docs.enterspeed.com/api-reference/ingest/save-entities for entities format.",
+				displayOptions: { show: { resource: ['entity'], operation: ['saveBulk'] } },
+				description: `
+					Array of entities.
+
+					Example:
+					[
+					{
+						"type": "product",
+						"originId": "p-5427",
+						"properties": {
+						"name": "Official Enterspeed T-shirt"
+						}
+					}
+					]
+			`,			
+			},
+			{
+				displayName: 'Origin IDs (JSON Array)',
+				name: 'originIds',
+				type: 'json',
+				default: '',
+				placeholder: JSON.stringify(['p-5427', 'p-6724'], null, 2),
+				displayOptions: { show: { resource: ['entity'], operation: ['deleteBulk'] } },
+				description: `Array of up to ${MAX_BULK_ENTITIES} originIds to delete. Sent to Enterspeed as { "originIds": [...] }.`,
 			},
 
 			// ---------- Delivery ----------
@@ -210,20 +258,36 @@ export class Enterspeed implements INodeType {
 					if (!sourceKey) {
 						throw new NodeOperationError(this.getNode(), 'Source API Key is required for ingest operations', { itemIndex: i });
 					}
-					const originId = this.getNodeParameter('originId', i) as string;
-					const method: IHttpRequestMethods = operation === 'delete' ? 'DELETE' : 'POST';
-					options = {
-						method,
-						url: `${ingestHost}/ingest/v2/${encodeURIComponent(originId)}`,
-						headers: { 'X-Api-Key': sourceKey },
-						json: true,
-					};
-					if (operation === 'save') {
-						const entityType = this.getNodeParameter('entityType', i) as string;
-						const properties = this.getNodeParameter('properties', i) as IDataObject;
-						options.headers!['X-Enterspeed-Type'] = entityType;
-						options.body =
-							typeof properties === 'string' ? JSON.parse(properties as unknown as string) : properties;
+					if (operation === 'saveBulk' || operation === 'deleteBulk') {
+						const paramName = operation === 'saveBulk' ? 'entities' : 'originIds';
+						const raw = this.getNodeParameter(paramName, i) as IDataObject[] | string;
+						const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+						if (!Array.isArray(parsed)) {
+							throw new NodeOperationError(this.getNode(), `${paramName} must be a JSON array`, { itemIndex: i });
+						}
+						options = {
+							method: operation === 'saveBulk' ? 'POST' : 'DELETE',
+							url: `${ingestHost}/ingest/v2`,
+							headers: { 'X-Api-Key': sourceKey },
+							body: operation === 'saveBulk' ? parsed : { originIds: parsed },
+							json: true,
+						};
+					} else {
+						const originId = this.getNodeParameter('originId', i) as string;
+						const method: IHttpRequestMethods = operation === 'delete' ? 'DELETE' : 'POST';
+						options = {
+							method,
+							url: `${ingestHost}/ingest/v2/${encodeURIComponent(originId)}`,
+							headers: { 'X-Api-Key': sourceKey },
+							json: true,
+						};
+						if (operation === 'save') {
+							const entityType = this.getNodeParameter('entityType', i) as string;
+							const properties = this.getNodeParameter('properties', i) as IDataObject;
+							options.headers!['X-Enterspeed-Type'] = entityType;
+							options.body =
+								typeof properties === 'string' ? JSON.parse(properties as unknown as string) : properties;
+						}
 					}
 				} else if (resource === 'delivery') {
 					// The Delivery API expects repeated query params (id=a&id=b),
@@ -278,11 +342,18 @@ export class Enterspeed implements INodeType {
 				const response = await this.helpers.httpRequest(options);
 				out.push({ json: response as IDataObject, pairedItem: { item: i } });
 			} catch (error) {
+				const nodeError =
+					error instanceof NodeOperationError
+						? error
+						: new NodeApiError(this.getNode(), error as JsonObject, { itemIndex: i });
 				if (this.continueOnFail()) {
-					out.push({ json: { error: (error as Error).message }, pairedItem: { item: i } });
+					out.push({
+						json: { error: nodeError.message, description: nodeError.description },
+						pairedItem: { item: i },
+					});
 					continue;
 				}
-				throw error;
+				throw nodeError;
 			}
 		}
 

@@ -91,6 +91,112 @@ describe('Entity (Ingest)', () => {
 	});
 });
 
+describe('Entity (Ingest) - Bulk', () => {
+	it('saveBulk: POSTs the entities array to /ingest/v2 with the source key', async () => {
+		const entities = [{ originId: '1', type: 'product' }, { originId: '2', type: 'product' }];
+		const { req } = await run({
+			params: { resource: 'entity', operation: 'saveBulk', entities },
+		});
+		expect(req.method).toBe('POST');
+		expect(req.url).toBe('https://api.enterspeed.com/ingest/v2');
+		expect(req.headers).toMatchObject({ 'X-Api-Key': 'source-key' });
+		expect(req.headers).not.toHaveProperty('X-Enterspeed-Type');
+		expect(req.body).toEqual(entities);
+	});
+
+	it('saveBulk: parses a JSON string in the Entities field into an array body', async () => {
+		const { req } = await run({
+			params: { resource: 'entity', operation: 'saveBulk', entities: '[{"originId":"1","type":"product"}]' },
+		});
+		expect(req.body).toEqual([{ originId: '1', type: 'product' }]);
+	});
+
+	it('saveBulk: rejects non-array input before sending a request', async () => {
+		const httpRequest = vi.fn();
+		const ctx = createExecuteMock({
+			params: { resource: 'entity', operation: 'saveBulk', entities: { originId: '1' } },
+			creds: defaultCreds,
+			httpRequest,
+		});
+		await expect(node.execute.call(ctx)).rejects.toThrow(/must be a JSON array/);
+		expect(httpRequest).not.toHaveBeenCalled();
+	});
+
+	it('saveBulk: sends more than 50 entities as-is, leaving the limit to the API', async () => {
+		const entities = Array.from({ length: 51 }, (_, idx) => ({ originId: String(idx), type: 'product' }));
+		const { req } = await run({
+			params: { resource: 'entity', operation: 'saveBulk', entities },
+		});
+		expect(req.body).toEqual(entities);
+	});
+
+	it('deleteBulk: DELETEs { originIds } to /ingest/v2 with the source key', async () => {
+		const originIds = ['1099-en-us', '1100-en-us'];
+		const { req } = await run({
+			params: { resource: 'entity', operation: 'deleteBulk', originIds },
+		});
+		expect(req.method).toBe('DELETE');
+		expect(req.url).toBe('https://api.enterspeed.com/ingest/v2');
+		expect(req.headers).toMatchObject({ 'X-Api-Key': 'source-key' });
+		expect(req.body).toEqual({ originIds });
+	});
+
+	it('deleteBulk: rejects non-array input before sending a request', async () => {
+		const httpRequest = vi.fn();
+		const ctx = createExecuteMock({
+			params: { resource: 'entity', operation: 'deleteBulk', originIds: { originId: '1099-en-us' } },
+			creds: defaultCreds,
+			httpRequest,
+		});
+		await expect(node.execute.call(ctx)).rejects.toThrow(/must be a JSON array/);
+		expect(httpRequest).not.toHaveBeenCalled();
+	});
+
+	it('surfaces a 422 bulk validation error with per-entity details via NodeApiError', async () => {
+		const httpRequest = vi.fn(async () => {
+			const error = new Error('Request failed with status code 422') as Error & {
+				response: { status: number; data: unknown };
+				constructor: { name: string };
+			};
+			Object.defineProperty(error.constructor, 'name', { value: 'AxiosError' });
+			error.response = {
+				status: 422,
+				data: { message: 'All entities failed validation', errors: [{ originId: '1', error: 'type is required' }] },
+			};
+			throw error;
+		});
+		const ctx = createExecuteMock({
+			params: { resource: 'entity', operation: 'saveBulk', entities: [{ originId: '1' }] },
+			creds: defaultCreds,
+			httpRequest,
+		});
+		await expect(node.execute.call(ctx)).rejects.toThrow(/invalid or could not be processed/);
+	});
+
+	it('continueOnFail surfaces the parsed 422 description in the output instead of throwing', async () => {
+		const httpRequest = vi.fn(async () => {
+			const error = new Error('Request failed with status code 422') as Error & {
+				response: { status: number; data: unknown };
+				constructor: { name: string };
+			};
+			Object.defineProperty(error.constructor, 'name', { value: 'AxiosError' });
+			error.response = {
+				status: 422,
+				data: { message: 'All entities failed validation' },
+			};
+			throw error;
+		});
+		const { result } = await run({
+			params: { resource: 'entity', operation: 'saveBulk', entities: [{ originId: '1' }] },
+			httpRequest,
+			continueOnFail: true,
+		});
+		const [[output]] = result as [Array<{ json: { error: string; description?: string } }>];
+		expect(output.json.error).toMatch(/invalid or could not be processed/);
+		expect(output.json.description).toBe('All entities failed validation');
+	});
+});
+
 describe('Delivery', () => {
 	it('builds repeated query params (id=a&id=b) rather than indexed arrays', async () => {
 		const { req } = await run({
