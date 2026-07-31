@@ -1,6 +1,7 @@
 import type {
 	IExecuteFunctions,
 	INodeExecutionData,
+	INodeProperties,
 	INodeType,
 	INodeTypeDescription,
 	IDataObject,
@@ -11,6 +12,253 @@ import type {
 import { NodeApiError, NodeOperationError } from 'n8n-workflow';
 
 const MAX_BULK_ENTITIES = 50;
+const MAX_MULTI_QUERIES = 5;
+
+/**
+ * Fields shared by "Query Items" and each entry of "Multi Query Items".
+ * `specifyQueryDefault` differs between the two: existing saved workflows for
+ * the single-query operation have no stored value for `specifyQuery`, so its
+ * default there must stay 'json' to preserve their current raw-body behavior.
+ */
+function buildQueryFields(specifyQueryDefault: 'fields' | 'json'): INodeProperties[] {
+	return [
+		{
+			displayName: 'Specify Query',
+			name: 'specifyQuery',
+			type: 'options',
+			options: [
+				{ name: 'Using Fields', value: 'fields' },
+				{ name: 'Using JSON', value: 'json' },
+			],
+			default: specifyQueryDefault,
+		},
+		{
+			displayName: 'Filters Combinator',
+			name: 'filtersCombinator',
+			type: 'options',
+			options: [
+				{ name: 'AND', value: 'and' },
+				{ name: 'OR', value: 'or' },
+			],
+			default: 'and',
+			displayOptions: { show: { specifyQuery: ['fields'] } },
+			description:
+				'How the filter conditions below are combined. For deeper nested AND/OR groups, use "Using JSON" instead.',
+		},
+		{
+			displayName: 'Filters',
+			name: 'filtersUi',
+			type: 'fixedCollection',
+			typeOptions: { multipleValues: true },
+			default: {},
+			placeholder: 'Add Filter',
+			displayOptions: { show: { specifyQuery: ['fields'] } },
+			options: [
+				{
+					name: 'condition',
+					displayName: 'Condition',
+					values: [
+						{ displayName: 'Field', name: 'field', type: 'string', default: '' },
+						{
+							displayName: 'Operator',
+							name: 'operator',
+							type: 'options',
+							options: [
+								{ name: 'Contains', value: 'contains' },
+								{ name: 'Equals', value: 'equals' },
+								{ name: 'Greater Than', value: 'greaterThan' },
+								{ name: 'Greater Than Or Equals', value: 'greaterThanOrEquals' },
+								{ name: 'In', value: 'in' },
+								{ name: 'Less Than', value: 'lessThan' },
+								{ name: 'Less Than Or Equals', value: 'lessThanOrEquals' },
+								{ name: 'Not Equals', value: 'notEquals' },
+							],
+							default: 'equals',
+						},
+						{
+							displayName: 'Value',
+							name: 'value',
+							type: 'string',
+							default: '',
+							description: 'For "In", use a comma-separated list',
+						},
+						{ displayName: 'Case Insensitive', name: 'caseInsensitive', type: 'boolean', default: false },
+					],
+				},
+			],
+		},
+		{
+			displayName: 'Sort',
+			name: 'sortUi',
+			type: 'fixedCollection',
+			typeOptions: { multipleValues: true },
+			default: {},
+			placeholder: 'Add Sort Field',
+			displayOptions: { show: { specifyQuery: ['fields'] } },
+			options: [
+				{
+					name: 'item',
+					displayName: 'Sort',
+					values: [
+						{ displayName: 'Field', name: 'field', type: 'string', default: '' },
+						{
+							displayName: 'Order',
+							name: 'order',
+							type: 'options',
+							options: [
+								{ name: 'Ascending', value: 'asc' },
+								{ name: 'Descending', value: 'desc' },
+							],
+							default: 'desc',
+						},
+					],
+				},
+			],
+		},
+		{
+			displayName: 'Facets',
+			name: 'facetsUi',
+			type: 'fixedCollection',
+			typeOptions: { multipleValues: true },
+			default: {},
+			placeholder: 'Add Facet',
+			displayOptions: { show: { specifyQuery: ['fields'] } },
+			options: [
+				{
+					name: 'item',
+					displayName: 'Facet',
+					values: [
+						{ displayName: 'Field', name: 'field', type: 'string', required: true, default: '' },
+						{
+							displayName: 'Name',
+							name: 'name',
+							type: 'string',
+							default: '',
+							description: 'Defaults to the field name',
+						},
+						{
+							displayName: 'Size',
+							name: 'size',
+							type: 'number',
+							default: 10,
+							typeOptions: { minValue: 1, maxValue: 100 },
+						},
+					],
+				},
+			],
+		},
+		{
+			displayName: 'Options',
+			name: 'queryOptions',
+			type: 'collection',
+			placeholder: 'Add Option',
+			default: {},
+			displayOptions: { show: { specifyQuery: ['fields'] } },
+			options: [
+				{
+					displayName: 'Aliases',
+					name: 'aliases',
+					type: 'string',
+					default: '',
+					description: 'Comma-separated view aliases to include, e.g. productTile',
+				},
+				{ displayName: 'Literal Match', name: 'searchLiteral', type: 'boolean', default: false },
+				// eslint-disable-next-line n8n-nodes-base/node-param-type-options-password-missing -- pagination cursor, not a secret
+				{ displayName: 'Next Page Token', name: 'nextPageToken', type: 'string', default: '' },
+				{ displayName: 'Page', name: 'page', type: 'number', default: 0, typeOptions: { minValue: 0 } },
+				{
+					displayName: 'Page Size',
+					name: 'pageSize',
+					type: 'number',
+					default: 10,
+					typeOptions: { minValue: 1, maxValue: 1000 },
+				},
+				{ displayName: 'Search Field', name: 'searchField', type: 'string', default: '' },
+				{ displayName: 'Search Value', name: 'searchValue', type: 'string', default: '' },
+			],
+		},
+		{
+			displayName: 'Query Body (JSON)',
+			name: 'queryBody',
+			type: 'json',
+			default: '{\n  "pagination": { "page": 1, "size": 10 }\n}',
+			displayOptions: { show: { specifyQuery: ['json'] } },
+			description: 'Filters, sort, pagination and facets. All properties optional.',
+		},
+	];
+}
+
+/** Merges a resource/operation guard into each field's own displayOptions.show. */
+function withDisplayGuard(fields: INodeProperties[], guard: Record<string, string[]>): INodeProperties[] {
+	return fields.map((field) => ({
+		...field,
+		displayOptions: {
+			...field.displayOptions,
+			show: { ...guard, ...(field.displayOptions?.show ?? {}) },
+		},
+	}));
+}
+
+/**
+ * Assembles the Enterspeed Query API body from the structured "Using Fields"
+ * parameters. Shared by the single Query Items operation and each entry of
+ * Multi Query Items, since both expose the same field group.
+ */
+function buildQueryPayload(fields: IDataObject): IDataObject {
+	const body: IDataObject = {};
+
+	const conditions = ((fields.filtersUi as IDataObject)?.condition as IDataObject[]) ?? [];
+	if (conditions.length) {
+		const combinator = (fields.filtersCombinator as string) === 'or' ? 'or' : 'and';
+		body.filters = {
+			[combinator]: conditions.map((c) => ({
+				field: c.field,
+				operator: c.operator,
+				value: c.value,
+				...(c.caseInsensitive ? { caseInsensitive: true } : {}),
+			})),
+		};
+	}
+
+	const sortItems = ((fields.sortUi as IDataObject)?.item as IDataObject[]) ?? [];
+	if (sortItems.length) {
+		body.sort = sortItems.map((s) => ({ field: s.field, order: s.order }));
+	}
+
+	const facetItems = ((fields.facetsUi as IDataObject)?.item as IDataObject[]) ?? [];
+	if (facetItems.length) {
+		body.facets = facetItems.map((f) => ({
+			field: f.field,
+			...(f.name ? { name: f.name } : {}),
+			size: f.size,
+		}));
+	}
+
+	const options = (fields.queryOptions as IDataObject) ?? {};
+	if (options.searchField) {
+		body.search = {
+			field: options.searchField,
+			value: options.searchValue,
+			literal: Boolean(options.searchLiteral),
+		};
+	}
+
+	const pagination: IDataObject = {};
+	if (options.page !== undefined && options.page !== '') pagination.page = options.page;
+	if (options.pageSize !== undefined && options.pageSize !== '') pagination.pageSize = options.pageSize;
+	if (options.nextPageToken) pagination.nextPageToken = options.nextPageToken;
+	if (Object.keys(pagination).length) body.pagination = pagination;
+
+	if (options.aliases) {
+		const aliases = (options.aliases as string)
+			.split(',')
+			.map((s) => s.trim())
+			.filter(Boolean);
+		if (aliases.length) body.aliases = aliases;
+	}
+	
+	return body;
+}
 
 /**
  * Enterspeed action node.
@@ -120,29 +368,17 @@ export class Enterspeed implements INodeType {
 				required: true,
 				hint: "See https://docs.enterspeed.com/api-reference/ingest/save-entities for entities format.",
 				displayOptions: { show: { resource: ['entity'], operation: ['saveBulk'] } },
-				description: `
-					Array of entities.
-
-					Example:
-					[
-					{
-						"type": "product",
-						"originId": "p-5427",
-						"properties": {
-						"name": "Official Enterspeed T-shirt"
-						}
-					}
-					]
-			`,			
+				description: 'Array of entities. Example: [ { "type": "product", "originId": "p-5427", "properties": { "name": "Official Enterspeed T-shirt" } } ].',			
 			},
 			{
 				displayName: 'Origin IDs (JSON Array)',
 				name: 'originIds',
 				type: 'json',
 				default: '',
-				placeholder: JSON.stringify(['p-5427', 'p-6724'], null, 2),
+				required: true,
+				placeholder: JSON.stringify({ originIds: ['p-5427', 'p-6724'] }, null, 2),
 				displayOptions: { show: { resource: ['entity'], operation: ['deleteBulk'] } },
-				description: `Array of up to ${MAX_BULK_ENTITIES} originIds to delete. Sent to Enterspeed as { "originIds": [...] }.`,
+				description: `Must match the Delete Entities (Bulk) API body: { "originIds": [...] }, with up to ${MAX_BULK_ENTITIES} originIds`,
 			},
 
 			// ---------- Delivery ----------
@@ -190,7 +426,13 @@ export class Enterspeed implements INodeType {
 				noDataExpression: true,
 				displayOptions: { show: { resource: ['query'] } },
 				options: [
-					{ name: 'Query Index', value: 'query', action: 'Query items in an index' },
+					{ name: 'Query Items', value: 'query', action: 'Query items in an index' },
+					{
+						name: 'Multi Query Items',
+						value: 'queryMulti',
+						action: 'Query multiple indices in one call',
+						description: `Run up to ${MAX_MULTI_QUERIES} queries in a single request`,
+					},
 				],
 				default: 'query',
 			},
@@ -200,16 +442,74 @@ export class Enterspeed implements INodeType {
 				type: 'string',
 				required: true,
 				default: '',
-				displayOptions: { show: { resource: ['query'] } },
+				displayOptions: { show: { resource: ['query'], operation: ['query'] } },
 				description: 'Alias of the index to query, e.g. productIndex',
 			},
+			...withDisplayGuard(buildQueryFields('json'), { resource: ['query'], operation: ['query'] }),
 			{
-				displayName: 'Query Body (JSON)',
+				displayName: 'Specify Queries',
+				name: 'specifyQuery',
+				type: 'options',
+				options: [
+					{ name: 'Using Fields', value: 'fields' },
+					{ name: 'Using JSON', value: 'json' },
+				],
+				default: 'fields',
+				displayOptions: { show: { resource: ['query'], operation: ['queryMulti'] } },
+				description:
+					'Using JSON sends the full array of queries as-is — useful when it is already assembled upstream, e.g. by a Code node.',
+			},
+			{
+				displayName: 'Queries (JSON)',
 				name: 'queryBody',
 				type: 'json',
-				default: '{\n  "pagination": { "page": 1, "size": 50 }\n}',
-				displayOptions: { show: { resource: ['query'] } },
-				description: 'Filters, sort, pagination and facets. All properties optional.',
+				default: '',
+				required: true,
+				placeholder: JSON.stringify(
+					[
+						{ index: 'productIndex', name: 'products', pagination: { page: 1, size: 50 } },
+						{ index: 'categoryIndex', name: 'categories' },
+					],
+					null,
+					2,
+				),
+				displayOptions: { show: { resource: ['query'], operation: ['queryMulti'], specifyQuery: ['json'] } },
+				description: `Sent to Enterspeed exactly as entered — the full array of up to ${MAX_MULTI_QUERIES} queries for POST /v1. Each item needs "index" and "name", plus any filters/sort/facets/pagination.`,
+			},
+			{
+				displayName: 'Queries',
+				name: 'queries',
+				type: 'fixedCollection',
+				typeOptions: { multipleValues: true },
+				placeholder: 'Add Query',
+				default: {},
+				displayOptions: { show: { resource: ['query'], operation: ['queryMulti'], specifyQuery: ['fields'] } },
+				description: `Up to ${MAX_MULTI_QUERIES} queries to run in one request`,
+				options: [
+					{
+						name: 'query',
+						displayName: 'Query',
+						values: [
+							{
+								displayName: 'Index Alias',
+								name: 'indexAlias',
+								type: 'string',
+								required: true,
+								default: '',
+								description: 'Alias of the index to query, e.g. productIndex',
+							},
+							{
+								displayName: 'Name',
+								name: 'name',
+								type: 'string',
+								required: true,
+								default: '',
+								description: 'Identifier for this query, used to match it to its result',
+							},
+							...buildQueryFields('fields'),
+						],
+					},
+				],
 			},
 
 			// ---------- Route ----------
@@ -260,16 +560,29 @@ export class Enterspeed implements INodeType {
 					}
 					if (operation === 'saveBulk' || operation === 'deleteBulk') {
 						const paramName = operation === 'saveBulk' ? 'entities' : 'originIds';
-						const raw = this.getNodeParameter(paramName, i) as IDataObject[] | string;
+						const raw = this.getNodeParameter(paramName, i) as IDataObject | IDataObject[] | string;
 						const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-						if (!Array.isArray(parsed)) {
-							throw new NodeOperationError(this.getNode(), `${paramName} must be a JSON array`, { itemIndex: i });
+						if (operation === 'saveBulk') {
+							if (!Array.isArray(parsed)) {
+								throw new NodeOperationError(this.getNode(), `${paramName} must be a JSON array`, { itemIndex: i });
+							}
+						} else if (
+							!parsed ||
+							typeof parsed !== 'object' ||
+							Array.isArray(parsed) ||
+							!Array.isArray((parsed as IDataObject).originIds)
+						) {
+							throw new NodeOperationError(
+								this.getNode(),
+								`${paramName} must be a JSON object in the form { "originIds": [...] }`,
+								{ itemIndex: i },
+							);
 						}
 						options = {
 							method: operation === 'saveBulk' ? 'POST' : 'DELETE',
 							url: `${ingestHost}/ingest/v2`,
 							headers: { 'X-Api-Key': sourceKey },
-							body: operation === 'saveBulk' ? parsed : { originIds: parsed },
+							body: parsed,
 							json: true,
 						};
 					} else {
@@ -317,14 +630,81 @@ export class Enterspeed implements INodeType {
 						headers: { 'X-Api-Key': envKey },
 						json: true,
 					};
+				} else if (resource === 'query' && operation === 'queryMulti') {
+					const specifyQuery = this.getNodeParameter('specifyQuery', i, 'fields') as string;
+					let body: IDataObject[];
+					if (specifyQuery === 'json') {
+						const raw = this.getNodeParameter('queryBody', i) as IDataObject[] | string;
+						const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+						if (!Array.isArray(parsed)) {
+							throw new NodeOperationError(this.getNode(), 'Queries (JSON) must be a JSON array', { itemIndex: i });
+						}
+						if (parsed.length > MAX_MULTI_QUERIES) {
+							throw new NodeOperationError(
+								this.getNode(),
+								`A maximum of ${MAX_MULTI_QUERIES} queries are allowed per request`,
+								{ itemIndex: i },
+							);
+						}
+						body = parsed;
+					} else {
+						const queries = this.getNodeParameter('queries.query', i, []) as IDataObject[];
+						if (!queries.length) {
+							throw new NodeOperationError(this.getNode(), 'At least one query is required', { itemIndex: i });
+						}
+						if (queries.length > MAX_MULTI_QUERIES) {
+							throw new NodeOperationError(
+								this.getNode(),
+								`A maximum of ${MAX_MULTI_QUERIES} queries are allowed per request`,
+								{ itemIndex: i },
+							);
+						}
+						body = queries.map((q) => {
+							const queryFields =
+								q.specifyQuery === 'json'
+									? (() => {
+											const raw = q.queryBody as IDataObject | string;
+											return typeof raw === 'string' ? JSON.parse(raw) : raw ?? {};
+										})()
+									: buildQueryPayload(q);
+							return { index: q.indexAlias, name: q.name, ...queryFields };
+						});
+					}
+					options = {
+						method: 'POST',
+						url: `${queryHost}/v1`,
+						headers: { 'X-Api-Key': envKey },
+						body,
+						json: true,
+					};
 				} else if (resource === 'query') {
 					const indexAlias = this.getNodeParameter('indexAlias', i) as string;
-					const queryBody = this.getNodeParameter('queryBody', i) as IDataObject;
+					const specifyQuery = this.getNodeParameter('specifyQuery', i, 'json') as string;
+					let body: IDataObject;
+					if (specifyQuery === 'fields') {
+						body = buildQueryPayload({
+							filtersCombinator: this.getNodeParameter('filtersCombinator', i, 'and'),
+							filtersUi: this.getNodeParameter('filtersUi', i, {}),
+							sortUi: this.getNodeParameter('sortUi', i, {}),
+							facetsUi: this.getNodeParameter('facetsUi', i, {}),
+							queryOptions: this.getNodeParameter('queryOptions', i, {}),
+						});
+					} else {
+						body = this.getNodeParameter('queryBody', i) as IDataObject;
+					}
+					
+					// If the query body is a object with no properties we need to make it into a '{\n}\n' string since the HttpOptions will convert into a empty oject and send it. If it is a empty object then it will sent '${}'
+					if (Object.keys(body).length === 0) {
+						body = '{\n}\n' as unknown as IDataObject;
+					}
+
+					console.log('query body', typeof(body));
+					console.log('query body', JSON.stringify(body, null, 2));
 					options = {
 						method: 'POST',
 						url: `${queryHost}/v1/${encodeURIComponent(indexAlias)}`,
 						headers: { 'X-Api-Key': envKey },
-						body: typeof queryBody === 'string' ? JSON.parse(queryBody as unknown as string) : queryBody,
+						body,
 						json: true,
 					};
 				} else {
@@ -340,7 +720,11 @@ export class Enterspeed implements INodeType {
 				}
 
 				const response = await this.helpers.httpRequest(options);
-				out.push({ json: response as IDataObject, pairedItem: { item: i } });
+				if (resource === 'query' && operation === 'queryMulti' && Array.isArray(response)) {
+					(response as IDataObject[]).forEach((r) => out.push({ json: r, pairedItem: { item: i } }));
+				} else {
+					out.push({ json: response as IDataObject, pairedItem: { item: i } });
+				}
 			} catch (error) {
 				const nodeError =
 					error instanceof NodeOperationError
