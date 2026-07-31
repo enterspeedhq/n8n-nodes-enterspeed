@@ -133,7 +133,7 @@ describe('Entity (Ingest) - Bulk', () => {
 	it('deleteBulk: DELETEs { originIds } to /ingest/v2 with the source key', async () => {
 		const originIds = ['1099-en-us', '1100-en-us'];
 		const { req } = await run({
-			params: { resource: 'entity', operation: 'deleteBulk', originIds },
+			params: { resource: 'entity', operation: 'deleteBulk', originIds: { originIds } },
 		});
 		expect(req.method).toBe('DELETE');
 		expect(req.url).toBe('https://api.enterspeed.com/ingest/v2');
@@ -141,14 +141,32 @@ describe('Entity (Ingest) - Bulk', () => {
 		expect(req.body).toEqual({ originIds });
 	});
 
-	it('deleteBulk: rejects non-array input before sending a request', async () => {
+	it('deleteBulk: parses a JSON string in the Delete Body field into { originIds }', async () => {
+		const { req } = await run({
+			params: { resource: 'entity', operation: 'deleteBulk', originIds: '{"originIds":["1099-en-us"]}' },
+		});
+		expect(req.body).toEqual({ originIds: ['1099-en-us'] });
+	});
+
+	it('deleteBulk: rejects a bare array — the field must match the API body shape { "originIds": [...] }', async () => {
+		const httpRequest = vi.fn();
+		const ctx = createExecuteMock({
+			params: { resource: 'entity', operation: 'deleteBulk', originIds: ['1099-en-us', '1100-en-us'] },
+			creds: defaultCreds,
+			httpRequest,
+		});
+		await expect(node.execute.call(ctx)).rejects.toThrow(/must be a JSON object in the form/);
+		expect(httpRequest).not.toHaveBeenCalled();
+	});
+
+	it('deleteBulk: rejects an object without an originIds array before sending a request', async () => {
 		const httpRequest = vi.fn();
 		const ctx = createExecuteMock({
 			params: { resource: 'entity', operation: 'deleteBulk', originIds: { originId: '1099-en-us' } },
 			creds: defaultCreds,
 			httpRequest,
 		});
-		await expect(node.execute.call(ctx)).rejects.toThrow(/must be a JSON array/);
+		await expect(node.execute.call(ctx)).rejects.toThrow(/must be a JSON object in the form/);
 		expect(httpRequest).not.toHaveBeenCalled();
 	});
 
@@ -247,6 +265,222 @@ describe('Query', () => {
 			params: { resource: 'query', operation: 'query', indexAlias: 'i', queryBody: '{"size":5}' },
 		});
 		expect(req.body).toEqual({ size: 5 });
+	});
+
+	it('Using Fields: assembles filters (AND), sort, facets, search, pagination and aliases', async () => {
+		const { req } = await run({
+			params: {
+				resource: 'query',
+				operation: 'query',
+				indexAlias: 'productIndex',
+				specifyQuery: 'fields',
+				filtersCombinator: 'and',
+				filtersUi: {
+					condition: [
+						{ field: 'title', operator: 'contains', value: '*hoodie*', caseInsensitive: true },
+						{ field: 'isInStock', operator: 'equals', value: true },
+					],
+				},
+				sortUi: { item: [{ field: 'price', order: 'asc' }] },
+				facetsUi: { item: [{ field: 'category', name: 'Categories', size: 20 }] },
+				queryOptions: {
+					searchField: 'title',
+					searchValue: 'hoodie',
+					searchLiteral: false,
+					page: 0,
+					pageSize: 20,
+					aliases: 'productTile, navigation',
+				},
+			},
+		});
+		expect(req.body).toEqual({
+			filters: {
+				and: [
+					{ field: 'title', operator: 'contains', value: '*hoodie*', caseInsensitive: true },
+					{ field: 'isInStock', operator: 'equals', value: true },
+				],
+			},
+			sort: [{ field: 'price', order: 'asc' }],
+			facets: [{ field: 'category', name: 'Categories', size: 20 }],
+			search: { field: 'title', value: 'hoodie', literal: false },
+			pagination: { page: 0, pageSize: 20 },
+			aliases: ['productTile', 'navigation'],
+		});
+	});
+
+	it('Using Fields: wraps conditions in "or" when the combinator is OR', async () => {
+		const { req } = await run({
+			params: {
+				resource: 'query',
+				operation: 'query',
+				indexAlias: 'productIndex',
+				specifyQuery: 'fields',
+				filtersCombinator: 'or',
+				filtersUi: { condition: [{ field: 'isInStock', operator: 'equals', value: true }] },
+			},
+		});
+		expect(req.body).toEqual({
+			filters: { or: [{ field: 'isInStock', operator: 'equals', value: true }] },
+		});
+	});
+
+	it('Using Fields: sends an empty body when no fields are configured', async () => {
+		const { req } = await run({
+			params: { resource: 'query', operation: 'query', indexAlias: 'i', specifyQuery: 'fields' },
+		});
+		expect(req.body).toEqual({});
+	});
+});
+
+describe('Multi Query Items', () => {
+	it('POSTs an array of queries to /v1 with the environment key', async () => {
+		const { req } = await run({
+			params: {
+				resource: 'query',
+				operation: 'queryMulti',
+				'queries.query': [
+					{
+						indexAlias: 'productIndex',
+						name: 'products',
+						specifyQuery: 'fields',
+						filtersCombinator: 'and',
+						filtersUi: { condition: [{ field: 'isInStock', operator: 'equals', value: true }] },
+					},
+					{
+						indexAlias: 'categoryIndex',
+						name: 'categories',
+						specifyQuery: 'json',
+						queryBody: { pagination: { page: 0, pageSize: 5 } },
+					},
+				],
+			},
+		});
+		expect(req.method).toBe('POST');
+		expect(req.url).toBe('https://query.enterspeed.com/v1');
+		expect(req.headers).toMatchObject({ 'X-Api-Key': 'env-key' });
+		expect(req.body).toEqual([
+			{
+				index: 'productIndex',
+				name: 'products',
+				filters: { and: [{ field: 'isInStock', operator: 'equals', value: true }] },
+			},
+			{ index: 'categoryIndex', name: 'categories', pagination: { page: 0, pageSize: 5 } },
+		]);
+	});
+
+	it('parses a JSON string query body for a "Using JSON" entry', async () => {
+		const { req } = await run({
+			params: {
+				resource: 'query',
+				operation: 'queryMulti',
+				'queries.query': [
+					{ indexAlias: 'i', name: 'n', specifyQuery: 'json', queryBody: '{"size":5}' },
+				],
+			},
+		});
+		expect(req.body).toEqual([{ index: 'i', name: 'n', size: 5 }]);
+	});
+
+	it('Using JSON: POSTs the raw queries array as-is, bypassing the Queries fixedCollection', async () => {
+		const { req } = await run({
+			params: {
+				resource: 'query',
+				operation: 'queryMulti',
+				specifyQuery: 'json',
+				queryBody: [
+					{ index: 'productIndex', name: 'products', pagination: { page: 1, size: 50 } },
+					{ index: 'categoryIndex', name: 'categories' },
+				],
+			},
+		});
+		expect(req.method).toBe('POST');
+		expect(req.url).toBe('https://query.enterspeed.com/v1');
+		expect(req.body).toEqual([
+			{ index: 'productIndex', name: 'products', pagination: { page: 1, size: 50 } },
+			{ index: 'categoryIndex', name: 'categories' },
+		]);
+	});
+
+	it('Using JSON: parses a JSON string in Queries (JSON) into the request body', async () => {
+		const { req } = await run({
+			params: {
+				resource: 'query',
+				operation: 'queryMulti',
+				specifyQuery: 'json',
+				queryBody: '[{"index":"i","name":"n"}]',
+			},
+		});
+		expect(req.body).toEqual([{ index: 'i', name: 'n' }]);
+	});
+
+	it('Using JSON: rejects non-array input before sending a request', async () => {
+		const httpRequest = vi.fn();
+		const ctx = createExecuteMock({
+			params: { resource: 'query', operation: 'queryMulti', specifyQuery: 'json', queryBody: { index: 'i' } },
+			creds: defaultCreds,
+			httpRequest,
+		});
+		await expect(node.execute.call(ctx)).rejects.toThrow(/must be a JSON array/);
+		expect(httpRequest).not.toHaveBeenCalled();
+	});
+
+	it('Using JSON: rejects more than the max allowed queries before sending a request', async () => {
+		const httpRequest = vi.fn();
+		const ctx = createExecuteMock({
+			params: {
+				resource: 'query',
+				operation: 'queryMulti',
+				specifyQuery: 'json',
+				queryBody: Array.from({ length: 6 }, (_, idx) => ({ index: 'i', name: `n${idx}` })),
+			},
+			creds: defaultCreds,
+			httpRequest,
+		});
+		await expect(node.execute.call(ctx)).rejects.toThrow(/maximum of 5 queries/);
+		expect(httpRequest).not.toHaveBeenCalled();
+	});
+
+	it('fans each result out to its own output item', async () => {
+		const { result } = await run({
+			params: {
+				resource: 'query',
+				operation: 'queryMulti',
+				'queries.query': [{ indexAlias: 'i', name: 'n', specifyQuery: 'fields' }],
+			},
+			response: [
+				{ name: 'products', status: 200, results: [] },
+				{ name: 'categories', status: 200, results: [] },
+			],
+		});
+		expect(result).toEqual([
+			[
+				{ json: { name: 'products', status: 200, results: [] }, pairedItem: { item: 0 } },
+				{ json: { name: 'categories', status: 200, results: [] }, pairedItem: { item: 0 } },
+			],
+		]);
+	});
+
+	it('rejects when no queries are configured', async () => {
+		const httpRequest = vi.fn();
+		const ctx = createExecuteMock({
+			params: { resource: 'query', operation: 'queryMulti' },
+			creds: defaultCreds,
+			httpRequest,
+		});
+		await expect(node.execute.call(ctx)).rejects.toThrow(/At least one query is required/);
+		expect(httpRequest).not.toHaveBeenCalled();
+	});
+
+	it('rejects more than 5 queries before sending a request', async () => {
+		const httpRequest = vi.fn();
+		const queries = Array.from({ length: 6 }, (_, idx) => ({ indexAlias: 'i', name: `q${idx}` }));
+		const ctx = createExecuteMock({
+			params: { resource: 'query', operation: 'queryMulti', 'queries.query': queries },
+			creds: defaultCreds,
+			httpRequest,
+		});
+		await expect(node.execute.call(ctx)).rejects.toThrow(/maximum of 5 queries/);
+		expect(httpRequest).not.toHaveBeenCalled();
 	});
 });
 
