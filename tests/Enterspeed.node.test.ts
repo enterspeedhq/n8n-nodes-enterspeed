@@ -324,11 +324,13 @@ describe('Query', () => {
 		});
 	});
 
-	it('Using Fields: sends an empty body when no fields are configured', async () => {
+	it('Using Fields: sends a non-empty JSON payload when no fields are configured', async () => {
 		const { req } = await run({
 			params: { resource: 'query', operation: 'query', indexAlias: 'i', specifyQuery: 'fields' },
 		});
-		expect(req.body).toEqual({});
+		// An empty object is forced into a literal (but still valid) JSON string so the
+		// HTTP layer doesn't drop the body entirely — see query.operation.ts.
+		expect(req.body).toBe('{\n}\n');
 	});
 });
 
@@ -485,14 +487,22 @@ describe('Multi Query Items', () => {
 });
 
 describe('Route', () => {
-	it('GETs /routes/v1 with the page size and environment key', async () => {
+	it('GETs /routes/v2 with the environment key', async () => {
 		const { req } = await run({
-			params: { resource: 'route', operation: 'getAll', first: 100 },
+			params: { resource: 'route', operation: 'getAll' },
 		});
 		expect(req.method).toBe('GET');
-		expect(req.url).toBe('https://api.enterspeed.com/routes/v1');
-		expect(req.qs).toEqual({ first: 100 });
+		expect(req.url).toBe('https://api.enterspeed.com/routes/v2');
 		expect(req.headers).toMatchObject({ 'X-Api-Key': 'env-key' });
+		expect(req.headers?.['X-Continuation-Token']).toBeUndefined();
+	});
+
+	it('sends the continuation token header when provided', async () => {
+		const { req } = await run({
+			params: { resource: 'route', operation: 'getAll', continuationToken: 'token-123' },
+		});
+		expect(req.url).toBe('https://api.enterspeed.com/routes/v2');
+		expect(req.headers).toMatchObject({ 'X-Api-Key': 'env-key', 'X-Continuation-Token': 'token-123' });
 	});
 });
 
@@ -502,7 +512,7 @@ describe('host overrides and error handling', () => {
 			params: { resource: 'route', operation: 'getAll', first: 100 },
 			creds: { environmentApiKey: 'env-key' },
 		});
-		expect(req.url).toBe('https://api.enterspeed.com/routes/v1');
+		expect(req.url).toBe('https://api.enterspeed.com/routes/v2');
 	});
 
 	it('honours a custom delivery host', async () => {
