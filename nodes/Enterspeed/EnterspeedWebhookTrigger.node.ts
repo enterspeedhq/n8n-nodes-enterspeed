@@ -27,7 +27,7 @@ export class EnterspeedWebhookTrigger implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Enterspeed Webhook Trigger',
 		name: 'enterspeedWebhookTrigger',
-		icon: 'file:enterspeed.svg',
+		icon: 'file:enterspeed1.svg',
 		group: ['trigger'],
 		version: 1,
 		subtitle: '={{"Views: " + $parameter["actions"].join(", ")}}',
