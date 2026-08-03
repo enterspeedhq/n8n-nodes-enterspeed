@@ -4,13 +4,13 @@ import type { EnterspeedCredentials } from '../types';
 
 export const properties: INodeProperties[] = [
 	{
-		displayName: 'Page Size',
-		name: 'first',
-		type: 'number',
-		default: 100,
-		typeOptions: { minValue: 100, maxValue: 500 },
+		displayName: 'Continuation Token',
+		name: 'continuationToken',
+		type: 'string',
+		default: '',
 		displayOptions: { show: { resource: ['route'] } },
-		description: 'Number of routes per page (100–500)',
+		description:
+			'Token used to retrieve the next page of results. Leave empty to fetch the first page, then pass the "continuationToken" from the previous response to page through the rest.',
 	},
 ];
 
@@ -19,12 +19,14 @@ export async function execute(
 	itemIndex: number,
 	creds: EnterspeedCredentials,
 ): Promise<INodeExecutionData[]> {
-	const first = this.getNodeParameter('first', itemIndex) as number;
+	const continuationToken = this.getNodeParameter('continuationToken', itemIndex) as string;
 	const options: IHttpRequestOptions = {
 		method: 'GET',
-		url: `${creds.ingestHost}/routes/v1`,
-		qs: { first },
-		headers: { 'X-Api-Key': creds.envKey },
+		url: `${creds.ingestHost}/routes/v2`,
+		headers: {
+			'X-Api-Key': creds.envKey,
+			...(continuationToken ? { 'X-Continuation-Token': continuationToken } : {}),
+		},
 		json: true,
 	};
 

@@ -45,7 +45,7 @@ export class Enterspeed implements INodeType {
 		outputs: ['main'],
 		credentials: [{ name: 'enterspeedApi', required: true }],
 		codex: {
-			categories: ['Data & Storage'],
+			categories: ['Data & Storage', 'Development'],
 			subcategories: {
 				'Data & Storage': ['Content Management'],
 			},

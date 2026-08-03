@@ -169,7 +169,7 @@ export function buildQueryFields(specifyQueryDefault: 'fields' | 'json'): INodeP
 			displayName: 'Query Body (JSON)',
 			name: 'queryBody',
 			type: 'json',
-			default: '{\n  "pagination": { "page": 1, "size": 10 }\n}',
+			default: '{\n  "pagination": { "page": 0, "size": 10 }\n}',
 			displayOptions: { show: { specifyQuery: ['json'] } },
 			description: 'Filters, sort, pagination and facets. All properties optional.',
 		},

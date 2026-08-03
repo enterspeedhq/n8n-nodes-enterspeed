@@ -39,10 +39,12 @@ export async function execute(
 			queryOptions: this.getNodeParameter('queryOptions', itemIndex, {}),
 		});
 	} else {
-		body = this.getNodeParameter('queryBody', itemIndex) as IDataObject;
+		const raw = this.getNodeParameter('queryBody', itemIndex) as IDataObject | string;
+		body = typeof raw === 'string' ? JSON.parse(raw) : raw;
 	}
 
-	// If the query body is a object with no properties we need to make it into a '{\n}\n' string since the HttpOptions will convert into a empty oject and send it. If it is a empty object then it will sent '${}'
+	// An empty object body gets dropped by the HTTP layer instead of being sent as '{}',
+	// so force a non-empty (but still valid) JSON payload to make sure it's actually sent.
 	if (Object.keys(body).length === 0) {
 		body = '{\n}\n' as unknown as IDataObject;
 	}

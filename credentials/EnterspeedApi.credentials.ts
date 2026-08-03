@@ -69,7 +69,7 @@ export class EnterspeedApi implements ICredentialType {
 	test: ICredentialTestRequest = {
 		request: {
 			baseURL: '={{$credentials.ingestHost}}',
-			url: '/routes/v1',
+			url: '/routes/v2',
 			qs: { first: 100 },
 			headers: {
 				'X-Api-Key': '={{$credentials.environmentApiKey}}',
