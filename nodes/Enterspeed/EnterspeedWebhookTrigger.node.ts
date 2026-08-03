@@ -22,12 +22,13 @@ import type {
  *   { Id, OriginId, Type, Action: "Deploy" | "Remove", Url? }
  * `Url` (absolute Delivery API URL) is only present when Action is "Deploy".
  * The access key is sent in the `X-Api-Key` header (no HMAC signature).
+ * name convention enterspeedTrigger for putting it under the Enterspeed node instead of having a seperate node called Enterspeed Webhook Trigger
  */
 export class EnterspeedWebhookTrigger implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Enterspeed Webhook Trigger',
-		name: 'enterspeedWebhookTrigger',
-		icon: 'file:enterspeed1.svg',
+		name: 'enterspeedTrigger', 
+		icon: 'file:enterspeed.svg',
 		group: ['trigger'],
 		version: 1,
 		subtitle: '={{"Views: " + $parameter["actions"].join(", ")}}',
@@ -104,10 +105,12 @@ export class EnterspeedWebhookTrigger implements INodeType {
 
 		const payload: IDataObject = { ...body };
 
+
 		if (fetchView && typeof deliveryUrl === 'string' && deliveryUrl) {
 			const creds = await this.getCredentials('enterspeedApi');
 			const envKey = creds.environmentApiKey as string;
 			try {
+				
 				payload.view = await this.helpers.httpRequest({
 					method: 'GET',
 					url: deliveryUrl,
