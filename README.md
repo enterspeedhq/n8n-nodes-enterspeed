@@ -33,9 +33,11 @@ Create an **Enterspeed API** credential with:
 
 ## Operations
 
-**Entity (Ingest)** — `POST/DELETE https://api.enterspeed.com/ingest/v2/{originId}`
+**Entity (Ingest)** — `POST/DELETE https://api.enterspeed.com/ingest/v2/{originId}` or `/ingest/v2` (bulk)
 - *Save*: requires Origin ID, Entity Type (immutable after first ingest) and a JSON body.
 - *Delete*: requires Origin ID.
+- *Save Entities (Bulk)*: POST a JSON array of up to 50 entities (no path params).
+- *Delete Entities (Bulk)*: DELETE with `{ "originIds": [...] }` body of up to 50 origin IDs.
 
 **Delivery — Get Content** — `GET https://delivery.enterspeed.com/v2`
 - Fetch by URL, comma-separated view IDs, and/or handles.
@@ -87,11 +89,6 @@ example workflow.
 
 - **Ingest**: Source (PIM/CMS/ERP) → map → **Enterspeed: Save Entity**.
 - **Delivery / last mile**: **Poll Index for Changes** → map to feed (XML/CSV) → push to Google / Meta / marketplace.
-
-## Development
-
-See [DevelopReadme.md](DevelopReadme.md) for build instructions, running the
-node locally without Docker, and the release process.
 
 ## Licence
 
