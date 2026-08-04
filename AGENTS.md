@@ -16,7 +16,7 @@ to Enterspeed view deploy/remove events.
 - Runtime target: n8n community node API (peer dependency `n8n-workflow`)
 - Build: `tsc` + `gulp` (icon copying)
 - Tests: Vitest
-- Ships two nodes (`Enterspeed`, `EnterspeedWebhookTrigger`) and one
+- Ships two nodes (`Enterspeed`, `EnterspeedTrigger`) and one
   credential type (`EnterspeedApi`)
 
 ## Repository map
@@ -24,7 +24,7 @@ to Enterspeed view deploy/remove events.
 ```
 nodes/Enterspeed/
   Enterspeed.node.ts              action node — delegates to actions/router.ts
-  EnterspeedWebhookTrigger.node.ts push trigger — view deploy/remove events
+  EnterspeedTrigger.node.ts       push trigger — delegates to webhookTrigger/handler.ts
   transport.ts                    thin httpRequest wrapper, no auth/base-url injection
   actions/
     router.ts                     resource/operation dispatch + credential mapping
@@ -33,12 +33,15 @@ nodes/Enterspeed/
       index.ts                    operation selector + properties for this resource
       shared.ts                   field builders reused across the resource's operations
       *.operation.ts              one file per operation (properties + execute())
+  webhookTrigger/
+    properties.ts                 Actions / Fetch Full View / Access Key parameters
+    handler.ts                    webhook() logic: auth check, payload build, view fetch
 credentials/
   EnterspeedApi.credentials.ts    the enterspeedApi credential type
 tests/
   Enterspeed.node.test.ts
-  EnterspeedWebhookTrigger.node.test.ts
-  mocks.ts                        minimal IExecuteFunctions/IWebhookFunctions/IPollFunctions stand-ins
+  EnterspeedTrigger.node.test.ts
+  mocks.ts                        minimal IExecuteFunctions/IWebhookFunctions stand-ins
   workflow-templates.test.ts      validates every JSON file under workflows/templates/
 workflows/templates/*.json        example workflows (see "Example workflows" below)
 scripts/

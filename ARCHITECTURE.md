@@ -12,14 +12,19 @@ This package ships two n8n node types plus one shared credential type:
   plus a per-resource `operation` selector drive one dispatch point:
   `actions/router.ts`. `execute()` on the node is a one-line delegation to
   `router.call(this)`; all real logic lives under `actions/<resource>/`.
-- **`EnterspeedWebhookTrigger`** (`nodes/Enterspeed/EnterspeedWebhookTrigger.node.ts`)
-  — a push trigger. Enterspeed POSTs a lightweight notification when a
-  *view* is deployed or removed; the node optionally fetches the full view
-  from the Delivery API using the payload's URL. Routes and indices do
-  **not** emit webhooks — there is currently no polling equivalent in this
-  package (a prior polling node, `EnterspeedTrigger`, was removed; the
-  documented "poll a Query index on a schedule" behaviour is now expected to
-  be built as an n8n **workflow template** — Schedule Trigger + the `Enterspeed`
+- **`EnterspeedTrigger`** (`nodes/Enterspeed/EnterspeedTrigger.node.ts`) — a
+  push trigger (internal n8n type name `enterspeedTrigger`, display name
+  "Enterspeed Webhook Trigger"). Enterspeed POSTs a lightweight notification
+  when a *view* is deployed or removed; the node optionally fetches the full
+  view from the Delivery API using the payload's URL. Properties live in
+  `webhookTrigger/properties.ts`; the auth check, payload assembly, and view
+  fetch live in `webhookTrigger/handler.ts`; `webhook()` on the node is a
+  one-line delegation to `handleWebhook.call(this)`. Routes and indices do
+  **not** emit webhooks — there is no polling equivalent in this package (an
+  earlier polling node, which also used the class name `EnterspeedTrigger`,
+  was removed; that name was then reused for this webhook trigger. The
+  documented "poll a Query index on a schedule" behaviour is expected to be
+  built as an n8n **workflow template** — Schedule Trigger + the `Enterspeed`
   node's Query operation + a Code node — rather than a custom node).
 - **`EnterspeedApi`** (`credentials/EnterspeedApi.credentials.ts`) — one
   credential type shared by both nodes, holding two API keys and three host
@@ -48,6 +53,14 @@ This package ships two n8n node types plus one shared credential type:
   - `*.operation.ts` — one file per operation, each exporting `properties:
     INodeProperties[]` and `execute(this: IExecuteFunctions, itemIndex:
     number, creds: EnterspeedCredentials): Promise<INodeExecutionData[]>`.
+- **`nodes/Enterspeed/webhookTrigger/`** — the trigger's split-out logic.
+  Unlike the action node, there's a single entry point (no resource/operation
+  dispatch), so the split is just `properties.ts` (the `INodeProperties[]`
+  array) and `handler.ts` (`handleWebhook(this: IWebhookFunctions)`, the
+  access-key check, PascalCase/lower-case payload normalization, and the
+  optional Delivery API fetch). It does not go through `transport.ts` —
+  `IWebhookFunctions` isn't an `IExecuteFunctions`, and there's only the one
+  call site, so it calls `this.helpers.httpRequest` directly.
 - **`nodes/Enterspeed/transport.ts`** — a single-purpose passthrough:
   `enterspeedApiRequest(this: IExecuteFunctions, options: IHttpRequestOptions)`
   just calls `this.helpers.httpRequest(options)`. It injects no base URL and
@@ -58,10 +71,10 @@ This package ships two n8n node types plus one shared credential type:
   definition plus a `test` credential-check request against the Routes API
   (`{ingestHost}/routes/v2?first=100`).
 - **`tests/`** — mirrors the source tree: one test file per node
-  (`Enterspeed.node.test.ts`, `EnterspeedWebhookTrigger.node.test.ts`),
-  `mocks.ts` (minimal `IExecuteFunctions`/`IWebhookFunctions`/`IPollFunctions`
-  stand-ins), and `workflow-templates.test.ts` (validates every JSON file
-  under `workflows/templates/`, not code).
+  (`Enterspeed.node.test.ts`, `EnterspeedTrigger.node.test.ts`), `mocks.ts`
+  (minimal `IExecuteFunctions`/`IWebhookFunctions` stand-ins), and
+  `workflow-templates.test.ts` (validates every JSON file under
+  `workflows/templates/`, not code).
 - **`workflows/templates/*.json`** — example workflows, each a JSON array
   containing one exported n8n workflow object. Validated for shape and for
   never containing a real credential ID (see AGENTS.md). Imported into a

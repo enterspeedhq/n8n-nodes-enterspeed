@@ -35,7 +35,7 @@ node scripts/execute-workflow.mjs  # triggers a workflow by name (N8N_WORKFLOW_N
   INodeProperties[]` and `execute(this: IExecuteFunctions, itemIndex:
   number, creds: EnterspeedCredentials): Promise<INodeExecutionData[]>`.
 - Node/credential class names are PascalCase and match their file's base
-  name (e.g. `EnterspeedWebhookTrigger` in `EnterspeedWebhookTrigger.node.ts`).
+  name (e.g. `EnterspeedTrigger` in `EnterspeedTrigger.node.ts`).
 - Shared field-builders and payload assembly for a resource live in that
   resource's `shared.ts`, not duplicated per operation.
 
