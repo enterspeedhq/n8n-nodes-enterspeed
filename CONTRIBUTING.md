@@ -70,6 +70,27 @@ After changing code:
 npm run build && docker compose restart n8n
 ```
 
+## Connecting an MCP client to your local n8n
+
+Once your local n8n instance is running (see above), you can let an MCP-capable
+client (Claude Code, Codex CLI, etc.) browse and manage it directly:
+
+1. In n8n: **Settings → Instance-level MCP** → toggle **Enable MCP access**
+   (requires the instance owner or an admin).
+2. Click **Connection details** → **Access Token** tab. Copy the instance URL
+   and the personal MCP access token — the token is only shown in full once,
+   so grab it now.
+3. Copy `.mcp.template.json` to `.mcp.json` and paste the token into the
+   `Authorization` header:
+
+   ```bash
+   cp .mcp.template.json .mcp.json
+   ```
+
+`.mcp.json` is gitignored — never commit your token. See [n8n's MCP server
+docs](https://docs.n8n.io/connect/connect-to-n8n-mcp-server) for connecting
+other clients (e.g. Codex CLI's `~/.codex/config.toml`).
+
 ## Example workflows
 
 The `workflows/templates/` directory contains example workflows. These are templates — they contain a credential placeholder and require `node scripts/setup.mjs` to be usable (see above).
