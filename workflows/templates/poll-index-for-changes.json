@@ -1,0 +1,171 @@
+  {
+    "name": "Poll Index for Changes",
+    "active": false,
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "minutes",
+                "minutesInterval": 15
+              }
+            ]
+          }
+        },
+        "id": "5f2662b4-7441-4c73-a32c-c8a53c3097ed",
+        "name": "Schedule Trigger",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.3,
+        "position": [
+          240,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "indexAlias",
+                "name": "indexAlias",
+                "value": "seoComponent",
+                "type": "string"
+              },
+              {
+                "id": "markerField",
+                "name": "markerField",
+                "value": "updateDate",
+                "type": "string"
+              },
+              {
+                "id": "idField",
+                "name": "idField",
+                "value": "id",
+                "type": "string"
+              },
+              {
+                "id": "emitOnFirst",
+                "name": "emitOnFirst",
+                "value": false,
+                "type": "boolean"
+              },
+              {
+                "id": "pageSize",
+                "name": "pageSize",
+                "value": 200,
+                "type": "number"
+              },
+              {
+                "id": "57573ccc-a8d9-4ad0-b0e2-1bd907e3e26b",
+                "name": "",
+                "value": "",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "6b541f0b-f68c-42f9-92cc-d897d433728e",
+        "name": "Poll Config",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          544,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "resource": "query",
+          "indexAlias": "={{ $json.indexAlias }}",
+          "queryBody": "={{ { sort: [ { field: $json.markerField, order: \"desc\" } ], pagination: { page: 0, pageSize: $json.pageSize } } }}"
+        },
+        "id": "2222e189-1f81-487b-ad54-2da801bf2ce4",
+        "name": "Query Index",
+        "type": "CUSTOM.enterspeed",
+        "typeVersion": 1,
+        "position": [
+          848,
+          304
+        ],
+        "credentials": {
+          "enterspeedApi": {
+            "id": "__ENTERSPEED_CREDENTIAL_ID__",
+            "name": "N8N contentful tenant"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const config = $('Poll Config').first().json;\nconst { markerField, idField, emitOnFirst } = config;\n\nconst response = $input.first().json;\nconst results = response.results ?? response.items ?? [];\n\nconst staticData = $getWorkflowStaticData('node');\nconst seen = staticData.seen ?? {};\nconst isFirstRun = Object.keys(seen).length === 0 && staticData.initialised !== true;\n\nconst marker = (item) => {\n  if (markerField && item[markerField] !== undefined) return String(item[markerField]);\n  return JSON.stringify(item);\n};\n\nconst changed = [];\nconst nextSeen = {};\n\nfor (const item of results) {\n  const id = String(item[idField] ?? item.id ?? '');\n  if (!id) continue;\n  const m = marker(item);\n  nextSeen[id] = m;\n  if (seen[id] === undefined || seen[id] !== m) {\n    changed.push({ json: item });\n  }\n}\n\nstaticData.seen = nextSeen;\nstaticData.initialised = true;\n\nif (isFirstRun && !emitOnFirst) return [];\nreturn changed;"
+        },
+        "id": "b08a981b-23a4-4a06-ba2c-6c07f15342dd",
+        "name": "Detect New Or Changed Items",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1152,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "content": "### Poll an Enterspeed index for changes\n\nEdit **Poll Config** to set indexAlias, markerField (e.g. updatedAt), idField, emitOnFirst, and pageSize.\n\nSeen items and their marker values are kept in this workflow's static data, so they survive between scheduled runs. The first run only sets a baseline unless emitOnFirst is true.",
+          "height": 200,
+          "width": 1200,
+          "color": 4
+        },
+        "id": "4924b6f9-c43c-458d-9868-9106a3d94508",
+        "name": "Sticky Note 4b370545",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          176,
+          48
+        ]
+      }
+    ],
+    "connections": {
+      "Schedule Trigger": {
+        "main": [
+          [
+            {
+              "node": "Poll Config",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Poll Config": {
+        "main": [
+          [
+            {
+              "node": "Query Index",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Query Index": {
+        "main": [
+          [
+            {
+              "node": "Detect New Or Changed Items",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1"
+    },
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "pinData": {}
+  }
