@@ -331,7 +331,7 @@
   },
   {
     "parameters": {
-      "jsCode": "const items = $input.all();\n\nfor (const item of items) {\n  item.json.contentfulId = getId(\n    $('Clean up IDs').first().json.entryId,\n    item.json.code\n  );\n}\n\nfunction getId(id, locale) {\n  return `${id}-${locale}`.toLowerCase();\n}\n\nreturn items;"
+      "jsCode": "const items = $input.all();\n\nfor (const item of items) {\n  item.json.contentfulId = getId(\n    $('Clean up IDs').first().json.Id,\n    item.json.code\n  );\n}\n\nfunction getId(id, locale) {\n  return `${id}-${locale}`.toLowerCase();\n}\n\nreturn items;"
     },
     "type": "n8n-nodes-base.code",
     "typeVersion": 2,
