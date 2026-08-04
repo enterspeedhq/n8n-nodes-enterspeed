@@ -50,7 +50,7 @@ describe('workflow templates', () => {
 			});
 
 			it('has the expected top-level workflow fields', () => {
-				const [workflow] = JSON.parse(raw);
+				const workflow = JSON.parse(raw);
 				expect(workflow).toHaveProperty('name');
 				expect(workflow).toHaveProperty('nodes');
 				expect(workflow).toHaveProperty('connections');
@@ -58,14 +58,14 @@ describe('workflow templates', () => {
 			});
 
 			it('has no personal export fields', () => {
-				const [workflow] = JSON.parse(raw);
+				const workflow = JSON.parse(raw);
 				expect(workflow.shared).toBeUndefined();
 				expect(workflow.id).toBeUndefined();
 				expect(workflow.versionId).toBeUndefined();
 			});
 
 			it('substitutes the credential id into all credential fields', () => {
-				const [workflow] = JSON.parse(substitute(raw, FAKE_ID));
+				const workflow = JSON.parse(substitute(raw, FAKE_ID));
 				const credIds = workflow.nodes
 					.flatMap((n: { credentials?: Record<string, { id: string }> }) =>
 						Object.values(n.credentials ?? {}).map((c) => c.id),
