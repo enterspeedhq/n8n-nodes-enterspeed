@@ -18,8 +18,6 @@ import { fileURLToPath } from 'url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Load .env if present
 const envFile = join(ROOT, '.env');
-console.error(envFile);
-
 if (existsSync(envFile)) {
   const content = readFileSync(envFile, 'utf-8').replace(/\r\n/g, '\n');
   for (const line of content.split('\n')) {
