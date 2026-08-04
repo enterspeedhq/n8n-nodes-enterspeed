@@ -6,6 +6,7 @@ export const properties: INodeProperties[] = [
 	{
 		displayName: 'Continuation Token',
 		name: 'continuationToken',
+		// eslint-disable-next-line n8n-nodes-base/node-param-type-options-password-missing -- pagination cursor, not a secret
 		type: 'string',
 		default: '',
 		displayOptions: { show: { resource: ['route'] } },
