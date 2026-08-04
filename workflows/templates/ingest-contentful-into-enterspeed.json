@@ -386,7 +386,7 @@
       "credentials": {
         "contentfulApi": {
           "id": "__CONTENTFUL_CREDENTIAL_ID__",
-          "name": "Enterspeed account"
+          "name": "Contentful account"
         }
       }
     },
