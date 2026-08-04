@@ -78,11 +78,24 @@ The included `fetch-transform-reingest.json` is configured against the **N8N dem
 
 **Export a workflow to add a new template:**
 
-1. Open the workflow in n8n
-2. Menu → Download — saves a `.json` file
-3. Strip personal/environment-specific fields before committing: `id`, `versionId`, `shared`, `creatorId`, `projectId`, `workflowId`, and any real credential IDs
-4. Replace the credential ID with `__ENTERSPEED_CREDENTIAL_ID__`
-5. Move it into `workflows/templates/` and commit it
+Build and test the workflow in your local Docker n8n, then run:
+
+```bash
+node scripts/create-template.mjs --name "Your Workflow Name"
+```
+
+This exports it from the running container, strips every personal/
+environment-specific field (`id`, `versionId`, `shared`, `staticData`, `tags`,
+etc. — anything not in the template's fixed field set), forces `active` to
+`false`, and replaces every node credential's ID with
+`__ENTERSPEED_CREDENTIAL_ID__`. It writes the result straight into
+`workflows/templates/<kebab-case-name>.json` — run `npm test` afterwards to
+confirm it passes `tests/workflow-templates.test.ts`, then commit it.
+
+Pass `--id <workflowId>` instead of `--name` to disambiguate workflows with
+the same name, `--out <filename>.json` to control the output filename, or
+`--file <path>` to sanitize a `.json` file downloaded via the n8n UI's
+Menu → Download instead of pulling from Docker.
 
 > **Note:** templates use the node type `CUSTOM.enterspeed`, which is the prefix n8n assigns when loading via `N8N_CUSTOM_EXTENSIONS` (the Docker path). If you load the package via `npm link` instead, your nodes will be registered as `n8n-nodes-enterspeed.enterspeed` and the imported template will show the nodes as unknown. Use the Docker setup when working with example workflows.
 
@@ -95,7 +108,7 @@ The included `fetch-transform-reingest.json` is configured against the **N8N dem
 
 ## Adding a new operation
 
-1. Add the operation value to the `operation` options array in `Enterspeed.node.ts` or `EnterspeedTrigger.node.ts`
+1. Add the operation value to the `operation` options array in `Enterspeed.node.ts`
 2. Add any new input fields, gated by `displayOptions.show.operation`
 3. Handle the new operation in the `execute` method
 4. Add at least one unit test in `tests/`
@@ -112,3 +125,110 @@ ESLint is configured with `eslint-plugin-n8n-nodes-base`. Run `npm run lintfix` 
 - Node display names must match the file name convention
 - Every parameter must have a `description` field
 - `executeWithRetry` is preferred over manual retry loops
+
+## Status & next steps
+
+Starter implementation, verified against the public Enterspeed OpenAPI spec
+(v0.4.0). Before publishing: run in a local n8n against a real tenant, run
+`npm run lint`, then `npm publish` and submit for n8n's verified-node program.
+
+## Releasing
+
+### Pre-release checklist
+
+- [ ] Tested against a real Enterspeed tenant in a local n8n instance
+- [ ] `npm run lint` passes with no errors
+- [ ] `npm test` passes
+- [ ] `npm run build` succeeds and `dist/` is populated
+- [ ] `package.json` version is bumped appropriately (see below)
+
+### Versioning
+
+Follow [semver](https://semver.org):
+
+| Change | Version bump |
+|---|---|
+| Bug fix, doc update | `patch` — e.g. `0.1.0` → `0.1.1` |
+| New operation or node, backwards-compatible | `minor` — e.g. `0.1.0` → `0.2.0` |
+| Breaking credential or API shape change | `major` — e.g. `0.1.0` → `1.0.0` |
+
+### Manual release
+
+```bash
+# 1. Bump version, commit, and tag in one step
+npm version patch   # or minor / major
+
+# 2. Build
+npm run build
+
+# 3. Publish to npm (requires npm login with an account that has publish access)
+npm publish --access public
+
+# 4. Push the version commit and tag to GitHub
+git push --follow-tags
+```
+
+After publishing, users who installed the package via n8n's Community Nodes UI
+can update through **Settings → Community Nodes** once the new version is live
+on npm (usually within a few minutes).
+
+### Automated releases (GitHub Actions)
+
+When the project is ready for automated CD, the following two-workflow setup
+covers CI on every push/PR and publishes to npm on version tags:
+
+**`.github/workflows/ci.yml`** — runs on every push and pull request to `main`:
+
+```yaml
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+```
+
+**`.github/workflows/release.yml`** — triggered by pushing a version tag (`v*`):
+
+```yaml
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+```
+
+Add an `NPM_TOKEN` secret in GitHub repo **Settings → Secrets → Actions** — a
+granular npm access token scoped to `n8n-nodes-enterspeed` with publish
+permission. With this in place, `git push --follow-tags` is the only manual
+step needed to ship a release.
