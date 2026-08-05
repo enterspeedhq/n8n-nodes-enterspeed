@@ -1,6 +1,6 @@
 [
   {
-"name": "Ingest Contentful inTo Enterspeed",
+"name": "Ingest Contentful into Enterspeed",
 "nodes": [
   {
     "parameters": {
@@ -217,7 +217,7 @@
       336
     ],
     "id": "536e9c1c-c276-4b83-8a91-0afc1d2fcf4b",
-    "name": "GetAll locale",
+    "name": "Get locales (entry)",
     "credentials": {
       "contentfulApi": {
         "id": "__CONTENTFUL_CREDENTIAL_ID__",
@@ -260,7 +260,7 @@
       -112
     ],
     "id": "f4c6453f-80ad-4224-aae9-7bf52636709f",
-    "name": "Create Enterspeed Entities"
+    "name": "Map entry to Enterspeed entity"
   },
   {
     "parameters": {
@@ -273,7 +273,7 @@
       96
     ],
     "id": "c81ef524-8fc9-4d11-b6dc-c04ae174bec9",
-    "name": "GetAll locale2",
+    "name": "Get locales (asset)",
     "credentials": {
       "contentfulApi": {
         "id": "__CONTENTFUL_CREDENTIAL_ID__",
@@ -292,7 +292,7 @@
       96
     ],
     "id": "f04012ae-e526-4214-bcc1-290fb145d93d",
-    "name": "GetId2"
+    "name": "Build entity IDs (asset)"
   },
   {
     "parameters": {
@@ -340,7 +340,7 @@
       336
     ],
     "id": "6815d35d-f527-4ab8-a596-520712296234",
-    "name": "Get ID"
+    "name": "Build entity IDs (entry)"
   },
   {
     "parameters": {
@@ -376,7 +376,7 @@
       96
     ],
     "id": "c184f713-8ca9-4b68-b0eb-789bb135fd68",
-    "name": "Create Enterspeed Entities1"
+    "name": "Map asset to Enterspeed entity"
   },
   {
     "parameters": {
@@ -416,14 +416,14 @@
     "main": [
       [
         {
-          "node": "GetAll locale",
+          "node": "Get locales (entry)",
           "type": "main",
           "index": 0
         }
       ],
       [
         {
-          "node": "GetAll locale",
+          "node": "Get locales (entry)",
           "type": "main",
           "index": 0
         }
@@ -437,21 +437,21 @@
       ],
       [
         {
-          "node": "GetAll locale2",
+          "node": "Get locales (asset)",
           "type": "main",
           "index": 0
         }
       ],
       [
         {
-          "node": "GetAll locale",
+          "node": "Get locales (entry)",
           "type": "main",
           "index": 0
         }
       ],
       [
         {
-          "node": "GetAll locale",
+          "node": "Get locales (entry)",
           "type": "main",
           "index": 0
         }
@@ -459,18 +459,18 @@
       []
     ]
   },
-  "GetAll locale": {
+  "Get locales (entry)": {
     "main": [
       [
         {
-          "node": "Get ID",
+          "node": "Build entity IDs (entry)",
           "type": "main",
           "index": 0
         }
       ]
     ]
   },
-  "Create Enterspeed Entities": {
+  "Map entry to Enterspeed entity": {
     "main": [
       [
         {
@@ -481,18 +481,18 @@
       ]
     ]
   },
-  "GetAll locale2": {
+  "Get locales (asset)": {
     "main": [
       [
         {
-          "node": "GetId2",
+          "node": "Build entity IDs (asset)",
           "type": "main",
           "index": 0
         }
       ]
     ]
   },
-  "GetId2": {
+  "Build entity IDs (asset)": {
     "main": [
       [
         {
@@ -507,7 +507,7 @@
     "main": [
       [
         {
-          "node": "Create Enterspeed Entities",
+          "node": "Map entry to Enterspeed entity",
           "type": "main",
           "index": 0
         }
@@ -525,7 +525,7 @@
       ]
     ]
   },
-  "Get ID": {
+  "Build entity IDs (entry)": {
     "main": [
       [
         {
@@ -540,14 +540,14 @@
     "main": [
       [
         {
-          "node": "Create Enterspeed Entities1",
+          "node": "Map asset to Enterspeed entity",
           "type": "main",
           "index": 0
         }
       ]
     ]
   },
-  "Create Enterspeed Entities1": {
+  "Map asset to Enterspeed entity": {
     "main": [
       [
         {

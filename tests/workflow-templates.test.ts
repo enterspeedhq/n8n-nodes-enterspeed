@@ -24,10 +24,6 @@ function fakeIdFor(placeholder: string) {
 	return `test-${placeholder.toLowerCase().replaceAll('_', '-').replace(/^-+|-+$/g, '')}`;
 }
 
-function isPlaceholder(value: string) {
-	return /^__[A-Z0-9_]+_CREDENTIAL_ID__$/.test(value);
-}
-
 function substitute(raw: string) {
 	return findPlaceholders(raw).reduce((acc, placeholder) => acc.replaceAll(placeholder, fakeIdFor(placeholder)), raw);
 }
@@ -90,7 +86,7 @@ describe('workflow templates', () => {
 					)
 					.filter(Boolean);
 				expect(credIds.length).toBeGreaterThan(0);
-				expect(credIds.every((id: string) => !isPlaceholder(id))).toBe(true);
+				expect(credIds.every((id: string) => id.startsWith('test-'))).toBe(true);
 			});
 		});
 	}
