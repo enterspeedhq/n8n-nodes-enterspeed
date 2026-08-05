@@ -1,332 +1,330 @@
-[
-  {
-    "name": "Fetch, Transform and Re-ingest",
-    "nodes": [
-      {
-        "parameters": {},
-        "type": "n8n-nodes-base.manualTrigger",
-        "typeVersion": 1,
-        "position": [
-          -176,
-          0
-        ],
-        "id": "f9bf6b21-622e-4918-9723-189a4eb5f54b",
-        "name": "When clicking ‘Execute workflow’"
+{
+  "name": "Fetch, Transform and Re-ingest",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -176,
+        0
+      ],
+      "id": "f9bf6b21-622e-4918-9723-189a4eb5f54b",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "url": "/products/trailblazer-hiking-sneaker"
       },
-      {
-        "parameters": {
-          "url": "/products/trailblazer-hiking-sneaker"
-        },
-        "type": "CUSTOM.enterspeed",
-        "typeVersion": 1,
-        "position": [
-          32,
-          0
-        ],
-        "id": "70b1a470-bd54-4cbf-8e86-0cfa3d7fdc74",
-        "name": "Get content",
-        "credentials": {
-          "enterspeedApi": {
-            "id": "__ENTERSPEED_CREDENTIAL_ID__",
-            "name": "Enterspeed account"
-          }
+      "type": "CUSTOM.enterspeed",
+      "typeVersion": 1,
+      "position": [
+        32,
+        0
+      ],
+      "id": "70b1a470-bd54-4cbf-8e86-0cfa3d7fdc74",
+      "name": "Get content",
+      "credentials": {
+        "enterspeedApi": {
+          "id": "__ENTERSPEED_CREDENTIAL_ID__",
+          "name": "Enterspeed account"
         }
-      },
-      {
-        "parameters": {
-          "resource": "entity",
-          "originId": "={{ $json.originId }}",
-          "entityType": "={{ $json.type }}",
-          "properties": "={{ $json.properties }}"
-        },
-        "type": "CUSTOM.enterspeed",
-        "typeVersion": 1,
-        "position": [
-          624,
-          0
-        ],
-        "id": "f593836c-faf1-4742-ac2a-525ef91e6b44",
-        "name": "Save an entity",
-        "credentials": {
-          "enterspeedApi": {
-            "id": "__ENTERSPEED_CREDENTIAL_ID__",
-            "name": "Enterspeed account"
-          }
-        }
-      },
-      {
-        "parameters": {
-          "conditions": {
-            "options": {
-              "caseSensitive": true,
-              "leftValue": "",
-              "typeValidation": "strict",
-              "version": 3
-            },
-            "conditions": [
-              {
-                "id": "6c69e513-254e-45a0-b68b-39d22cfde8bd",
-                "leftValue": "={{ $json.route.productMetadata }}",
-                "rightValue": "",
-                "operator": {
-                  "type": "object",
-                  "operation": "notEmpty",
-                  "singleValue": true
-                }
-              }
-            ],
-            "combinator": "and"
-          },
-          "options": {}
-        },
-        "type": "n8n-nodes-base.if",
-        "typeVersion": 2.3,
-        "position": [
-          224,
-          0
-        ],
-        "id": "645b144e-8f50-4189-ad91-340dec2a2b61",
-        "name": "If Enriched"
-      },
-      {
-        "parameters": {
-          "amount": 10
-        },
-        "type": "n8n-nodes-base.wait",
-        "typeVersion": 1.1,
-        "position": [
-          816,
-          0
-        ],
-        "id": "50763941-29d1-4dbb-82b3-6aee689bdd72",
-        "name": "Wait",
-        "webhookId": "baf4ecd6-37f8-4ad7-8363-e1fedc1601ae"
-      },
-      {
-        "parameters": {
-          "content": "## What this workflow demonstrates\n\nThis is a demo example of the fetch → enrich → re-ingest pattern in Enterspeed: taking a piece of already-transformed content, adding extra data to it via an external process, and feeding that extra data back in as a separate, linked entity — without touching the original source entity.\n\n[Enterspeed Docs](https://docs.enterspeed.com/api-reference/delivery/get-content-by-url-ids-or-handles)\n\n### The Enterspeed concepts at play\n\n* Source Entity — the raw data as it exists in the originating system (here, a `product`). You never write enrichment data directly onto it.\n* Schema — a deployed transformation that turns a Source Entity into a View. The `product` schema declares what a product's output should look like.\n* Reference by originId — schemas can pull in data from other entities by ID, without those entities needing to exist yet at deploy time. That's the mechanism this workflow relies on: the product schema always requests `productMetadata → byOriginId('{originId}-metadata')`, whether or not that enriched entity has been created.\n\n### Why a second, separate entity instead of updating the product directly\n\nBecause the product schema references a distinct `originId ({originId}-metadata)`, enrichment can be produced independently — by any process, on any schedule — and simply ingested under that naming convention. The moment it exists, Enterspeed resolves the reference and the enriched data shows up in the product's View automatically. Nothing needs to re-touch or redeploy the product's own schema or source data as long the reference to the schema already exists.",
-          "height": 656,
-          "width": 1056,
-          "color": "#000034"
-        },
-        "type": "n8n-nodes-base.stickyNote",
-        "position": [
-          -272,
-          -816
-        ],
-        "typeVersion": 1,
-        "id": "3c5ba940-28df-4bb7-986e-ecc077d433b0",
-        "name": "Sticky Note"
-      },
-      {
-        "parameters": {
-          "content": "## Product Schema\n\n```js\n/** @type {Enterspeed.FullSchema} */\nexport default {\n  triggers: function (context) {\n    context.triggers('pim', [\"product\"]);\n  },\n  routes: function (sourceEntity, context) {\n      // See documentation for routes here: https://docs.enterspeed.com/reference/js/full-schema/routes\n      context.url(sourceEntity.url)\n  },\n  properties: function (sourceEntity, context) {   \n    return { \n      ...sourceEntity.properties,\n      originId: sourceEntity.originId,\n      type: sourceEntity.type,\n      productMetadata: context.reference('productMetadata').byOriginId(`${sourceEntity.originId}-metadata`) ?? \"\"\n    }\n  }\n};\n\n```",
-          "height": 576,
-          "width": 928,
-          "color": "#172009"
-        },
-        "type": "n8n-nodes-base.stickyNote",
-        "position": [
-          -272,
-          192
-        ],
-        "typeVersion": 1,
-        "id": "328ec9e1-951c-475a-8df6-f950ed5322f1",
-        "name": "Sticky Note1"
-      },
-      {
-        "parameters": {
-          "url": "={{ $('Get content').params.url }}",
-          "ids": "={{ $('Build Metadata Source Entity').item.json.originId }}"
-        },
-        "type": "CUSTOM.enterspeed",
-        "typeVersion": 1,
-        "position": [
-          1024,
-          0
-        ],
-        "id": "f970437a-fe5d-4a4f-8e86-0f55c29aa3a9",
-        "name": "Get content with enriched data",
-        "credentials": {
-          "enterspeedApi": {
-            "id": "__ENTERSPEED_CREDENTIAL_ID__",
-            "name": "Enterspeed account"
-          }
-        }
-      },
-      {
-        "parameters": {
-          "content": "## The flow, step by step\n\n1. Fetch the product's current View via the Delivery API (Get content). The URL `/products/trailblazer-hiking-sneaker` and the H. C. Andersen copy further down are specific to the n8n demo tenant — swap them for a URL and content that exist in your own Enterspeed environment (see CONTRIBUTING.md).\n2. Check whether it's already contians metadata — skip if so, to avoid redundant work.\n3. Transform: generate the enrichment payload (in this demo, a static value — swap this step for a real enrichment call, e.g. [Speedtrain](https://www.enterspeed.com/products/services/speedtrain-content-accelerator) or an LLM).\n4. Save it as a new entity, `product-metadata`, via the Ingest API.\n5. Wait: ingest is asynchronous, so pause briefly before reading back (you'd use a Enterspeed Webhook on deploy instead of a fixed wait).\n6. Re-fetch the product's View — it should now include `seoMetaDescription` and `enriched_data`, resolved via the reference.\n7. Validate the result.",
-          "height": 656,
-          "width": 448,
-          "color": "#000034"
-        },
-        "type": "n8n-nodes-base.stickyNote",
-        "position": [
-          816,
-          -816
-        ],
-        "typeVersion": 1,
-        "id": "777ac95b-c916-4d5f-af4c-6d3f632ba5b5",
-        "name": "Sticky Note2"
-      },
-      {
-        "parameters": {
-          "content": "## Product-Metadata Schema\n\n```js\n/** @type {Enterspeed.FullSchema} */\nexport default {\n  triggers: function(context) {\n    context.triggers('pim', ['enricedProductMetadata'])\n  },\n  properties: function (sourceEntity, context) {\n    return sourceEntity.properties\n  }\n}\n\n```",
-          "height": 352,
-          "width": 928,
-          "color": "#172009"
-        },
-        "type": "n8n-nodes-base.stickyNote",
-        "position": [
-          688,
-          192
-        ],
-        "typeVersion": 1,
-        "id": "744ffb54-efa7-46ac-8654-d7c271b2b6d1",
-        "name": "Sticky Note3"
-      },
-      {
-        "parameters": {
-          "jsCode": "const out = [];\n\nfor (const item of $input.all()) {\n  const route = item.json.route ?? {};\n\n  // Namespace the id so we don't overwrite the original source entity.\n  const originId = `${route.originId}-metadata`;\n\n  const properties = {\n    seoMetaDescription: \"Discover 'The Flying Trunk' and other classic fairy tales by H. C. Andersen. Journey into a world of magic and imagination. Read the famous story now!\",\n    enriched_data: \"Dummy data to showcase\"\n  };\n\n  out.push({\n    json: {\n      originId,\n      type: `${route.type ?? \"product\" }-metadata`,\n      properties,\n    },\n  });\n}\n\nreturn out;\n"
-        },
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [
-          416,
-          0
-        ],
-        "id": "9b4c136e-5bbb-4e24-a138-58c31f45c9a6",
-        "name": "Build Metadata Source Entity",
-        "notes": "This is a dummy test, where we enrich the data with a static field, however this could easily have been done with an LLM  or with Speedtrain "
-      },
-      {
-        "parameters": {},
-        "type": "n8n-nodes-base.noOp",
-        "typeVersion": 1,
-        "position": [
-          416,
-          -144
-        ],
-        "id": "342a1c85-1d47-4148-9510-bd60ad05dce5",
-        "name": "Already Contains Metadata"
-      },
-      {
-        "parameters": {
-          "mode": "runOnceForEachItem",
-          "jsCode": "// Sorts object keys recursively so key order doesn't affect the equality check below\nfunction canonicalize(value) {\n  if (Array.isArray(value)) {\n    return value.map(canonicalize);\n  }\n  if (value && typeof value === \"object\") {\n    return Object.keys(value)\n      .sort()\n      .reduce((acc, key) => {\n        acc[key] = canonicalize(value[key]);\n        return acc;\n      }, {});\n  }\n  return value;\n}\n\n// Check that productMetadata is not empty\nconst productMetadata = $json.route.productMetadata;\n\nif (\n  !productMetadata ||\n  Object.keys(productMetadata).length === 0\n) {\n  throw new Error(\"productMetadata is empty\");\n}\n\n// Get source properties\nconst sourceProperties =\n  $('Build Metadata Source Entity').item.json.properties;\n\n// Compare objects regardless of key order\nconst matches =\n  JSON.stringify(canonicalize(sourceProperties)) ===\n  JSON.stringify(canonicalize(productMetadata));\n\nif (!matches) {\n  throw new Error(\n    \"Build Metadata Source Entity properties do not match route.productMetadata\"\n  );\n}"
-        },
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [
-          1216,
-          0
-        ],
-        "id": "15709580-154f-4f49-ad66-a897cd722d29",
-        "name": "Verify Data"
       }
-    ],
-    "pinData": {},
-    "connections": {
-      "When clicking ‘Execute workflow’": {
-        "main": [
-          [
-            {
-              "node": "Get content",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
+    },
+    {
+      "parameters": {
+        "resource": "entity",
+        "originId": "={{ $json.originId }}",
+        "entityType": "={{ $json.type }}",
+        "properties": "={{ $json.properties }}"
       },
-      "Get content": {
-        "main": [
-          [
+      "type": "CUSTOM.enterspeed",
+      "typeVersion": 1,
+      "position": [
+        624,
+        0
+      ],
+      "id": "f593836c-faf1-4742-ac2a-525ef91e6b44",
+      "name": "Save an entity",
+      "credentials": {
+        "enterspeedApi": {
+          "id": "__ENTERSPEED_CREDENTIAL_ID__",
+          "name": "Enterspeed account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
             {
-              "node": "If Enriched",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Save an entity": {
-        "main": [
-          [
-            {
-              "node": "Wait",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "If Enriched": {
-        "main": [
-          [
-            {
-              "node": "Already Contains Metadata",
-              "type": "main",
-              "index": 0
+              "id": "6c69e513-254e-45a0-b68b-39d22cfde8bd",
+              "leftValue": "={{ $json.route.productMetadata }}",
+              "rightValue": "",
+              "operator": {
+                "type": "object",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
             }
           ],
-          [
-            {
-              "node": "Build Metadata Source Entity",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
+          "combinator": "and"
+        },
+        "options": {}
       },
-      "Wait": {
-        "main": [
-          [
-            {
-              "node": "Get content with enriched data",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        224,
+        0
+      ],
+      "id": "645b144e-8f50-4189-ad91-340dec2a2b61",
+      "name": "If Enriched"
+    },
+    {
+      "parameters": {
+        "amount": 10
       },
-      "Get content with enriched data": {
-        "main": [
-          [
-            {
-              "node": "Verify Data",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        816,
+        0
+      ],
+      "id": "50763941-29d1-4dbb-82b3-6aee689bdd72",
+      "name": "Wait",
+      "webhookId": "baf4ecd6-37f8-4ad7-8363-e1fedc1601ae"
+    },
+    {
+      "parameters": {
+        "content": "## What this workflow demonstrates\n\nThis is a demo example of the fetch → enrich → re-ingest pattern in Enterspeed: taking a piece of already-transformed content, adding extra data to it via an external process, and feeding that extra data back in as a separate, linked entity — without touching the original source entity.\n\n[Enterspeed Docs](https://docs.enterspeed.com/api-reference/delivery/get-content-by-url-ids-or-handles)\n\n### The Enterspeed concepts at play\n\n* Source Entity — the raw data as it exists in the originating system (here, a `product`). You never write enrichment data directly onto it.\n* Schema — a deployed transformation that turns a Source Entity into a View. The `product` schema declares what a product's output should look like.\n* Reference by originId — schemas can pull in data from other entities by ID, without those entities needing to exist yet at deploy time. That's the mechanism this workflow relies on: the product schema always requests `productMetadata → byOriginId('{originId}-metadata')`, whether or not that enriched entity has been created.\n\n### Why a second, separate entity instead of updating the product directly\n\nBecause the product schema references a distinct `originId ({originId}-metadata)`, enrichment can be produced independently — by any process, on any schedule — and simply ingested under that naming convention. The moment it exists, Enterspeed resolves the reference and the enriched data shows up in the product's View automatically. Nothing needs to re-touch or redeploy the product's own schema or source data as long the reference to the schema already exists.",
+        "height": 656,
+        "width": 1056,
+        "color": "#000034"
       },
-      "Build Metadata Source Entity": {
-        "main": [
-          [
-            {
-              "node": "Save an entity",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -272,
+        -816
+      ],
+      "typeVersion": 1,
+      "id": "3c5ba940-28df-4bb7-986e-ecc077d433b0",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## Product Schema\n\n```js\n/** @type {Enterspeed.FullSchema} */\nexport default {\n  triggers: function (context) {\n    context.triggers('pim', [\"product\"]);\n  },\n  routes: function (sourceEntity, context) {\n      // See documentation for routes here: https://docs.enterspeed.com/reference/js/full-schema/routes\n      context.url(sourceEntity.url)\n  },\n  properties: function (sourceEntity, context) {   \n    return { \n      ...sourceEntity.properties,\n      originId: sourceEntity.originId,\n      type: sourceEntity.type,\n      productMetadata: context.reference('productMetadata').byOriginId(`${sourceEntity.originId}-metadata`) ?? \"\"\n    }\n  }\n};\n\n```",
+        "height": 576,
+        "width": 928,
+        "color": "#172009"
       },
-      "Already Contains Metadata": {
-        "main": [
-          []
-        ]
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -272,
+        192
+      ],
+      "typeVersion": 1,
+      "id": "328ec9e1-951c-475a-8df6-f950ed5322f1",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Get content').params.url }}",
+        "ids": "={{ $('Build Metadata Source Entity').item.json.originId }}"
+      },
+      "type": "CUSTOM.enterspeed",
+      "typeVersion": 1,
+      "position": [
+        1024,
+        0
+      ],
+      "id": "f970437a-fe5d-4a4f-8e86-0f55c29aa3a9",
+      "name": "Get content with enriched data",
+      "credentials": {
+        "enterspeedApi": {
+          "id": "__ENTERSPEED_CREDENTIAL_ID__",
+          "name": "Enterspeed account"
+        }
       }
     },
-    "active": false,
-    "settings": {
-      "executionOrder": "v1",
-      "binaryMode": "separate"
+    {
+      "parameters": {
+        "content": "## The flow, step by step\n\n1. Fetch the product's current View via the Delivery API (Get content). The URL `/products/trailblazer-hiking-sneaker` and the H. C. Andersen copy further down are specific to the n8n demo tenant — swap them for a URL and content that exist in your own Enterspeed environment (see CONTRIBUTING.md).\n2. Check whether it's already contians metadata — skip if so, to avoid redundant work.\n3. Transform: generate the enrichment payload (in this demo, a static value — swap this step for a real enrichment call, e.g. [Speedtrain](https://www.enterspeed.com/products/services/speedtrain-content-accelerator) or an LLM).\n4. Save it as a new entity, `product-metadata`, via the Ingest API.\n5. Wait: ingest is asynchronous, so pause briefly before reading back (you'd use a Enterspeed Webhook on deploy instead of a fixed wait).\n6. Re-fetch the product's View — it should now include `seoMetaDescription` and `enriched_data`, resolved via the reference.\n7. Validate the result.",
+        "height": 656,
+        "width": 448,
+        "color": "#000034"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        816,
+        -816
+      ],
+      "typeVersion": 1,
+      "id": "777ac95b-c916-4d5f-af4c-6d3f632ba5b5",
+      "name": "Sticky Note2"
     },
-    "meta": {
-      "templateCredsSetupCompleted": true
+    {
+      "parameters": {
+        "content": "## Product-Metadata Schema\n\n```js\n/** @type {Enterspeed.FullSchema} */\nexport default {\n  triggers: function(context) {\n    context.triggers('pim', ['enricedProductMetadata'])\n  },\n  properties: function (sourceEntity, context) {\n    return sourceEntity.properties\n  }\n}\n\n```",
+        "height": 352,
+        "width": 928,
+        "color": "#172009"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        688,
+        192
+      ],
+      "typeVersion": 1,
+      "id": "744ffb54-efa7-46ac-8654-d7c271b2b6d1",
+      "name": "Sticky Note3"
     },
-    "nodeGroups": [],
-    "tags": []
-  }
-]
+    {
+      "parameters": {
+        "jsCode": "const out = [];\n\nfor (const item of $input.all()) {\n  const route = item.json.route ?? {};\n\n  // Namespace the id so we don't overwrite the original source entity.\n  const originId = `${route.originId}-metadata`;\n\n  const properties = {\n    seoMetaDescription: \"Discover 'The Flying Trunk' and other classic fairy tales by H. C. Andersen. Journey into a world of magic and imagination. Read the famous story now!\",\n    enriched_data: \"Dummy data to showcase\"\n  };\n\n  out.push({\n    json: {\n      originId,\n      type: `${route.type ?? \"product\" }-metadata`,\n      properties,\n    },\n  });\n}\n\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "9b4c136e-5bbb-4e24-a138-58c31f45c9a6",
+      "name": "Build Metadata Source Entity",
+      "notes": "This is a dummy test, where we enrich the data with a static field, however this could easily have been done with an LLM  or with Speedtrain "
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        416,
+        -144
+      ],
+      "id": "342a1c85-1d47-4148-9510-bd60ad05dce5",
+      "name": "Already Contains Metadata"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Sorts object keys recursively so key order doesn't affect the equality check below\nfunction canonicalize(value) {\n  if (Array.isArray(value)) {\n    return value.map(canonicalize);\n  }\n  if (value && typeof value === \"object\") {\n    return Object.keys(value)\n      .sort()\n      .reduce((acc, key) => {\n        acc[key] = canonicalize(value[key]);\n        return acc;\n      }, {});\n  }\n  return value;\n}\n\n// Check that productMetadata is not empty\nconst productMetadata = $json.route.productMetadata;\n\nif (\n  !productMetadata ||\n  Object.keys(productMetadata).length === 0\n) {\n  throw new Error(\"productMetadata is empty\");\n}\n\n// Get source properties\nconst sourceProperties =\n  $('Build Metadata Source Entity').item.json.properties;\n\n// Compare objects regardless of key order\nconst matches =\n  JSON.stringify(canonicalize(sourceProperties)) ===\n  JSON.stringify(canonicalize(productMetadata));\n\nif (!matches) {\n  throw new Error(\n    \"Build Metadata Source Entity properties do not match route.productMetadata\"\n  );\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1216,
+        0
+      ],
+      "id": "15709580-154f-4f49-ad66-a897cd722d29",
+      "name": "Verify Data"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Get content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get content": {
+      "main": [
+        [
+          {
+            "node": "If Enriched",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save an entity": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Enriched": {
+      "main": [
+        [
+          {
+            "node": "Already Contains Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Metadata Source Entity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Get content with enriched data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get content with enriched data": {
+      "main": [
+        [
+          {
+            "node": "Verify Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Metadata Source Entity": {
+      "main": [
+        [
+          {
+            "node": "Save an entity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already Contains Metadata": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "nodeGroups": [],
+  "tags": []
+}

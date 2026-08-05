@@ -1,574 +1,572 @@
-[
-  {
-"name": "Ingest Contentful into Enterspeed",
-"nodes": [
-  {
-    "parameters": {
-      "httpMethod": "POST",
-      "path": "n8n",
-      "options": {
-        "rawBody": true
+{
+  "name": "Ingest Contentful into Enterspeed",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "n8n",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -192,
+        64
+      ],
+      "id": "10fafebb-f0fa-4232-90f3-f0a7ae83da22",
+      "name": "Webhook",
+      "webhookId": "cec7a189-d2c4-4b5d-8686-3783d6e5e167"
+    },
+    {
+      "parameters": {
+        "resource": "entity",
+        "originId": "={{ $json.originId }}",
+        "entityType": "={{ $json.type }}",
+        "properties": "={{ $json.properties.toJsonString()}}"
+      },
+      "type": "CUSTOM.enterspeed",
+      "typeVersion": 1,
+      "position": [
+        1568,
+        -16
+      ],
+      "id": "643a14f4-cdb5-4d45-8cc7-664a88bf232b",
+      "name": "Save an entity",
+      "credentials": {
+        "enterspeedApi": {
+          "id": "__ENTERSPEED_CREDENTIAL_ID__",
+          "name": "Enterspeed account"
+        }
       }
     },
-    "type": "n8n-nodes-base.webhook",
-    "typeVersion": 2.1,
-    "position": [
-      -192,
-      64
-    ],
-    "id": "10fafebb-f0fa-4232-90f3-f0a7ae83da22",
-    "name": "Webhook",
-    "webhookId": "cec7a189-d2c4-4b5d-8686-3783d6e5e167"
-  },
-  {
-    "parameters": {
-      "resource": "entity",
-      "originId": "={{ $json.originId }}",
-      "entityType": "={{ $json.type }}",
-      "properties": "={{ $json.properties.toJsonString()}}"
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.headers[\"x-contentful-topic\"] }}",
+                    "rightValue": "ContentManagement.Entry.unpublish",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "b7304bd5-824c-424a-8c0b-a8e84ce8ea2d"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Entry Unpublish"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "2a41428b-e04c-43f9-a241-79ae78d2ed78",
+                    "leftValue": "={{ $json.headers[\"x-contentful-topic\"] }}",
+                    "rightValue": "ContentManagement.Entry.delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "endsWith"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Entry Delete"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "bfd4cd80-95d3-4870-b721-f780cf20378f",
+                    "leftValue": "={{ $json.headers[\"x-contentful-topic\"] }}",
+                    "rightValue": "=ContentManagement.Entry.publish",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Entry Publish"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "548f9fe2-b507-4acd-bded-7a6f0543130b",
+                    "leftValue": "={{ $json.headers[\"x-contentful-topic\"] }}",
+                    "rightValue": "ContentManagement.Asset.publish",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Asset Publish"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "31a96409-3f4a-4d5d-b4e0-ac230513c02b",
+                    "leftValue": "={{ $json.headers[\"x-contentful-topic\"] }}",
+                    "rightValue": "ContentManagement.Asset.unpublish",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Asset Unpublish"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "71d184a7-c1b1-4f3b-b31b-a5ddb4c38a9e",
+                    "leftValue": "={{ $json.headers[\"x-contentful-topic\"] }}",
+                    "rightValue": "ContentManagement.Asset.delete",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Asset Delete"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        256,
+        -16
+      ],
+      "id": "b4e4c632-c0a7-4466-ab42-472139dc27ac",
+      "name": "Switch"
     },
-    "type": "CUSTOM.enterspeed",
-    "typeVersion": 1,
-    "position": [
-      1568,
-      -16
-    ],
-    "id": "643a14f4-cdb5-4d45-8cc7-664a88bf232b",
-    "name": "Save an entity",
-    "credentials": {
-      "enterspeedApi": {
-        "id": "__ENTERSPEED_CREDENTIAL_ID__",
-        "name": "Enterspeed account"
+    {
+      "parameters": {
+        "resource": "locale"
+      },
+      "type": "n8n-nodes-base.contentful",
+      "typeVersion": 1,
+      "position": [
+        592,
+        336
+      ],
+      "id": "536e9c1c-c276-4b83-8a91-0afc1d2fcf4b",
+      "name": "Get locales (entry)",
+      "credentials": {
+        "contentfulApi": {
+          "id": "__CONTENTFUL_CREDENTIAL_ID__",
+          "name": "Contentful account"
+        }
       }
+    },
+    {
+      "parameters": {
+        "resource": "entity",
+        "operation": "delete",
+        "originId": "={{ $json.contentfulId }}"
+      },
+      "type": "CUSTOM.enterspeed",
+      "typeVersion": 1,
+      "position": [
+        1088,
+        336
+      ],
+      "id": "1911a6ed-cbca-4e87-a908-36f2afafb663",
+      "name": "Delete an entity",
+      "notesInFlow": false,
+      "credentials": {
+        "enterspeedApi": {
+          "id": "__ENTERSPEED_CREDENTIAL_ID__",
+          "name": "Enterspeed account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Note: If the is more locale from Contentful than in Enterspeed it will give a error from deleting one of the Source Entities. "
+    },
+    {
+      "parameters": {
+        "jsCode": "const entry = $input.first().json; // one raw entry for one locale: { metadata, sys, fields }\n\nfunction toId(contentfulId, localeCode) {\n  return `${contentfulId}-${localeCode}`.toLowerCase();\n}\n\nfunction formatDate(dateString) {\n  return dateString ? dateString.slice(0, 19) : null;\n}\n\nfunction isLink(value) {\n  return value && typeof value === 'object' && value.sys && value.sys.type === 'Link';\n}\n\nfunction convertLink(link, localeCode) {\n  return {\n    id: toId(link.sys.id, localeCode),\n    type: link.sys.type,\n    linkType: link.sys.linkType\n  };\n}\n\nfunction convertFieldValue(value, localeCode) {\n  if (value === null || value === undefined) return null;\n\n  if (Array.isArray(value)) {\n    if (value.length > 0 && isLink(value[0])) {\n      return value.map(v => convertLink(v, localeCode));\n    }\n    return value;\n  }\n\n  if (isLink(value)) {\n    return convertLink(value, localeCode);\n  }\n\n  return value;\n}\n\nfunction buildMetaData(sys) {\n  return {\n    locale: sys.locale,\n    type: sys.type,\n    environment: sys.environment?.sys?.id,\n    createDate: formatDate(sys.createdAt),\n    updateDate: formatDate(sys.updatedAt)\n  };\n}\n\nfunction buildEnterspeedEntity(entry) {\n  const sys = entry.sys;\n  const localeCode = sys.locale;\n  const properties = {};\n\n  for (const [fieldName, value] of Object.entries(entry.fields)) {\n    const converted = convertFieldValue(value, localeCode);\n    if (converted !== null) {\n      properties[fieldName] = converted;\n    }\n  }\n\n  properties.metaData = buildMetaData(sys);\n\n  return {\n    originId: toId(sys.id, localeCode),   // used only to build the URL path — not part of the body\n    type: sys.contentType.sys.id,\n    url: null,\n    originParentId: null,\n    redirects: [],\n    properties\n  };\n}\n\nreturn { json: buildEnterspeedEntity(entry) };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        864,
+        -112
+      ],
+      "id": "f4c6453f-80ad-4224-aae9-7bf52636709f",
+      "name": "Map entry to Enterspeed entity"
+    },
+    {
+      "parameters": {
+        "resource": "locale"
+      },
+      "type": "n8n-nodes-base.contentful",
+      "typeVersion": 1,
+      "position": [
+        592,
+        96
+      ],
+      "id": "c81ef524-8fc9-4d11-b6dc-c04ae174bec9",
+      "name": "Get locales (asset)",
+      "credentials": {
+        "contentfulApi": {
+          "id": "__CONTENTFUL_CREDENTIAL_ID__",
+          "name": "Contentful account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfor (const item of items) {\n  item.json.contentfulId = getId(\n    $('Clean up IDs').first().json.Id,\n    item.json.code\n  );\n}\n\nfunction getId(id, locale) {\n  return `${id}-${locale}`.toLowerCase();\n}\n\nreturn items;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        864,
+        96
+      ],
+      "id": "f04012ae-e526-4214-bcc1-290fb145d93d",
+      "name": "Build entity IDs (asset)"
+    },
+    {
+      "parameters": {
+        "entryId": "={{ $('Clean up IDs').item.json.Id }}",
+        "additionalFields": {
+          "rawData": true
+        }
+      },
+      "type": "n8n-nodes-base.contentful",
+      "typeVersion": 1,
+      "position": [
+        592,
+        -112
+      ],
+      "id": "01c0f194-58d2-469a-a5f9-9e41ea344202",
+      "name": "Get Entry",
+      "credentials": {
+        "contentfulApi": {
+          "id": "__CONTENTFUL_CREDENTIAL_ID__",
+          "name": "Contentful account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const crn = $input.first().json.headers[\"x-contentful-crn\"]\n\n$input.first().json.Id = crn.match(/(?:entries|assets)\\/([^/?]+)/)?.[1]\n\nreturn $input.first()\n\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        16,
+        64
+      ],
+      "id": "18ae7816-17ab-47f3-ac3a-df39babfcc74",
+      "name": "Clean up IDs"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nfor (const item of items) {\n  item.json.contentfulId = getId(\n    $('Clean up IDs').first().json.Id,\n    item.json.code\n  );\n}\n\nfunction getId(id, locale) {\n  return `${id}-${locale}`.toLowerCase();\n}\n\nreturn items;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        864,
+        336
+      ],
+      "id": "6815d35d-f527-4ab8-a596-520712296234",
+      "name": "Build entity IDs (entry)"
+    },
+    {
+      "parameters": {
+        "resource": "asset",
+        "operation": "get",
+        "assetId": "={{ $('Clean up IDs').item.json.Id }}"
+      },
+      "type": "n8n-nodes-base.contentful",
+      "typeVersion": 1,
+      "position": [
+        1088,
+        96
+      ],
+      "id": "991841e2-93b0-4ab2-8bbf-2bd0bd815674",
+      "name": "Get asset",
+      "executeOnce": false,
+      "alwaysOutputData": false,
+      "credentials": {
+        "contentfulApi": {
+          "id": "__CONTENTFUL_CREDENTIAL_ID__",
+          "name": "Contentful account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const entry = $input.first().json; // one raw entry for one locale: { metadata, sys, fields }\n\nfunction toId(contentfulId, localeCode) {\n  return `${contentfulId}-${localeCode}`.toLowerCase();\n}\n\nfunction formatDate(dateString) {\n  return dateString ? dateString.slice(0, 19) : null;\n}\n\nfunction isLink(value) {\n  return value && typeof value === 'object' && value.sys && value.sys.type === 'Link';\n}\n\nfunction convertLink(link, localeCode) {\n  return {\n    id: toId(link.sys.id, localeCode),\n    type: link.sys.type,\n    linkType: link.sys.linkType\n  };\n}\n\nfunction convertFieldValue(value, localeCode) {\n  if (value === null || value === undefined) return null;\n\n  if (Array.isArray(value)) {\n    if (value.length > 0 && isLink(value[0])) {\n      return value.map(v => convertLink(v, localeCode));\n    }\n    return value;\n  }\n\n  if (isLink(value)) {\n    return convertLink(value, localeCode);\n  }\n\n  return value;\n}\n\nfunction buildMetaData(sys) {\n  return {\n    locale: sys.locale,\n    type: sys.type,\n    environment: sys.environment?.sys?.id,\n    createDate: formatDate(sys.createdAt),\n    updateDate: formatDate(sys.updatedAt)\n  };\n}\n\nfunction buildEnterspeedEntity(entry) {\n  const sys = entry.sys;\n  const localeCode = sys.locale;\n  const properties = {};\n\n  for (const [fieldName, value] of Object.entries(entry.fields)) {\n    const converted = convertFieldValue(value, localeCode);\n    if (converted !== null) {\n      properties[fieldName] = converted;\n    }\n  }\n\n  properties.metaData = buildMetaData(sys);\n\n  return {\n    originId: toId(sys.id, localeCode),   // used only to build the URL path — not part of the body\n    type: sys.contentType.sys.id,\n    url: null,\n    originParentId: null,\n    redirects: [],\n    properties\n  };\n}\n\nreturn { json: buildEnterspeedEntity(entry) };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1296,
+        96
+      ],
+      "id": "c184f713-8ca9-4b68-b0eb-789bb135fd68",
+      "name": "Map asset to Enterspeed entity"
+    },
+    {
+      "parameters": {
+        "content": "## Contentful → Enterspeed: Automatic Content Sync\n\nThis example shows how any change in Contentful — publishing, updating, or removing an entry or asset — flows automatically into Enterspeed as structured, ready-to-deliver data. No custom backend code, no manual re-entry.\n\n### How it works\n\n1. **Contentful sends a webhook** the moment an editor publishes, unpublishes, or deletes content — for both entries and assets.\n2. **n8n receives and routes the event** based on what happened and what type of content it affects.\n3. **On publish**, n8n fetches the full content, maps it into Enterspeed's format, and ingests it as a source entity — instantly available through Enterspeed's Delivery API.\n4. **On unpublish or delete**, n8n removes the corresponding entity — across every locale it was published in — keeping Enterspeed in sync with Contentful.\n\n### Why it matters\n\nContent teams keep working in Contentful exactly as they do today. Behind the scenes, every change is captured and delivered through Enterspeed's high-performance API, with no manual syncing step and no custom integration to maintain.\n\n*This demo focuses on core content sync. A full production setup would build on this foundation with additional Enterspeed capabilities, such as content relationships and reference linking between entities.*\n",
+        "height": 576,
+        "width": 1392
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -208,
+        592
+      ],
+      "typeVersion": 1,
+      "id": "77210e99-2f2a-4e62-ba72-57202de844ca",
+      "name": "Sticky Note"
     }
-  },
-  {
-    "parameters": {
-      "rules": {
-        "values": [
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
           {
-            "conditions": {
-              "options": {
-                "caseSensitive": true,
-                "leftValue": "",
-                "typeValidation": "strict",
-                "version": 3
-              },
-              "conditions": [
-                {
-                  "leftValue": "={{ $json.headers[\"x-contentful-topic\"] }}",
-                  "rightValue": "ContentManagement.Entry.unpublish",
-                  "operator": {
-                    "type": "string",
-                    "operation": "equals"
-                  },
-                  "id": "b7304bd5-824c-424a-8c0b-a8e84ce8ea2d"
-                }
-              ],
-              "combinator": "and"
-            },
-            "renameOutput": true,
-            "outputKey": "Entry Unpublish"
-          },
-          {
-            "conditions": {
-              "options": {
-                "caseSensitive": true,
-                "leftValue": "",
-                "typeValidation": "strict",
-                "version": 3
-              },
-              "conditions": [
-                {
-                  "id": "2a41428b-e04c-43f9-a241-79ae78d2ed78",
-                  "leftValue": "={{ $json.headers[\"x-contentful-topic\"] }}",
-                  "rightValue": "ContentManagement.Entry.delete",
-                  "operator": {
-                    "type": "string",
-                    "operation": "endsWith"
-                  }
-                }
-              ],
-              "combinator": "and"
-            },
-            "renameOutput": true,
-            "outputKey": "Entry Delete"
-          },
-          {
-            "conditions": {
-              "options": {
-                "caseSensitive": true,
-                "leftValue": "",
-                "typeValidation": "strict",
-                "version": 3
-              },
-              "conditions": [
-                {
-                  "id": "bfd4cd80-95d3-4870-b721-f780cf20378f",
-                  "leftValue": "={{ $json.headers[\"x-contentful-topic\"] }}",
-                  "rightValue": "=ContentManagement.Entry.publish",
-                  "operator": {
-                    "type": "string",
-                    "operation": "equals"
-                  }
-                }
-              ],
-              "combinator": "and"
-            },
-            "renameOutput": true,
-            "outputKey": "Entry Publish"
-          },
-          {
-            "conditions": {
-              "options": {
-                "caseSensitive": true,
-                "leftValue": "",
-                "typeValidation": "strict",
-                "version": 3
-              },
-              "conditions": [
-                {
-                  "id": "548f9fe2-b507-4acd-bded-7a6f0543130b",
-                  "leftValue": "={{ $json.headers[\"x-contentful-topic\"] }}",
-                  "rightValue": "ContentManagement.Asset.publish",
-                  "operator": {
-                    "type": "string",
-                    "operation": "equals",
-                    "name": "filter.operator.equals"
-                  }
-                }
-              ],
-              "combinator": "and"
-            },
-            "renameOutput": true,
-            "outputKey": "Asset Publish"
-          },
-          {
-            "conditions": {
-              "options": {
-                "caseSensitive": true,
-                "leftValue": "",
-                "typeValidation": "strict",
-                "version": 3
-              },
-              "conditions": [
-                {
-                  "id": "31a96409-3f4a-4d5d-b4e0-ac230513c02b",
-                  "leftValue": "={{ $json.headers[\"x-contentful-topic\"] }}",
-                  "rightValue": "ContentManagement.Asset.unpublish",
-                  "operator": {
-                    "type": "string",
-                    "operation": "equals",
-                    "name": "filter.operator.equals"
-                  }
-                }
-              ],
-              "combinator": "and"
-            },
-            "renameOutput": true,
-            "outputKey": "Asset Unpublish"
-          },
-          {
-            "conditions": {
-              "options": {
-                "caseSensitive": true,
-                "leftValue": "",
-                "typeValidation": "strict",
-                "version": 3
-              },
-              "conditions": [
-                {
-                  "id": "71d184a7-c1b1-4f3b-b31b-a5ddb4c38a9e",
-                  "leftValue": "={{ $json.headers[\"x-contentful-topic\"] }}",
-                  "rightValue": "ContentManagement.Asset.delete",
-                  "operator": {
-                    "type": "string",
-                    "operation": "equals",
-                    "name": "filter.operator.equals"
-                  }
-                }
-              ],
-              "combinator": "and"
-            },
-            "renameOutput": true,
-            "outputKey": "Asset Delete"
+            "node": "Clean up IDs",
+            "type": "main",
+            "index": 0
           }
         ]
-      },
-      "options": {}
+      ]
     },
-    "type": "n8n-nodes-base.switch",
-    "typeVersion": 3.4,
-    "position": [
-      256,
-      -16
-    ],
-    "id": "b4e4c632-c0a7-4466-ab42-472139dc27ac",
-    "name": "Switch"
-  },
-  {
-    "parameters": {
-      "resource": "locale"
+    "Save an entity": {
+      "main": [
+        []
+      ]
     },
-    "type": "n8n-nodes-base.contentful",
-    "typeVersion": 1,
-    "position": [
-      592,
-      336
-    ],
-    "id": "536e9c1c-c276-4b83-8a91-0afc1d2fcf4b",
-    "name": "Get locales (entry)",
-    "credentials": {
-      "contentfulApi": {
-        "id": "__CONTENTFUL_CREDENTIAL_ID__",
-        "name": "Contentful account"
-      }
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Get locales (entry)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get locales (entry)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Entry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get locales (asset)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get locales (entry)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get locales (entry)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Get locales (entry)": {
+      "main": [
+        [
+          {
+            "node": "Build entity IDs (entry)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map entry to Enterspeed entity": {
+      "main": [
+        [
+          {
+            "node": "Save an entity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get locales (asset)": {
+      "main": [
+        [
+          {
+            "node": "Build entity IDs (asset)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build entity IDs (asset)": {
+      "main": [
+        [
+          {
+            "node": "Get asset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Entry": {
+      "main": [
+        [
+          {
+            "node": "Map entry to Enterspeed entity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean up IDs": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build entity IDs (entry)": {
+      "main": [
+        [
+          {
+            "node": "Delete an entity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get asset": {
+      "main": [
+        [
+          {
+            "node": "Map asset to Enterspeed entity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map asset to Enterspeed entity": {
+      "main": [
+        [
+          {
+            "node": "Save an entity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  {
-    "parameters": {
-      "resource": "entity",
-      "operation": "delete",
-      "originId": "={{ $json.contentfulId }}"
-    },
-    "type": "CUSTOM.enterspeed",
-    "typeVersion": 1,
-    "position": [
-      1088,
-      336
-    ],
-    "id": "1911a6ed-cbca-4e87-a908-36f2afafb663",
-    "name": "Delete an entity",
-    "notesInFlow": false,
-    "credentials": {
-      "enterspeedApi": {
-        "id": "__ENTERSPEED_CREDENTIAL_ID__",
-        "name": "Enterspeed account"
-      }
-    },
-    "onError": "continueRegularOutput",
-    "notes": "Note: If the is more locale from Contentful than in Enterspeed it will give a error from deleting one of the Source Entities. "
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
   },
-  {
-    "parameters": {
-      "jsCode": "const entry = $input.first().json; // one raw entry for one locale: { metadata, sys, fields }\n\nfunction toId(contentfulId, localeCode) {\n  return `${contentfulId}-${localeCode}`.toLowerCase();\n}\n\nfunction formatDate(dateString) {\n  return dateString ? dateString.slice(0, 19) : null;\n}\n\nfunction isLink(value) {\n  return value && typeof value === 'object' && value.sys && value.sys.type === 'Link';\n}\n\nfunction convertLink(link, localeCode) {\n  return {\n    id: toId(link.sys.id, localeCode),\n    type: link.sys.type,\n    linkType: link.sys.linkType\n  };\n}\n\nfunction convertFieldValue(value, localeCode) {\n  if (value === null || value === undefined) return null;\n\n  if (Array.isArray(value)) {\n    if (value.length > 0 && isLink(value[0])) {\n      return value.map(v => convertLink(v, localeCode));\n    }\n    return value;\n  }\n\n  if (isLink(value)) {\n    return convertLink(value, localeCode);\n  }\n\n  return value;\n}\n\nfunction buildMetaData(sys) {\n  return {\n    locale: sys.locale,\n    type: sys.type,\n    environment: sys.environment?.sys?.id,\n    createDate: formatDate(sys.createdAt),\n    updateDate: formatDate(sys.updatedAt)\n  };\n}\n\nfunction buildEnterspeedEntity(entry) {\n  const sys = entry.sys;\n  const localeCode = sys.locale;\n  const properties = {};\n\n  for (const [fieldName, value] of Object.entries(entry.fields)) {\n    const converted = convertFieldValue(value, localeCode);\n    if (converted !== null) {\n      properties[fieldName] = converted;\n    }\n  }\n\n  properties.metaData = buildMetaData(sys);\n\n  return {\n    originId: toId(sys.id, localeCode),   // used only to build the URL path — not part of the body\n    type: sys.contentType.sys.id,\n    url: null,\n    originParentId: null,\n    redirects: [],\n    properties\n  };\n}\n\nreturn { json: buildEnterspeedEntity(entry) };"
-    },
-    "type": "n8n-nodes-base.code",
-    "typeVersion": 2,
-    "position": [
-      864,
-      -112
-    ],
-    "id": "f4c6453f-80ad-4224-aae9-7bf52636709f",
-    "name": "Map entry to Enterspeed entity"
+  "meta": {
+    "templateCredsSetupCompleted": true
   },
-  {
-    "parameters": {
-      "resource": "locale"
-    },
-    "type": "n8n-nodes-base.contentful",
-    "typeVersion": 1,
-    "position": [
-      592,
-      96
-    ],
-    "id": "c81ef524-8fc9-4d11-b6dc-c04ae174bec9",
-    "name": "Get locales (asset)",
-    "credentials": {
-      "contentfulApi": {
-        "id": "__CONTENTFUL_CREDENTIAL_ID__",
-        "name": "Contentful account"
-      }
-    }
-  },
-  {
-    "parameters": {
-      "jsCode": "const items = $input.all();\n\nfor (const item of items) {\n  item.json.contentfulId = getId(\n    $('Clean up IDs').first().json.Id,\n    item.json.code\n  );\n}\n\nfunction getId(id, locale) {\n  return `${id}-${locale}`.toLowerCase();\n}\n\nreturn items;"
-    },
-    "type": "n8n-nodes-base.code",
-    "typeVersion": 2,
-    "position": [
-      864,
-      96
-    ],
-    "id": "f04012ae-e526-4214-bcc1-290fb145d93d",
-    "name": "Build entity IDs (asset)"
-  },
-  {
-    "parameters": {
-      "entryId": "={{ $('Clean up IDs').item.json.Id }}",
-      "additionalFields": {
-        "rawData": true
-      }
-    },
-    "type": "n8n-nodes-base.contentful",
-    "typeVersion": 1,
-    "position": [
-      592,
-      -112
-    ],
-    "id": "01c0f194-58d2-469a-a5f9-9e41ea344202",
-    "name": "Get Entry",
-    "credentials": {
-      "contentfulApi": {
-        "id": "__CONTENTFUL_CREDENTIAL_ID__",
-        "name": "Contentful account"
-      }
-    }
-  },
-  {
-    "parameters": {
-      "jsCode": "const crn = $input.first().json.headers[\"x-contentful-crn\"]\n\n$input.first().json.Id = crn.match(/(?:entries|assets)\\/([^/?]+)/)?.[1]\n\nreturn $input.first()\n\n"
-    },
-    "type": "n8n-nodes-base.code",
-    "typeVersion": 2,
-    "position": [
-      16,
-      64
-    ],
-    "id": "18ae7816-17ab-47f3-ac3a-df39babfcc74",
-    "name": "Clean up IDs"
-  },
-  {
-    "parameters": {
-      "jsCode": "const items = $input.all();\n\nfor (const item of items) {\n  item.json.contentfulId = getId(\n    $('Clean up IDs').first().json.Id,\n    item.json.code\n  );\n}\n\nfunction getId(id, locale) {\n  return `${id}-${locale}`.toLowerCase();\n}\n\nreturn items;"
-    },
-    "type": "n8n-nodes-base.code",
-    "typeVersion": 2,
-    "position": [
-      864,
-      336
-    ],
-    "id": "6815d35d-f527-4ab8-a596-520712296234",
-    "name": "Build entity IDs (entry)"
-  },
-  {
-    "parameters": {
-      "resource": "asset",
-      "operation": "get",
-      "assetId": "={{ $('Clean up IDs').item.json.Id }}"
-    },
-    "type": "n8n-nodes-base.contentful",
-    "typeVersion": 1,
-    "position": [
-      1088,
-      96
-    ],
-    "id": "991841e2-93b0-4ab2-8bbf-2bd0bd815674",
-    "name": "Get asset",
-    "executeOnce": false,
-    "alwaysOutputData": false,
-    "credentials": {
-      "contentfulApi": {
-        "id": "__CONTENTFUL_CREDENTIAL_ID__",
-        "name": "Contentful account"
-      }
-    }
-  },
-  {
-    "parameters": {
-      "jsCode": "const entry = $input.first().json; // one raw entry for one locale: { metadata, sys, fields }\n\nfunction toId(contentfulId, localeCode) {\n  return `${contentfulId}-${localeCode}`.toLowerCase();\n}\n\nfunction formatDate(dateString) {\n  return dateString ? dateString.slice(0, 19) : null;\n}\n\nfunction isLink(value) {\n  return value && typeof value === 'object' && value.sys && value.sys.type === 'Link';\n}\n\nfunction convertLink(link, localeCode) {\n  return {\n    id: toId(link.sys.id, localeCode),\n    type: link.sys.type,\n    linkType: link.sys.linkType\n  };\n}\n\nfunction convertFieldValue(value, localeCode) {\n  if (value === null || value === undefined) return null;\n\n  if (Array.isArray(value)) {\n    if (value.length > 0 && isLink(value[0])) {\n      return value.map(v => convertLink(v, localeCode));\n    }\n    return value;\n  }\n\n  if (isLink(value)) {\n    return convertLink(value, localeCode);\n  }\n\n  return value;\n}\n\nfunction buildMetaData(sys) {\n  return {\n    locale: sys.locale,\n    type: sys.type,\n    environment: sys.environment?.sys?.id,\n    createDate: formatDate(sys.createdAt),\n    updateDate: formatDate(sys.updatedAt)\n  };\n}\n\nfunction buildEnterspeedEntity(entry) {\n  const sys = entry.sys;\n  const localeCode = sys.locale;\n  const properties = {};\n\n  for (const [fieldName, value] of Object.entries(entry.fields)) {\n    const converted = convertFieldValue(value, localeCode);\n    if (converted !== null) {\n      properties[fieldName] = converted;\n    }\n  }\n\n  properties.metaData = buildMetaData(sys);\n\n  return {\n    originId: toId(sys.id, localeCode),   // used only to build the URL path — not part of the body\n    type: sys.contentType.sys.id,\n    url: null,\n    originParentId: null,\n    redirects: [],\n    properties\n  };\n}\n\nreturn { json: buildEnterspeedEntity(entry) };"
-    },
-    "type": "n8n-nodes-base.code",
-    "typeVersion": 2,
-    "position": [
-      1296,
-      96
-    ],
-    "id": "c184f713-8ca9-4b68-b0eb-789bb135fd68",
-    "name": "Map asset to Enterspeed entity"
-  },
-  {
-    "parameters": {
-      "content": "## Contentful → Enterspeed: Automatic Content Sync\n\nThis example shows how any change in Contentful — publishing, updating, or removing an entry or asset — flows automatically into Enterspeed as structured, ready-to-deliver data. No custom backend code, no manual re-entry.\n\n### How it works\n\n1. **Contentful sends a webhook** the moment an editor publishes, unpublishes, or deletes content — for both entries and assets.\n2. **n8n receives and routes the event** based on what happened and what type of content it affects.\n3. **On publish**, n8n fetches the full content, maps it into Enterspeed's format, and ingests it as a source entity — instantly available through Enterspeed's Delivery API.\n4. **On unpublish or delete**, n8n removes the corresponding entity — across every locale it was published in — keeping Enterspeed in sync with Contentful.\n\n### Why it matters\n\nContent teams keep working in Contentful exactly as they do today. Behind the scenes, every change is captured and delivered through Enterspeed's high-performance API, with no manual syncing step and no custom integration to maintain.\n\n*This demo focuses on core content sync. A full production setup would build on this foundation with additional Enterspeed capabilities, such as content relationships and reference linking between entities.*\n",
-      "height": 576,
-      "width": 1392
-    },
-    "type": "n8n-nodes-base.stickyNote",
-    "position": [
-      -208,
-      592
-    ],
-    "typeVersion": 1,
-    "id": "77210e99-2f2a-4e62-ba72-57202de844ca",
-    "name": "Sticky Note"
-  }
-],
-"pinData": {},
-"connections": {
-  "Webhook": {
-    "main": [
-      [
-        {
-          "node": "Clean up IDs",
-          "type": "main",
-          "index": 0
-        }
-      ]
-    ]
-  },
-  "Save an entity": {
-    "main": [
-      []
-    ]
-  },
-  "Switch": {
-    "main": [
-      [
-        {
-          "node": "Get locales (entry)",
-          "type": "main",
-          "index": 0
-        }
-      ],
-      [
-        {
-          "node": "Get locales (entry)",
-          "type": "main",
-          "index": 0
-        }
-      ],
-      [
-        {
-          "node": "Get Entry",
-          "type": "main",
-          "index": 0
-        }
-      ],
-      [
-        {
-          "node": "Get locales (asset)",
-          "type": "main",
-          "index": 0
-        }
-      ],
-      [
-        {
-          "node": "Get locales (entry)",
-          "type": "main",
-          "index": 0
-        }
-      ],
-      [
-        {
-          "node": "Get locales (entry)",
-          "type": "main",
-          "index": 0
-        }
-      ],
-      []
-    ]
-  },
-  "Get locales (entry)": {
-    "main": [
-      [
-        {
-          "node": "Build entity IDs (entry)",
-          "type": "main",
-          "index": 0
-        }
-      ]
-    ]
-  },
-  "Map entry to Enterspeed entity": {
-    "main": [
-      [
-        {
-          "node": "Save an entity",
-          "type": "main",
-          "index": 0
-        }
-      ]
-    ]
-  },
-  "Get locales (asset)": {
-    "main": [
-      [
-        {
-          "node": "Build entity IDs (asset)",
-          "type": "main",
-          "index": 0
-        }
-      ]
-    ]
-  },
-  "Build entity IDs (asset)": {
-    "main": [
-      [
-        {
-          "node": "Get asset",
-          "type": "main",
-          "index": 0
-        }
-      ]
-    ]
-  },
-  "Get Entry": {
-    "main": [
-      [
-        {
-          "node": "Map entry to Enterspeed entity",
-          "type": "main",
-          "index": 0
-        }
-      ]
-    ]
-  },
-  "Clean up IDs": {
-    "main": [
-      [
-        {
-          "node": "Switch",
-          "type": "main",
-          "index": 0
-        }
-      ]
-    ]
-  },
-  "Build entity IDs (entry)": {
-    "main": [
-      [
-        {
-          "node": "Delete an entity",
-          "type": "main",
-          "index": 0
-        }
-      ]
-    ]
-  },
-  "Get asset": {
-    "main": [
-      [
-        {
-          "node": "Map asset to Enterspeed entity",
-          "type": "main",
-          "index": 0
-        }
-      ]
-    ]
-  },
-  "Map asset to Enterspeed entity": {
-    "main": [
-      [
-        {
-          "node": "Save an entity",
-          "type": "main",
-          "index": 0
-        }
-      ]
-    ]
-  }
-},
-"active": false,
-"settings": {
-  "executionOrder": "v1",
-  "binaryMode": "separate",
-  "availableInMCP": false
-},
-"meta": {
-  "templateCredsSetupCompleted": true
-},
-"nodeGroups": [],
-"tags": []
+  "nodeGroups": [],
+  "tags": []
 }
-]

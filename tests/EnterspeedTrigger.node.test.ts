@@ -1,98 +1,122 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { IDataObject, INodeExecutionData } from 'n8n-workflow';
+import type { IDataObject, IWebhookResponseData } from 'n8n-workflow';
 import { EnterspeedTrigger } from '../nodes/Enterspeed/EnterspeedTrigger.node';
-import { createPollMock, defaultCreds } from './mocks';
+import { createWebhookMock, defaultCreds } from './mocks';
 
 /**
- * The trigger polls the Query API and emits only items that are new or changed
- * since the last poll. State lives in `staticData`, which we pass as a live
- * object so it carries across successive poll() calls.
+ * The webhook trigger receives Enterspeed's notification payload (PascalCase
+ * { Id, OriginId, Type, Action, Url }), optionally verifies the X-Api-Key
+ * header, optionally fetches the full view via the delivery URL, and emits it.
  */
 
 const node = new EnterspeedTrigger();
 const baseParams = {
-	indexAlias: 'productIndex',
-	markerField: 'updatedAt',
-	idField: 'id',
-	emitOnFirst: false,
-	queryBody: { pagination: { page: 1, size: 200 } },
+	actions: ['Deploy', 'Remove'],
+	fetchView: true,
+	accessKey: '',
 };
 
-function poll(opts: {
-	results: IDataObject[];
-	staticData: IDataObject;
+const deployBody: IDataObject = {
+	Id: 'view-1',
+	OriginId: 'product-1',
+	Type: 'productView',
+	Action: 'Deploy',
+	Url: 'https://delivery.enterspeed.com/v2?id=view-1',
+};
+
+function run(opts: {
+	body: IDataObject;
 	params?: Record<string, unknown>;
+	headers?: IDataObject;
+	httpRequest?: ReturnType<typeof vi.fn>;
 }) {
-	const httpRequest = vi.fn(async () => ({ results: opts.results }));
-	const { ctx } = createPollMock({
+	const httpRequest = opts.httpRequest ?? vi.fn(async () => ({ id: 'view-1', value: 'full' }));
+	const { ctx, response } = createWebhookMock({
 		params: { ...baseParams, ...opts.params },
 		creds: defaultCreds,
+		body: opts.body,
+		headers: opts.headers,
 		httpRequest,
-		staticData: opts.staticData,
 	});
-	return { promise: node.poll.call(ctx), httpRequest };
+	return { promise: node.webhook.call(ctx) as Promise<IWebhookResponseData>, httpRequest, response };
 }
 
-describe('EnterspeedTrigger.poll', () => {
-	it('first run sets a baseline and emits nothing (emitOnFirst=false)', async () => {
-		const staticData: IDataObject = {};
-		const { promise } = poll({ results: [{ id: '1', updatedAt: 'a' }], staticData });
-		expect(await promise).toBeNull();
-		expect(staticData.seen).toEqual({ '1': 'a' });
-		expect(staticData.initialised).toBe(true);
+describe('EnterspeedTrigger.webhook', () => {
+	it('emits the raw notification and makes no HTTP call when fetchView=false', async () => {
+		const { promise, httpRequest } = run({ body: deployBody, params: { fetchView: false } });
+		const result = await promise;
+		expect(httpRequest).not.toHaveBeenCalled();
+		expect(result.workflowData?.[0][0].json).toEqual(deployBody);
 	});
 
-	it('first run emits all current items when emitOnFirst=true', async () => {
-		const staticData: IDataObject = {};
-		const { promise } = poll({
-			results: [{ id: '1', updatedAt: 'a' }, { id: '2', updatedAt: 'b' }],
-			staticData,
-			params: { emitOnFirst: true },
+	it('fetches the full view from the delivery URL with the env key on Deploy', async () => {
+		const { promise, httpRequest } = run({ body: deployBody });
+		const result = await promise;
+		expect(httpRequest).toHaveBeenCalledWith({
+			method: 'GET',
+			url: deployBody.Url,
+			headers: { 'X-Api-Key': 'env-key' },
+			json: true,
 		});
-		const out = (await promise) as INodeExecutionData[][];
-		expect(out[0]).toHaveLength(2);
-	});
-
-	it('emits only the changed item on a subsequent poll', async () => {
-		const staticData: IDataObject = { seen: { '1': 'a', '2': 'b' }, initialised: true };
-		const { promise } = poll({
-			results: [
-				{ id: '1', updatedAt: 'a' }, // unchanged
-				{ id: '2', updatedAt: 'b2' }, // changed marker
-			],
-			staticData,
+		expect(result.workflowData?.[0][0].json).toMatchObject({
+			Id: 'view-1',
+			view: { id: 'view-1', value: 'full' },
 		});
-		const out = (await promise) as INodeExecutionData[][];
-		expect(out[0]).toHaveLength(1);
-		expect(out[0][0].json).toMatchObject({ id: '2', updatedAt: 'b2' });
 	});
 
-	it('emits a brand-new item that was not seen before', async () => {
-		const staticData: IDataObject = { seen: { '1': 'a' }, initialised: true };
-		const { promise } = poll({
-			results: [{ id: '1', updatedAt: 'a' }, { id: '3', updatedAt: 'c' }],
-			staticData,
+	it('does not fetch on Remove (no Url) and emits the notification', async () => {
+		const removeBody: IDataObject = { Id: 'view-1', Type: 'productView', Action: 'Remove' };
+		const { promise, httpRequest } = run({ body: removeBody });
+		const result = await promise;
+		expect(httpRequest).not.toHaveBeenCalled();
+		expect(result.workflowData?.[0][0].json).toEqual(removeBody);
+	});
+
+	it('also honours lower-case payload fields as a fallback', async () => {
+		const lowerBody: IDataObject = { id: 'view-1', action: 'Deploy', url: 'https://delivery.enterspeed.com/v2?id=view-1' };
+		const { promise, httpRequest } = run({ body: lowerBody });
+		await promise;
+		expect(httpRequest).toHaveBeenCalledWith(
+			expect.objectContaining({ url: lowerBody.url }),
+		);
+	});
+
+	it('acknowledges but does not start the workflow for an unselected action', async () => {
+		const { promise, httpRequest } = run({ body: deployBody, params: { actions: ['Remove'] } });
+		const result = await promise;
+		expect(result).toEqual({});
+		expect(httpRequest).not.toHaveBeenCalled();
+	});
+
+	it('rejects with 403 when the access key header does not match', async () => {
+		const { promise, httpRequest, response } = run({
+			body: deployBody,
+			params: { accessKey: 'secret' },
+			headers: { 'x-api-key': 'wrong' },
 		});
-		const out = (await promise) as INodeExecutionData[][];
-		expect(out[0]).toHaveLength(1);
-		expect(out[0][0].json).toMatchObject({ id: '3' });
+		const result = await promise;
+		expect(response.status).toBe(403);
+		expect(result.noWebhookResponse).toBe(true);
+		expect(result.workflowData).toBeUndefined();
+		expect(httpRequest).not.toHaveBeenCalled();
 	});
 
-	it('returns null when nothing changed', async () => {
-		const staticData: IDataObject = { seen: { '1': 'a' }, initialised: true };
-		const { promise } = poll({ results: [{ id: '1', updatedAt: 'a' }], staticData });
-		expect(await promise).toBeNull();
-	});
-
-	it('falls back to hashing the whole item when the marker field is absent', async () => {
-		const staticData: IDataObject = { seen: { '1': JSON.stringify({ id: '1', v: 1 }) }, initialised: true };
-		const { promise } = poll({
-			results: [{ id: '1', v: 2 }],
-			staticData,
-			params: { markerField: 'updatedAt' }, // field not present on the item
+	it('passes when the access key header matches', async () => {
+		const { promise } = run({
+			body: deployBody,
+			params: { accessKey: 'secret' },
+			headers: { 'x-api-key': 'secret' },
 		});
-		const out = (await promise) as INodeExecutionData[][];
-		expect(out[0]).toHaveLength(1);
-		expect(out[0][0].json).toMatchObject({ id: '1', v: 2 });
+		const result = await promise;
+		expect(result.workflowData?.[0][0].json).toMatchObject({ Id: 'view-1' });
+	});
+
+	it('still emits with an error field when the view fetch fails', async () => {
+		const httpRequest = vi.fn(async () => {
+			throw new Error('boom');
+		});
+		const { promise } = run({ body: deployBody, httpRequest });
+		const result = await promise;
+		expect(result.workflowData?.[0][0].json).toMatchObject({ Id: 'view-1', error: 'boom' });
 	});
 });

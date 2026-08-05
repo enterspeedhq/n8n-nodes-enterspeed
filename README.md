@@ -4,11 +4,10 @@
 
 n8n community nodes for [Enterspeed](https://www.enterspeed.com) — get data **into** Enterspeed and feeds **out** of it, then wire it to any of n8n's 1,100+ destinations.
 
-This package ships three nodes:
+This package ships two nodes:
 
 - **Enterspeed** (action) — Ingest, Delivery, Query and Routes operations.
 - **Enterspeed Webhook Trigger** (push) — starts a workflow when a view is deployed or removed.
-- **Enterspeed Trigger** (polling) — starts a workflow when items in an index change.
 
 No keys are bundled. The customer enters their own Enterspeed credentials at runtime.
 
@@ -34,9 +33,11 @@ Create an **Enterspeed API** credential with:
 
 ## Operations
 
-**Entity (Ingest)** — `POST/DELETE https://api.enterspeed.com/ingest/v2/{originId}`
+**Entity (Ingest)** — `POST/DELETE https://api.enterspeed.com/ingest/v2/{originId}` or `/ingest/v2` (bulk)
 - *Save*: requires Origin ID, Entity Type (immutable after first ingest) and a JSON body.
 - *Delete*: requires Origin ID.
+- *Save Entities (Bulk)*: POST a JSON array of up to 50 entities (no path params).
+- *Delete Entities (Bulk)*: DELETE with `{ "originIds": [...] }` body of up to 50 origin IDs.
 
 **Delivery — Get Content** — `GET https://delivery.enterspeed.com/v2`
 - Fetch by URL, comma-separated view IDs, and/or handles.
@@ -44,8 +45,8 @@ Create an **Enterspeed API** credential with:
 **Query — Query Index** — `POST https://query.enterspeed.com/v1/{indexAlias}`
 - Pass a JSON body with `filters`, `sort`, `pagination`, `facets` (all optional).
 
-**Route — Get Many** — `GET https://api.enterspeed.com/routes/v1`
-- Page size 100–500.
+**Route — Get Many** — `GET https://api.enterspeed.com/routes/v2`
+- Paginated via the `X-Continuation-Token` header. Leave Continuation Token empty for the first page, then feed the response's `continuationToken` back in to fetch subsequent pages.
 
 ## Webhook trigger (views)
 
@@ -70,134 +71,24 @@ With *Fetch Full View* enabled (default), the node fetches the view from that `U
 using the Environment API Key and attaches it as `view`. Removals carry no `Url`, so
 nothing is fetched. Use *Actions* to react to only deploys, only removals, or both.
 
-Routes and indices do **not** emit webhooks — use the polling trigger below for those.
+Routes and indices do **not** emit webhooks — use the polling workflow below for those.
 
-## Polling trigger (indices)
+## Polling for changes (indices)
 
-For indices (which have no webhooks), the polling trigger queries a Query index on a
-schedule and emits items that are new or changed since the last run. The first run sets
-a baseline (no flood) unless *Emit On First Poll* is enabled. Change detection uses a
-configurable marker field (e.g. `updatedAt`) and ID field.
+There is no polling node — indices are watched by combining native n8n nodes
+with the **Query** operation above: a Schedule Trigger runs the Query on an
+interval, and a Code node compares each result against what was seen last
+time (kept in the workflow's static data), emitting only items that are new
+or changed. The first run sets a baseline (no flood) unless *Emit On First
+Poll* is enabled; change detection uses a configurable marker field (e.g.
+`updatedAt`) and ID field. See the
+[`poll-index-for-changes`](workflows/templates/poll-index-for-changes.json)
+example workflow.
 
 ## Typical flows
 
 - **Ingest**: Source (PIM/CMS/ERP) → map → **Enterspeed: Save Entity**.
-- **Delivery / last mile**: **Enterspeed Trigger** → map to feed (XML/CSV) → push to Google / Meta / marketplace.
-
-## Build from source
-
-```bash
-npm install
-npm run build      # tsc + copies icons to dist
-npm run lint       # n8n community-node linter
-```
-
-## Status & next steps
-
-Starter implementation, verified against the public Enterspeed OpenAPI spec
-(v0.4.0). Before publishing: run in a local n8n against a real tenant, run
-`npm run lint`, then `npm publish` and submit for n8n's verified-node program.
-
-## Releasing
-
-### Pre-release checklist
-
-- [ ] Tested against a real Enterspeed tenant in a local n8n instance
-- [ ] `npm run lint` passes with no errors
-- [ ] `npm test` passes
-- [ ] `npm run build` succeeds and `dist/` is populated
-- [ ] `package.json` version is bumped appropriately (see below)
-
-### Versioning
-
-Follow [semver](https://semver.org):
-
-| Change | Version bump |
-|---|---|
-| Bug fix, doc update | `patch` — e.g. `0.1.0` → `0.1.1` |
-| New operation or node, backwards-compatible | `minor` — e.g. `0.1.0` → `0.2.0` |
-| Breaking credential or API shape change | `major` — e.g. `0.1.0` → `1.0.0` |
-
-### Manual release
-
-```bash
-# 1. Bump version, commit, and tag in one step
-npm version patch   # or minor / major
-
-# 2. Build
-npm run build
-
-# 3. Publish to npm (requires npm login with an account that has publish access)
-npm publish --access public
-
-# 4. Push the version commit and tag to GitHub
-git push --follow-tags
-```
-
-After publishing, users who installed the package via n8n's Community Nodes UI
-can update through **Settings → Community Nodes** once the new version is live
-on npm (usually within a few minutes).
-
-### Automated releases (GitHub Actions)
-
-When the project is ready for automated CD, the following two-workflow setup
-covers CI on every push/PR and publishes to npm on version tags:
-
-**`.github/workflows/ci.yml`** — runs on every push and pull request to `main`:
-
-```yaml
-on:
-  push:
-    branches: [main]
-  pull_request:
-
-jobs:
-  ci:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - run: npm ci
-      - run: npm run lint
-      - run: npm test
-      - run: npm run build
-```
-
-**`.github/workflows/release.yml`** — triggered by pushing a version tag (`v*`):
-
-```yaml
-on:
-  push:
-    tags: ['v*']
-
-jobs:
-  publish:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          registry-url: https://registry.npmjs.org
-      - run: npm ci
-      - run: npm test
-      - run: npm run build
-      - run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-```
-
-Add an `NPM_TOKEN` secret in GitHub repo **Settings → Secrets → Actions** — a
-granular npm access token scoped to `n8n-nodes-enterspeed` with publish
-permission. With this in place, `git push --follow-tags` is the only manual
-step needed to ship a release.
+- **Delivery / last mile**: **Poll Index for Changes** → map to feed (XML/CSV) → push to Google / Meta / marketplace.
 
 ## Licence
 

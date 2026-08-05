@@ -47,9 +47,12 @@ if (!hasContentful && (CONTENTFUL_SPACE_ID || CONTENTFUL_DELIVERY_TOKEN || CONTE
 }
 
 // Check if credentials already exist.
+// n8n's CLI can print startup notices (e.g. telemetry status) to stdout ahead
+// of the JSON payload, so parse from the first '[' rather than the raw output.
 let exportedRaw;
 try {
   exportedRaw = execSync(`docker exec ${CONTAINER} n8n export:credentials --all`, { encoding: 'utf-8' });
+  exportedRaw = exportedRaw.slice(exportedRaw.indexOf('['));
 } catch {
   exportedRaw = '[]';
 }
@@ -131,7 +134,7 @@ for (const file of templates) {
   console.log(`Importing ${file}...`);
   const template = JSON.parse(templateContent);
   // n8n import requires a workflow id
-  template[0].id = crypto.randomUUID();
+  template.id = crypto.randomUUID();
   const patched = JSON.stringify(template);
   execSync(`docker exec -i ${CONTAINER} n8n import:workflow --input=/dev/stdin`, {
     input: patched,
