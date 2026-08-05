@@ -9,6 +9,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Added
 
 - Example workflow: Contentful → Enterspeed ingestion (`workflows/templates/ingest-contentful-into-enterspeed.json`), syncing entry and asset publish/unpublish/delete events across locales.
+- Example workflow: Bulk Save and Delete (`workflows/templates/bulk-save-and-delete.json`), exercising `Save Entities (Bulk)` and `Delete Entities (Bulk)` end-to-end and verifying via the Delivery API that entities actually appear and disappear, not just that the calls returned 200. Run in CI (`e2e` job) alongside `fetch-transform-reingest.json`.
 
 ### Changed
 
