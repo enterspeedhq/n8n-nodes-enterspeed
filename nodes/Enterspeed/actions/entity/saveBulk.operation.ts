@@ -2,6 +2,7 @@ import type { IDataObject, IExecuteFunctions, IHttpRequestOptions, INodeExecutio
 import { NodeOperationError } from 'n8n-workflow';
 import { enterspeedApiRequest } from '../../transport';
 import type { EnterspeedCredentials } from '../types';
+import { MAX_BULK_ENTITIES } from './shared';
 
 export const properties: INodeProperties[] = [
 	{
@@ -12,8 +13,7 @@ export const properties: INodeProperties[] = [
 		required: true,
 		hint: 'See https://docs.enterspeed.com/api-reference/ingest/save-entities for entities format.',
 		displayOptions: { show: { resource: ['entity'], operation: ['saveBulk'] } },
-		description:
-			'Array of entities. Example: [ { "type": "product", "originId": "p-5427", "properties": { "name": "Official Enterspeed T-shirt" } } ].',
+		description: `Array of entities, with up to ${MAX_BULK_ENTITIES} entities. Example: [ { "type": "product", "originId": "p-5427", "properties": { "name": "Official Enterspeed T-shirt" } } ].`,
 	},
 ];
 
