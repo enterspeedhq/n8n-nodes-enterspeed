@@ -81,7 +81,9 @@ The included `fetch-transform-reingest.json` is configured against the **N8N dem
 1. Open the workflow in n8n
 2. Menu → Download — saves a `.json` file
 3. Strip personal/environment-specific fields before committing: `id`, `versionId`, `shared`, `creatorId`, `projectId`, `workflowId`, and any real credential IDs
-4. Replace the credential ID with `__ENTERSPEED_CREDENTIAL_ID__`
+4. Replace each credential ID with a placeholder: `__ENTERSPEED_CREDENTIAL_ID__`, `__CONTENTFUL_CREDENTIAL_ID__`, etc.
+   - Use the pattern `__<SERVICE>_CREDENTIAL_ID__` (all caps, underscores)
+   - If the setup script doesn't yet support your service, add support to `scripts/setup.mjs`
 5. Move it into `workflows/templates/` and commit it
 
 > **Note:** templates use the node type `CUSTOM.enterspeed`, which is the prefix n8n assigns when loading via `N8N_CUSTOM_EXTENSIONS` (the Docker path). If you load the package via `npm link` instead, your nodes will be registered as `n8n-nodes-enterspeed.enterspeed` and the imported template will show the nodes as unknown. Use the Docker setup when working with example workflows.
