@@ -55,8 +55,10 @@ if (!cookie) {
 const authHeader = { Cookie: cookie };
 
 // Find the workflow by name.
+// n8n's CLI can print startup notices (e.g. telemetry status) to stdout ahead
+// of the JSON payload, so parse from the first '[' rather than the raw output.
 const exported = execSync(`docker exec ${CONTAINER} n8n export:workflow --all 2>/dev/null`, { encoding: 'utf-8' });
-const workflows = JSON.parse(exported);
+const workflows = JSON.parse(exported.slice(exported.indexOf('[')));
 const workflow = workflows.find((w) => w.name === WORKFLOW_NAME);
 if (!workflow) {
   console.error(`Workflow "${WORKFLOW_NAME}" not found. Available: ${workflows.map((w) => w.name).join(', ')}`);
