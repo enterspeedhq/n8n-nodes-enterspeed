@@ -1,0 +1,361 @@
+{
+  "name": "Bulk Save and Delete",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -624,
+        0
+      ],
+      "id": "a1b2c3d4-0001-4a11-8a11-000000000001",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "jsCode": "const runId = `${$now.toMillis()}-${Math.floor(Math.random() * 1e6)}`;\nconst COUNT = 5;\n\n// A small batch, not the full MAX_BULK_ENTITIES cap (nodes/Enterspeed/actions/entity/shared.ts)\n// — keeps this CI step fast while still exercising the real saveBulk/deleteBulk code path.\n// Shaped like a real `product` entity (see docs.enterspeed.com/api-reference/ingest/save-entities)\n// rather than a minimal test payload, since that's what this bulk path actually ingests in production.\nconst entities = [];\nfor (let i = 1; i <= COUNT; i++) {\n  const originId = `e2e-bulk-${runId}-${i}`;\n  const sku = `ENT-E2E-${runId}-${i}`;\n  entities.push({\n    type: 'product',\n    originId,\n    originParentId: null,\n    url: `/products/e2e-bulk-test-${runId}-${i}`,\n    redirects: [],\n    properties: {\n      sku,\n      productName: `E2E Bulk Test Product ${i}`,\n      category: 'Footwear > Outdoor > Hiking',\n      brand: 'TrailForm',\n      priceExclVat: 899,\n      currency: 'DKK',\n      stockStatus: 'In Stock',\n      stockQuantity: 142,\n      colour: 'Slate Grey / Burnt Orange',\n      sizeRange: 'EU 38-46',\n      material: 'Recycled mesh upper, rubber outsole',\n      weightGrams: 340,\n    },\n  });\n}\n\nreturn [{\n  json: {\n    entities,\n    originIds: entities.map((e) => e.originId),\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        0
+      ],
+      "id": "a1b2c3d4-0002-4a11-8a11-000000000002",
+      "name": "Build Test Entities"
+    },
+    {
+      "parameters": {
+        "resource": "entity",
+        "operation": "saveBulk",
+        "entities": "={{ $json.entities }}"
+      },
+      "type": "CUSTOM.enterspeed",
+      "typeVersion": 1,
+      "position": [
+        -176,
+        0
+      ],
+      "id": "a1b2c3d4-0003-4a11-8a11-000000000003",
+      "name": "Save Entities (Bulk)",
+      "credentials": {
+        "enterspeedApi": {
+          "id": "__ENTERSPEED_CREDENTIAL_ID__",
+          "name": "Enterspeed account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        48,
+        0
+      ],
+      "id": "a1b2c3d4-0004-4a11-8a11-000000000004",
+      "name": "Wait"
+    },
+    {
+      "parameters": {
+        "jsCode": "const { entities } = $('Build Test Entities').first().json;\nreturn entities.map((e) => ({\n  json: { originId: e.originId, url: e.url, sku: e.properties.sku },\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        0
+      ],
+      "id": "a1b2c3d4-0005-4a11-8a11-000000000005",
+      "name": "Prepare Exists Check"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}"
+      },
+      "type": "CUSTOM.enterspeed",
+      "typeVersion": 1,
+      "position": [
+        496,
+        0
+      ],
+      "id": "a1b2c3d4-0006-4a11-8a11-000000000006",
+      "name": "Get Content (Verify Exists)",
+      "credentials": {
+        "enterspeedApi": {
+          "id": "__ENTERSPEED_CREDENTIAL_ID__",
+          "name": "Enterspeed account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const { originId, sku } = $('Prepare Exists Check').item.json;\nconst route = $json.route;\n\nif (!route) {\n  throw new Error(`Entity ${originId}: no route returned after Save Bulk — entity was not created (or ingest hadn't finished processing yet)`);\n}\n\nif (route.sku !== sku) {\n  throw new Error(`Entity ${originId}: expected route.sku \"${sku}\", got ${JSON.stringify(route.sku)}`);\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ],
+      "id": "a1b2c3d4-0007-4a11-8a11-000000000007",
+      "name": "Verify Entities Exist"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { originIds: $('Build Test Entities').first().json.originIds } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        944,
+        0
+      ],
+      "id": "a1b2c3d4-0008-4a11-8a11-000000000008",
+      "name": "Consolidate Before Delete"
+    },
+    {
+      "parameters": {
+        "resource": "entity",
+        "operation": "deleteBulk",
+        "originIds": "={{ { originIds: $json.originIds } }}"
+      },
+      "type": "CUSTOM.enterspeed",
+      "typeVersion": 1,
+      "position": [
+        1168,
+        0
+      ],
+      "id": "a1b2c3d4-0009-4a11-8a11-000000000009",
+      "name": "Delete Entities (Bulk)",
+      "credentials": {
+        "enterspeedApi": {
+          "id": "__ENTERSPEED_CREDENTIAL_ID__",
+          "name": "Enterspeed account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1392,
+        0
+      ],
+      "id": "a1b2c3d4-0010-4a11-8a11-000000000010",
+      "name": "Wait1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const { entities } = $('Build Test Entities').first().json;\nreturn entities.map((e) => ({\n  json: { originId: e.originId, url: e.url, sku: e.properties.sku },\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1616,
+        0
+      ],
+      "id": "a1b2c3d4-0011-4a11-8a11-000000000011",
+      "name": "Prepare Deleted Check"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}"
+      },
+      "type": "CUSTOM.enterspeed",
+      "typeVersion": 1,
+      "position": [
+        1840,
+        0
+      ],
+      "id": "a1b2c3d4-0012-4a11-8a11-000000000012",
+      "name": "Get Content (Verify Deleted)",
+      "continueOnFail": true,
+      "credentials": {
+        "enterspeedApi": {
+          "id": "__ENTERSPEED_CREDENTIAL_ID__",
+          "name": "Enterspeed account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const { originId, sku } = $('Prepare Deleted Check').item.json;\nconst response = $json;\n\n// nodes/Enterspeed/actions/router.ts reports a continueOnFail'd request as\n// { error, description } instead of throwing — that's the expected shape here,\n// since the route should 404 once the entity is actually deleted.\nconst wasReportedMissing = typeof response.error === 'string';\nconst hasLiveRoute = response.route && response.route.sku === sku;\n\nif (hasLiveRoute) {\n  throw new Error(`Entity ${originId}: still present after Delete Bulk (route.sku=${response.route.sku})`);\n}\n\nif (!wasReportedMissing && response.route !== null) {\n  throw new Error(`Entity ${originId}: unexpected response after Delete Bulk — neither a clear 'not found' error nor a live route: ${JSON.stringify(response)}`);\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2064,
+        0
+      ],
+      "id": "a1b2c3d4-0013-4a11-8a11-000000000013",
+      "name": "Verify Entities Deleted"
+    },
+    {
+      "parameters": {
+        "content": "## What this workflow demonstrates\n\nEnd-to-end coverage for the Enterspeed node's bulk ingest operations, run in CI (`.github/workflows/ci.yml`, `e2e` job) alongside `fetch-transform-reingest.json`.\n\n[Save Entities API docs](https://docs.enterspeed.com/api-reference/ingest/save-entities)\n\n### The flow\n\n1. Build 5 synthetic `product` entities with unique origin IDs and URLs — a small batch, not the full `MAX_BULK_ENTITIES` cap in `nodes/Enterspeed/actions/entity/shared.ts`, to keep this CI step fast while still exercising the real bulk code path.\n2. **Save Entities (Bulk)** — ingest all 5 in one call.\n3. Wait: ingest is asynchronous.\n4. Fetch each entity's View by URL via the Delivery API and verify it exists with the expected data — not just that Save Bulk returned 200.\n5. **Delete Entities (Bulk)** — delete all 5 origin IDs in one call.\n6. Wait again.\n7. Re-fetch each URL and verify it's now gone — not just that Delete Bulk returned 200.\n\nIf any entity fails to appear after step 4, or is still resolvable after step 7, the Code node throws and the workflow — and therefore CI — fails.",
+        "height": 500,
+        "width": 700,
+        "color": "#000034"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -624,
+        -600
+      ],
+      "typeVersion": 1,
+      "id": "a1b2c3d4-0014-4a11-8a11-000000000014",
+      "name": "Sticky Note"
+    }
+  ],
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Build Test Entities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Test Entities": {
+      "main": [
+        [
+          {
+            "node": "Save Entities (Bulk)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Entities (Bulk)": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Prepare Exists Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Exists Check": {
+      "main": [
+        [
+          {
+            "node": "Get Content (Verify Exists)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Content (Verify Exists)": {
+      "main": [
+        [
+          {
+            "node": "Verify Entities Exist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Entities Exist": {
+      "main": [
+        [
+          {
+            "node": "Consolidate Before Delete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidate Before Delete": {
+      "main": [
+        [
+          {
+            "node": "Delete Entities (Bulk)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Entities (Bulk)": {
+      "main": [
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait1": {
+      "main": [
+        [
+          {
+            "node": "Prepare Deleted Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Deleted Check": {
+      "main": [
+        [
+          {
+            "node": "Get Content (Verify Deleted)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Content (Verify Deleted)": {
+      "main": [
+        [
+          {
+            "node": "Verify Entities Deleted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {}
+}

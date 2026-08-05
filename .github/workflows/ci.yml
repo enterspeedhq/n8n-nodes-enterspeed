@@ -77,6 +77,12 @@ jobs:
           N8N_CONTAINER: n8n-nodes-enterspeed-n8n-1
         run: node scripts/execute-workflow.mjs
 
+      - name: Execute bulk save/delete workflow
+        env:
+          N8N_CONTAINER: n8n-nodes-enterspeed-n8n-1
+          N8N_WORKFLOW_NAME: 'Bulk Save and Delete'
+        run: node scripts/execute-workflow.mjs
+
       - name: Stop n8n
         if: always()
         run: docker compose down
