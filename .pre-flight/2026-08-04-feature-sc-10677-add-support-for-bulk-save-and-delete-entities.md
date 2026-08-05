@@ -44,4 +44,4 @@ workflows/templates/poll-index-for-changes.json
 
 ## Observations
 
-The README operations section still lists Entity as `Save` and `Delete` only, but the code now has four operations: `Save`, `Delete`, `Save Entities (Bulk)`, and `Delete Entities (Bulk)`. The bulk operations are well-tested and properly integrated into the dispatcher, so consider adding a line to the Entity section documenting the bulk variants — something like `*Save Entities (Bulk)* / *Delete Entities (Bulk)*: up to 50 entities in a single call.`
+None. README has been updated to document the bulk operations. Lint, tests, and build all pass cleanly. Workflow templates use the credential placeholder correctly.
