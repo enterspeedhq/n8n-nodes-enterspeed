@@ -82,34 +82,6 @@ export function buildQueryFields(specifyQueryDefault: 'fields' | 'json'): INodeP
 			],
 		},
 		{
-			displayName: 'Sort',
-			name: 'sortUi',
-			type: 'fixedCollection',
-			typeOptions: { multipleValues: true },
-			default: {},
-			placeholder: 'Add Sort Field',
-			displayOptions: { show: { specifyQuery: ['fields'] } },
-			options: [
-				{
-					name: 'item',
-					displayName: 'Sort',
-					values: [
-						{ displayName: 'Field', name: 'field', type: 'string', default: '' },
-						{
-							displayName: 'Order',
-							name: 'order',
-							type: 'options',
-							options: [
-								{ name: 'Ascending', value: 'asc' },
-								{ name: 'Descending', value: 'desc' },
-							],
-							default: 'desc',
-						},
-					],
-				},
-			],
-		},
-		{
 			displayName: 'Facets',
 			name: 'facetsUi',
 			type: 'fixedCollection',
@@ -180,6 +152,34 @@ export function buildQueryFields(specifyQueryDefault: 'fields' | 'json'): INodeP
 				},
 				{ displayName: 'Search Field', name: 'searchField', type: 'string', default: '' },
 				{ displayName: 'Search Value', name: 'searchValue', type: 'string', default: '' },
+			],
+		},
+		{
+			displayName: 'Sort',
+			name: 'sortUi',
+			type: 'fixedCollection',
+			typeOptions: { multipleValues: true },
+			default: {},
+			placeholder: 'Add Sort Field',
+			displayOptions: { show: { specifyQuery: ['fields'] } },
+			options: [
+				{
+					name: 'item',
+					displayName: 'Sort',
+					values: [
+						{ displayName: 'Field', name: 'field', type: 'string', default: '' },
+						{
+							displayName: 'Order',
+							name: 'order',
+							type: 'options',
+							options: [
+								{ name: 'Ascending', value: 'asc' },
+								{ name: 'Descending', value: 'desc' },
+							],
+							default: 'desc',
+						},
+					],
+				},
 			],
 		},
 		{

@@ -12,4 +12,16 @@ export default [
 			'@n8n/community-nodes/no-restricted-globals': 'off',
 		},
 	},
+	{
+		// This rule's fix suggestion (`usableAsTool: true`) is wrong for a
+		// trigger node: the real n8n verification scanner forbids `true` here,
+		// and the type has no `false` — see ARCHITECTURE.md "Known lint
+		// inconsistency". Omitting the property is correct; the rule doesn't
+		// know that, so it's suppressed for this file only.
+        // https://github.com/n8n-io/n8n/blob/master/packages/@n8n/eslint-plugin-community-nodes/docs/rules/node-usable-as-tool.md
+		files: ['nodes/Enterspeed/EnterspeedTrigger.node.ts'],
+		rules: {
+			'@n8n/community-nodes/node-usable-as-tool': 'off',
+		},
+	},
 ];

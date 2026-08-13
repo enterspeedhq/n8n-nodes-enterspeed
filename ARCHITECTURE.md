@@ -145,8 +145,9 @@ or, in the polling-workflow pattern, a configurable marker/ID field name).
   but that's not fixable — the type (`true | UsableAsToolDescription |
   undefined`) has no `false`, and n8n's actual verification scanner
   explicitly forbids `true` on trigger nodes (agents can't invoke a trigger
-  as a tool). Omitting the property is correct; this one warning is a false
-  positive in the CLI's own preset, not a real gap.
+  as a tool). Omitting the property is correct; this rule's suggestion is a
+  false positive in the CLI's own preset, not a real gap, so it's suppressed
+  for this one file via a local override in `eslint.config.mjs`.
 - **Three Enterspeed API hosts**, each with a public default the customer can
   override per environment: Ingest (`api.enterspeed.com`), Delivery
   (`delivery.enterspeed.com`), Query (`query.enterspeed.com`).
