@@ -30,7 +30,9 @@
     "lint": "eslint nodes credentials package.json",
     "lintfix": "eslint nodes credentials package.json --fix",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "release": "n8n-node release",
+    "prepublishOnly": "n8n-node prerelease"
   },
   "files": [
     "dist",
@@ -47,6 +49,7 @@
     ]
   },
   "devDependencies": {
+    "@n8n/node-cli": "^0.43.3",
     "@types/node": "^20.19.43",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
