@@ -9,7 +9,14 @@ const operationSelector: INodeProperties = {
 	type: 'options',
 	noDataExpression: true,
 	displayOptions: { show: { resource: ['delivery'] } },
-	options: [{ name: 'Get Content', value: 'get', action: 'Get content' }],
+	options: [
+		{
+			name: 'Get Content',
+			value: 'get',
+			action: 'Get content',
+			description: 'Retrieve a view by URL, ID, or handle',
+		},
+	],
 	default: 'get',
 };
 

@@ -56,12 +56,14 @@ export class EnterspeedApi implements ICredentialType {
 			name: 'deliveryHost',
 			type: 'string',
 			default: 'https://delivery.enterspeed.com',
+			description: 'Base host for the Delivery API',
 		},
 		{
 			displayName: 'Query API Host',
 			name: 'queryHost',
 			type: 'string',
 			default: 'https://query.enterspeed.com',
+			description: 'Base host for the Query API',
 		},
 	];
 
