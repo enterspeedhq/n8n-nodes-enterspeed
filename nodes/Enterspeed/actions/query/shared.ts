@@ -151,8 +151,13 @@ export function buildQueryFields(specifyQueryDefault: 'fields' | 'json'): INodeP
 					description: 'Comma-separated view aliases to include, e.g. productTile',
 				},
 				{ displayName: 'Literal Match', name: 'searchLiteral', type: 'boolean', default: false },
-				// eslint-disable-next-line n8n-nodes-base/node-param-type-options-password-missing -- pagination cursor, not a secret
-				{ displayName: 'Next Page Token', name: 'nextPageToken', type: 'string', default: '' },
+				{
+					displayName: 'Next Page Token',
+					name: 'nextPageToken',
+					type: 'string',
+					typeOptions: { password: true },
+					default: '',
+				},
 				{ displayName: 'Page', name: 'page', type: 'number', default: 0, typeOptions: { minValue: 0 } },
 				{
 					displayName: 'Page Size',
