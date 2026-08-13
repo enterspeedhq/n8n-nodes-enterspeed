@@ -38,6 +38,7 @@ Create an **Enterspeed API** credential with:
 - *Delete*: requires Origin ID.
 - *Save Entities (Bulk)*: POST a JSON array of up to 50 entities (no path params).
 - *Delete Entities (Bulk)*: DELETE with `{ "originIds": [...] }` body of up to 50 origin IDs.
+- *Delete* and *Delete Entities (Bulk)* output always includes `deleted: true`, merged on top of whatever the Ingest API returned.
 
 **Delivery — Get Content** — `GET https://delivery.enterspeed.com/v2`
 - Fetch by URL, comma-separated view IDs, and/or handles.

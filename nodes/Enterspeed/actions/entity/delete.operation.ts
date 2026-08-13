@@ -1,7 +1,8 @@
-import type { IDataObject, IExecuteFunctions, IHttpRequestOptions, INodeExecutionData, INodeProperties } from 'n8n-workflow';
+import type { IExecuteFunctions, IHttpRequestOptions, INodeExecutionData, INodeProperties } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { enterspeedApiRequest } from '../../transport';
 import type { EnterspeedCredentials } from '../types';
+import { withDeletedFlag } from './shared';
 
 export const properties: INodeProperties[] = [
 	{
@@ -34,5 +35,5 @@ export async function execute(
 	};
 
 	const response = await enterspeedApiRequest.call(this, options);
-	return [{ json: response as IDataObject, pairedItem: { item: itemIndex } }];
+	return [{ json: withDeletedFlag(response), pairedItem: { item: itemIndex } }];
 }
