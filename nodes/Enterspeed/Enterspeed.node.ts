@@ -36,7 +36,7 @@ export class Enterspeed implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Enterspeed',
 		name: 'enterspeed',
-		icon: 'file:enterspeed.svg',
+		icon: { light: 'file:enterspeed.svg', dark: 'file:enterspeed.dark.svg' },
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',

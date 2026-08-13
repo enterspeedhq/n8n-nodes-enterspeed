@@ -10,13 +10,20 @@ imported `ARCHITECTURE.md`.
 ## Commands
 
 ```bash
-npm run build       # tsc + copy icons to dist/
-npm run dev          # tsc --watch
-npm run lint         # n8n community-node linter (eslint-plugin-n8n-nodes-base)
-npm run lintfix      # auto-fix what lint can
-npm test             # vitest run
-npm run test:watch   # vitest watch mode
+npm run build        # n8n-node build, then gulp copies the credential icon
+npm run build:watch   # tsc --watch (typecheck only, no icon copy)
+npm run dev           # gulp copies the credential icon, then n8n-node dev
+npm run lint          # n8n-node lint (eslint.config.mjs, @n8n/eslint-plugin-community-nodes)
+npm run lint:fix      # n8n-node lint --fix
+npm test              # vitest run
+npm run test:watch    # vitest watch mode
 ```
+
+`n8n-node build`/`dev` copy node icons into `dist/nodes` themselves but don't
+know the `EnterspeedApi` credential reuses that same icon — the trailing
+`gulp copy-credential-icons` step (`gulpfile.js`) exists solely to fill that
+one gap. If a build ever ships without `dist/credentials/enterspeed.svg`,
+that's the step to check.
 
 Docker end-to-end flow (not npm-wired, run manually):
 

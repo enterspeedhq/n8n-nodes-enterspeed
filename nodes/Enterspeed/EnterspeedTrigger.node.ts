@@ -1,4 +1,4 @@
-import type { INodeType, INodeTypeDescription, IWebhookFunctions, IWebhookResponseData } from 'n8n-workflow';
+import type { IHookFunctions, INodeType, INodeTypeDescription, IWebhookFunctions, IWebhookResponseData } from 'n8n-workflow';
 import { NodeConnectionTypes } from 'n8n-workflow';
 import { properties } from './webhookTrigger/properties';
 import { handleWebhook } from './webhookTrigger/handler';
@@ -23,7 +23,7 @@ export class EnterspeedTrigger implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Enterspeed Webhook Trigger',
 		name: 'enterspeedTrigger',
-		icon: 'file:enterspeed.svg',
+		icon: { light: 'file:enterspeed.svg', dark: 'file:enterspeed.dark.svg' },
 		group: ['trigger'],
 		version: 1,
 		subtitle: '={{"Views: " + $parameter["actions"].join(", ")}}',
@@ -41,6 +41,28 @@ export class EnterspeedTrigger implements INodeType {
 			},
 		],
 		properties,
+	};
+
+	/**
+	 * Enterspeed has no API for managing webhook subscriptions — they're
+	 * created, verified, and removed manually in Enterspeed's dashboard
+	 * (Name/URL/Access Key). There's nothing to call here, so these report
+	 * "already handled" rather than fabricating a registration that never
+	 * happens: a `create` that claimed success without calling anything
+	 * would tell users the webhook was set up automatically when it wasn't.
+	 */
+	webhookMethods = {
+		default: {
+			async checkExists(this: IHookFunctions): Promise<boolean> {
+				return true;
+			},
+			async create(this: IHookFunctions): Promise<boolean> {
+				return true;
+			},
+			async delete(this: IHookFunctions): Promise<boolean> {
+				return true;
+			},
+		},
 	};
 
 	async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {

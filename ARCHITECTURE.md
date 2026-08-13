@@ -84,10 +84,10 @@ This package ships two n8n node types plus one shared credential type:
   trigger a named workflow by REST call and poll its execution to
   completion. Neither is wired into `package.json` scripts — run with `node
   scripts/<file>.mjs` directly.
-- **`dist/`** — build output (`tsc` + `gulp build:icons`), gitignored, never
-  hand-edited. `package.json`'s `n8n.nodes`/`n8n.credentials` arrays point
-  here, so every node/credential file must actually compile to something at
-  that exact path.
+- **`dist/`** — build output (`n8n-node build`, then `gulp
+  copy-credential-icons`), gitignored, never hand-edited. `package.json`'s
+  `n8n.nodes`/`n8n.credentials` arrays point here, so every node/credential
+  file must actually compile to something at that exact path.
 
 ## Core data models & state
 
@@ -123,14 +123,30 @@ or, in the polling-workflow pattern, a configurable marker/ID field name).
   helpers (`IExecuteFunctions`, `IHttpRequestOptions`, `NodeApiError`, etc.).
 - **TypeScript**: `strict: true`, `noUnusedLocals: true`, target `es2019`,
   compiles `credentials/**` and `nodes/**` only (`tsconfig.json`).
-- **Linting**: `eslint-plugin-n8n-nodes-base` gates two file sets
-  differently — `package.json` against the `community` ruleset,
-  `credentials/**/*.ts` + `nodes/**/*.ts` against the `nodes` ruleset
-  (`.eslintrc.js`). This is what enforces n8n community-node conventions
-  (every parameter needs a `description`, display names matching file-name
-  conventions, etc.) — not a house style choice.
-- **Build**: `tsc` compiles to `dist/`, then `gulp build:icons` copies the
-  SVG icon alongside the compiled node files.
+- **Linting**: `npm run lint` runs `n8n-node lint`, which lints against
+  `eslint.config.mjs` — `@n8n/node-cli`'s bundled flat config
+  (`@n8n/eslint-plugin-community-nodes` recommended rules +
+  `eslint-plugin-n8n-nodes-base`'s `nodes`/`credentials`/`community`
+  rulesets), plus one local override excluding `tests/**` from the
+  cloud-compatibility import/global restrictions (test tooling legitimately
+  uses `fs`/`path`/`__dirname`; it never ships — see `package.json`
+  `"files"`). This is the same rule set n8n's own
+  `@n8n/scan-community-package` verification scanner runs, so a clean local
+  `npm run lint` is a strong (though not perfect — see the note on
+  `usableAsTool` below) signal the package will pass verification.
+- **Build**: `n8n-node build` compiles to `dist/` and copies node icons into
+  `dist/nodes`, then `gulp copy-credential-icons` (`gulpfile.js`) copies the
+  same SVG into `dist/credentials/` — `n8n-node build` doesn't know the
+  `EnterspeedApi` credential reuses the node's icon, so this one extra step
+  fills that gap. `npm run dev` runs the same gulp step before `n8n-node
+  dev` for the same reason.
+- **Known lint inconsistency**: `n8n-node lint`'s bundled preset flags
+  `EnterspeedTrigger` for not setting `usableAsTool: true` unconditionally,
+  but that's not fixable — the type (`true | UsableAsToolDescription |
+  undefined`) has no `false`, and n8n's actual verification scanner
+  explicitly forbids `true` on trigger nodes (agents can't invoke a trigger
+  as a tool). Omitting the property is correct; this one warning is a false
+  positive in the CLI's own preset, not a real gap.
 - **Three Enterspeed API hosts**, each with a public default the customer can
   override per environment: Ingest (`api.enterspeed.com`), Delivery
   (`delivery.enterspeed.com`), Query (`query.enterspeed.com`).
