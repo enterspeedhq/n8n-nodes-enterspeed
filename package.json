@@ -57,7 +57,7 @@
     "eslint-plugin-n8n-nodes-base": "^1.16.0",
     "gulp": "^5.0.1",
     "n8n-workflow": "*",
-    "typescript": "^5.4.0",
+    "typescript": "^5.5.4",
     "vitest": "^4.1.9"
   },
   "peerDependencies": {

@@ -1,4 +1,5 @@
 import type { INodeType, INodeTypeDescription, IWebhookFunctions, IWebhookResponseData } from 'n8n-workflow';
+import { NodeConnectionTypes } from 'n8n-workflow';
 import { properties } from './webhookTrigger/properties';
 import { handleWebhook } from './webhookTrigger/handler';
 
@@ -29,7 +30,7 @@ export class EnterspeedTrigger implements INodeType {
 		description: 'Starts a workflow when an Enterspeed view is deployed or removed',
 		defaults: { name: 'Enterspeed Webhook Trigger' },
 		inputs: [],
-		outputs: ['main'],
+		outputs: [NodeConnectionTypes.Main],
 		credentials: [{ name: 'enterspeedApi', required: true }],
 		webhooks: [
 			{

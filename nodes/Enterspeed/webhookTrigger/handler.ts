@@ -35,13 +35,10 @@ export async function handleWebhook(this: IWebhookFunctions): Promise<IWebhookRe
 	const payload: IDataObject = { ...body };
 
 	if (fetchView && typeof deliveryUrl === 'string' && deliveryUrl) {
-		const creds = await this.getCredentials('enterspeedApi');
-		const envKey = creds.environmentApiKey as string;
 		try {
-			payload.view = await this.helpers.httpRequest({
+			payload.view = await this.helpers.httpRequestWithAuthentication.call(this, 'enterspeedApi', {
 				method: 'GET',
 				url: deliveryUrl,
-				headers: { 'X-Api-Key': envKey },
 				json: true,
 			});
 		} catch (error) {
