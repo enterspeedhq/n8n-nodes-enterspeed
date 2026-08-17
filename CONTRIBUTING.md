@@ -35,7 +35,7 @@ npm run build
 npm link
 
 # In your n8n directory (e.g. ~/.n8n)
-npm link n8n-nodes-enterspeed
+npm link @enterspeed/n8n-nodes-enterspeed
 ```
 
 Then restart n8n — the Enterspeed nodes will appear in the palette. Test each operation against a real Enterspeed environment before opening a PR.
@@ -118,7 +118,7 @@ the same name, `--out <filename>.json` to control the output filename, or
 `--file <path>` to sanitize a `.json` file downloaded via the n8n UI's
 Menu → Download instead of pulling from Docker.
 
-> **Note:** templates use the node type `CUSTOM.enterspeed`, which is the prefix n8n assigns when loading via `N8N_CUSTOM_EXTENSIONS` (the Docker path). If you load the package via `npm link` instead, your nodes will be registered as `n8n-nodes-enterspeed.enterspeed` and the imported template will show the nodes as unknown. Use the Docker setup when working with example workflows.
+> **Note:** templates use the node type `CUSTOM.enterspeed`, which is the prefix n8n assigns when loading via `N8N_CUSTOM_EXTENSIONS` (the Docker path). If you load the package via `npm link` instead, your nodes will be registered as `@enterspeed/n8n-nodes-enterspeed.enterspeed` and the imported template will show the nodes as unknown. Use the Docker setup when working with example workflows.
 
 ## Branch and PR conventions
 
@@ -208,8 +208,8 @@ Authentication is one of:
   GitHub Actions publisher pointing at this repo and workflow name
   `publish.yml`. No secret is needed; leave `NPM_TOKEN` unset.
 - **`NPM_TOKEN` fallback** — a granular npm access token scoped to
-  `n8n-nodes-enterspeed` with publish permission, added as a GitHub repo
-  secret (**Settings → Secrets and variables → Actions**).
+  `@enterspeed/n8n-nodes-enterspeed` with publish permission, added as a
+  GitHub repo secret (**Settings → Secrets and variables → Actions**).
 
 Either way, once the npm-side setup is done, `npm run release` (see above)
 is the only manual step needed to ship a release.

@@ -19,7 +19,7 @@ export class EnterspeedApi implements ICredentialType {
 
 	displayName = 'Enterspeed API';
 
-	icon = 'file:enterspeed.svg' as const;
+	icon = { light: 'file:enterspeed.svg', dark: 'file:enterspeed.dark.svg' } as const;
 
 	documentationUrl = 'https://docs.enterspeed.com/api';
 
