@@ -22,7 +22,7 @@ export const properties: INodeProperties[] = [
 		default: 'fields',
 		displayOptions: { show: { resource: ['query'], operation: ['queryMulti'] } },
 		description:
-			'Using JSON sends the full array of queries as-is — useful when it is already assembled upstream, e.g. by a Code node.',
+			'Using JSON sends the full array of queries as-is — useful when it is already assembled upstream, e.g. by a Code node',
 	},
 	{
 		displayName: 'Queries (JSON)',
