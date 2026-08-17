@@ -79,6 +79,22 @@ describe('Entity (Ingest)', () => {
 		expect(req.headers).not.toHaveProperty('X-Enterspeed-Type');
 	});
 
+	it('delete: merges deleted: true onto the raw API response', async () => {
+		const { result } = await run({
+			params: { resource: 'entity', operation: 'delete', originId: '1099-en-us' },
+			response: { originId: '1099-en-us' },
+		});
+		expect(result).toEqual([[{ json: { originId: '1099-en-us', deleted: true }, pairedItem: { item: 0 } }]]);
+	});
+
+	it('delete: still reports deleted: true when the API responds with no body', async () => {
+		const { result } = await run({
+			params: { resource: 'entity', operation: 'delete', originId: '1099-en-us' },
+			httpRequest: vi.fn(async () => undefined),
+		});
+		expect(result).toEqual([[{ json: { deleted: true }, pairedItem: { item: 0 } }]]);
+	});
+
 	it('throws when the source key is missing', async () => {
 		const httpRequest = vi.fn();
 		const ctx = createExecuteMock({
@@ -146,6 +162,15 @@ describe('Entity (Ingest) - Bulk', () => {
 			params: { resource: 'entity', operation: 'deleteBulk', originIds: '{"originIds":["1099-en-us"]}' },
 		});
 		expect(req.body).toEqual({ originIds: ['1099-en-us'] });
+	});
+
+	it('deleteBulk: merges deleted: true onto the raw API response', async () => {
+		const originIds = ['1099-en-us', '1100-en-us'];
+		const { result } = await run({
+			params: { resource: 'entity', operation: 'deleteBulk', originIds: { originIds } },
+			response: { deletedCount: 2 },
+		});
+		expect(result).toEqual([[{ json: { deletedCount: 2, deleted: true }, pairedItem: { item: 0 } }]]);
 	});
 
 	it('deleteBulk: rejects a bare array — the field must match the API body shape { "originIds": [...] }', async () => {

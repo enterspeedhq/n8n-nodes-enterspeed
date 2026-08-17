@@ -1,6 +1,6 @@
 # Architecture
 
-Technical blueprint for `n8n-nodes-enterspeed`. For conventions and rules, see
+Technical blueprint for `@enterspeed/n8n-nodes-enterspeed`. For conventions and rules, see
 [AGENTS.md](AGENTS.md). For Claude-specific shortcuts, see [CLAUDE.md](CLAUDE.md).
 
 ## System overview
@@ -84,7 +84,7 @@ This package ships two n8n node types plus one shared credential type:
   trigger a named workflow by REST call and poll its execution to
   completion. Neither is wired into `package.json` scripts — run with `node
   scripts/<file>.mjs` directly.
-- **`dist/`** — build output (`tsc` + `gulp build:icons`), gitignored, never
+- **`dist/`** — build output (`n8n-node build`), gitignored, never
   hand-edited. `package.json`'s `n8n.nodes`/`n8n.credentials` arrays point
   here, so every node/credential file must actually compile to something at
   that exact path.
@@ -123,14 +123,35 @@ or, in the polling-workflow pattern, a configurable marker/ID field name).
   helpers (`IExecuteFunctions`, `IHttpRequestOptions`, `NodeApiError`, etc.).
 - **TypeScript**: `strict: true`, `noUnusedLocals: true`, target `es2019`,
   compiles `credentials/**` and `nodes/**` only (`tsconfig.json`).
-- **Linting**: `eslint-plugin-n8n-nodes-base` gates two file sets
-  differently — `package.json` against the `community` ruleset,
-  `credentials/**/*.ts` + `nodes/**/*.ts` against the `nodes` ruleset
-  (`.eslintrc.js`). This is what enforces n8n community-node conventions
-  (every parameter needs a `description`, display names matching file-name
-  conventions, etc.) — not a house style choice.
-- **Build**: `tsc` compiles to `dist/`, then `gulp build:icons` copies the
-  SVG icon alongside the compiled node files.
+- **Linting**: `npm run lint` runs `n8n-node lint`, which lints against
+  `eslint.config.mjs` — `@n8n/node-cli`'s bundled flat config
+  (`@n8n/eslint-plugin-community-nodes` recommended rules +
+  `eslint-plugin-n8n-nodes-base`'s `nodes`/`credentials`/`community`
+  rulesets), plus one local override excluding `tests/**` from the
+  cloud-compatibility import/global restrictions (test tooling legitimately
+  uses `fs`/`path`/`__dirname`; it never ships — see `package.json`
+  `"files"`). This is the same rule set n8n's own
+  `@n8n/scan-community-package` verification scanner runs, so a clean local
+  `npm run lint` is a strong (though not perfect — see the note on
+  `usableAsTool` below) signal the package will pass verification.
+- **Build**: `n8n-node build` compiles to `dist/` and copies every
+  `**/*.{png,svg}` in the source tree into `dist/` at the same relative
+  path — this is how both the node's icon
+  (`nodes/Enterspeed/enterspeed.svg`) and the credential's own copy of the
+  same artwork (`credentials/enterspeed.svg`) end up in `dist/nodes/...` and
+  `dist/credentials/...` respectively. Each `icon: 'file:...'` reference
+  resolves relative to the compiled file that declares it, so the credential
+  needs its own copy rather than pointing at the node's; keep the two SVGs
+  identical if the icon ever changes. `npm run dev` copies the same assets
+  via `n8n-node dev`.
+- **Known lint inconsistency**: `n8n-node lint`'s bundled preset flags
+  `EnterspeedTrigger` for not setting `usableAsTool: true` unconditionally,
+  but that's not fixable — the type (`true | UsableAsToolDescription |
+  undefined`) has no `false`, and n8n's actual verification scanner
+  explicitly forbids `true` on trigger nodes (agents can't invoke a trigger
+  as a tool). Omitting the property is correct; this rule's suggestion is a
+  false positive in the CLI's own preset, not a real gap, so it's suppressed
+  for this one file via a local override in `eslint.config.mjs`.
 - **Three Enterspeed API hosts**, each with a public default the customer can
   override per environment: Ingest (`api.enterspeed.com`), Delivery
   (`delivery.enterspeed.com`), Query (`query.enterspeed.com`).
@@ -140,5 +161,5 @@ or, in the polling-workflow pattern, a configurable marker/ID field name).
 - **Local end-to-end testing** requires Docker (`docker-compose.yml` mounts
   `./dist` into n8n's custom-extensions folder) — nodes loaded this way
   register as `CUSTOM.enterspeed`, whereas `npm link` registers them as
-  `n8n-nodes-enterspeed.enterspeed`. Workflow templates are authored against
+  `@enterspeed/n8n-nodes-enterspeed.enterspeed`. Workflow templates are authored against
   the Docker path and will show "unknown node" if built via `npm link`.

@@ -1,4 +1,4 @@
-# n8n-nodes-enterspeed
+# @enterspeed/n8n-nodes-enterspeed
 
 [![CI](https://github.com/enterspeedhq/n8n-nodes-enterspeed/actions/workflows/ci.yml/badge.svg)](https://github.com/enterspeedhq/n8n-nodes-enterspeed/actions/workflows/ci.yml)
 
@@ -13,12 +13,12 @@ No keys are bundled. The customer enters their own Enterspeed credentials at run
 
 ## Installation
 
-In n8n: **Settings → Community Nodes → Install** and enter `n8n-nodes-enterspeed`.
+In n8n: **Settings → Community Nodes → Install** and enter `@enterspeed/n8n-nodes-enterspeed`.
 
 Self-hosted via npm:
 
 ```bash
-npm install n8n-nodes-enterspeed
+npm install @enterspeed/n8n-nodes-enterspeed
 ```
 
 ## Credentials
@@ -38,6 +38,7 @@ Create an **Enterspeed API** credential with:
 - *Delete*: requires Origin ID.
 - *Save Entities (Bulk)*: POST a JSON array of up to 50 entities (no path params).
 - *Delete Entities (Bulk)*: DELETE with `{ "originIds": [...] }` body of up to 50 origin IDs.
+- *Delete* and *Delete Entities (Bulk)* output always includes `deleted: true`, merged on top of whatever the Ingest API returned.
 
 **Delivery — Get Content** — `GET https://delivery.enterspeed.com/v2`
 - Fetch by URL, comma-separated view IDs, and/or handles.

@@ -70,34 +70,12 @@ export function buildQueryFields(specifyQueryDefault: 'fields' | 'json'): INodeP
 							default: '',
 							description: 'For "In", use a comma-separated list',
 						},
-						{ displayName: 'Case Insensitive', name: 'caseInsensitive', type: 'boolean', default: false },
-					],
-				},
-			],
-		},
-		{
-			displayName: 'Sort',
-			name: 'sortUi',
-			type: 'fixedCollection',
-			typeOptions: { multipleValues: true },
-			default: {},
-			placeholder: 'Add Sort Field',
-			displayOptions: { show: { specifyQuery: ['fields'] } },
-			options: [
-				{
-					name: 'item',
-					displayName: 'Sort',
-					values: [
-						{ displayName: 'Field', name: 'field', type: 'string', default: '' },
 						{
-							displayName: 'Order',
-							name: 'order',
-							type: 'options',
-							options: [
-								{ name: 'Ascending', value: 'asc' },
-								{ name: 'Descending', value: 'desc' },
-							],
-							default: 'desc',
+							displayName: 'Case Insensitive',
+							name: 'caseInsensitive',
+							type: 'boolean',
+							default: false,
+							description: 'Whether the filter value comparison ignores case',
 						},
 					],
 				},
@@ -150,9 +128,20 @@ export function buildQueryFields(specifyQueryDefault: 'fields' | 'json'): INodeP
 					default: '',
 					description: 'Comma-separated view aliases to include, e.g. productTile',
 				},
-				{ displayName: 'Literal Match', name: 'searchLiteral', type: 'boolean', default: false },
-				// eslint-disable-next-line n8n-nodes-base/node-param-type-options-password-missing -- pagination cursor, not a secret
-				{ displayName: 'Next Page Token', name: 'nextPageToken', type: 'string', default: '' },
+				{
+					displayName: 'Literal Match',
+					name: 'searchLiteral',
+					type: 'boolean',
+					default: false,
+					description: 'Whether the search value must match literally rather than being tokenized',
+				},
+				{
+					displayName: 'Next Page Token',
+					name: 'nextPageToken',
+					type: 'string',
+					typeOptions: { password: true },
+					default: '',
+				},
 				{ displayName: 'Page', name: 'page', type: 'number', default: 0, typeOptions: { minValue: 0 } },
 				{
 					displayName: 'Page Size',
@@ -163,6 +152,34 @@ export function buildQueryFields(specifyQueryDefault: 'fields' | 'json'): INodeP
 				},
 				{ displayName: 'Search Field', name: 'searchField', type: 'string', default: '' },
 				{ displayName: 'Search Value', name: 'searchValue', type: 'string', default: '' },
+			],
+		},
+		{
+			displayName: 'Sort',
+			name: 'sortUi',
+			type: 'fixedCollection',
+			typeOptions: { multipleValues: true },
+			default: {},
+			placeholder: 'Add Sort Field',
+			displayOptions: { show: { specifyQuery: ['fields'] } },
+			options: [
+				{
+					name: 'item',
+					displayName: 'Sort',
+					values: [
+						{ displayName: 'Field', name: 'field', type: 'string', default: '' },
+						{
+							displayName: 'Order',
+							name: 'order',
+							type: 'options',
+							options: [
+								{ name: 'Ascending', value: 'asc' },
+								{ name: 'Descending', value: 'desc' },
+							],
+							default: 'desc',
+						},
+					],
+				},
 			],
 		},
 		{

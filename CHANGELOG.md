@@ -9,10 +9,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Added
 
 - Example workflow: Contentful → Enterspeed ingestion (`workflows/templates/ingest-contentful-into-enterspeed.json`), syncing entry and asset publish/unpublish/delete events across locales.
+- Automated npm publishing via GitHub Actions (`.github/workflows/publish.yml`) with npm provenance, ahead of n8n's 1 May 2026 requirement for verified community nodes.
+- **Enterspeed** node is now usable as an AI agent tool (`usableAsTool: true`), so agents can invoke Ingest/Delivery/Query/Route operations directly.
 
 ### Changed
 
+- **Breaking:** package renamed from `n8n-nodes-enterspeed` to the scoped `@enterspeed/n8n-nodes-enterspeed`. Update the install command (`npm install @enterspeed/n8n-nodes-enterspeed`) and the Community Nodes package name in n8n's UI accordingly.
 - `workflows/templates/fetch-transform-reingest.json` example workflow now includes a `Verify Data` step that validates the re-ingested `productMetadata` matches the properties sent from the metadata source entity, so the fetch → enrich → re-ingest pattern is demonstrated end-to-end.
+- **Entity — Delete / Delete Entities (Bulk)** now always merge `deleted: true` onto whatever the Ingest API's delete response returned, instead of passing the raw response through unchanged.
 
 ### Fixed
 

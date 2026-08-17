@@ -1,6 +1,9 @@
 {
-  "name": "n8n-nodes-enterspeed",
+  "name": "@enterspeed/n8n-nodes-enterspeed",
   "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "n8n community nodes for Enterspeed — ingest, delivery, query and routes.",
   "keywords": [
     "n8n-community-node-package",
@@ -23,18 +26,19 @@
   "engines": {
     "node": ">=20.19"
   },
-  "main": "index.js",
   "scripts": {
-    "build": "tsc && gulp build:icons",
-    "dev": "tsc --watch",
-    "lint": "eslint nodes credentials package.json",
-    "lintfix": "eslint nodes credentials package.json --fix",
+    "build": "n8n-node build",
+    "build:watch": "tsc --watch",
+    "dev": "n8n-node dev",
+    "lint": "n8n-node lint",
+    "lint:fix": "n8n-node lint --fix",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "release": "n8n-node release",
+    "prepublishOnly": "n8n-node prerelease"
   },
   "files": [
-    "dist",
-    "index.js"
+    "dist"
   ],
   "n8n": {
     "n8nNodesApiVersion": 1,
@@ -47,14 +51,11 @@
     ]
   },
   "devDependencies": {
+    "@n8n/node-cli": "^0.43.4",
     "@types/node": "^20.19.43",
-    "@typescript-eslint/eslint-plugin": "^7.0.0",
-    "@typescript-eslint/parser": "^7.0.0",
-    "eslint": "^8.57.0",
-    "eslint-plugin-n8n-nodes-base": "^1.16.0",
-    "gulp": "^5.0.1",
     "n8n-workflow": "*",
-    "typescript": "^5.4.0",
+    "prettier": "3.6.2",
+    "typescript": "^5.5.4",
     "vitest": "^4.1.9"
   },
   "peerDependencies": {

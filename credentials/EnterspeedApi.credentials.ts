@@ -1,4 +1,5 @@
 import type {
+	IAuthenticateGeneric,
 	ICredentialType,
 	INodeProperties,
 	ICredentialTestRequest,
@@ -17,6 +18,8 @@ export class EnterspeedApi implements ICredentialType {
 	name = 'enterspeedApi';
 
 	displayName = 'Enterspeed API';
+
+	icon = { light: 'file:enterspeed.svg', dark: 'file:enterspeed.dark.svg' } as const;
 
 	documentationUrl = 'https://docs.enterspeed.com/api';
 
@@ -53,14 +56,32 @@ export class EnterspeedApi implements ICredentialType {
 			name: 'deliveryHost',
 			type: 'string',
 			default: 'https://delivery.enterspeed.com',
+			description: 'Base host for the Delivery API',
 		},
 		{
 			displayName: 'Query API Host',
 			name: 'queryHost',
 			type: 'string',
 			default: 'https://query.enterspeed.com',
+			description: 'Base host for the Query API',
 		},
 	];
+
+	/**
+	 * Only covers the Environment API Key, for call sites that use
+	 * `httpRequestWithAuthentication` (currently just the webhook trigger's
+	 * Delivery API fetch). Ingest/Query/Routes operations authenticate with
+	 * either key depending on the call, so they build the `X-Api-Key` header
+	 * themselves rather than relying on this.
+	 */
+	authenticate: IAuthenticateGeneric = {
+		type: 'generic',
+		properties: {
+			headers: {
+				'X-Api-Key': '={{$credentials.environmentApiKey}}',
+			},
+		},
+	};
 
 	/**
 	 * Verifies the environment key by calling the Routes API.

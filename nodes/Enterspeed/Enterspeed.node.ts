@@ -1,4 +1,5 @@
 import type { IExecuteFunctions, INodeExecutionData, INodeProperties, INodeType, INodeTypeDescription } from 'n8n-workflow';
+import { NodeConnectionTypes } from 'n8n-workflow';
 import { router } from './actions/router';
 import * as entity from './actions/entity';
 import * as delivery from './actions/delivery';
@@ -35,14 +36,15 @@ export class Enterspeed implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Enterspeed',
 		name: 'enterspeed',
-		icon: 'file:enterspeed.svg',
+		icon: { light: 'file:enterspeed.svg', dark: 'file:enterspeed.dark.svg' },
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
 		description: 'Ingest, deliver and query data through Enterspeed',
 		defaults: { name: 'Enterspeed' },
-		inputs: ['main'],
-		outputs: ['main'],
+		usableAsTool: true,
+		inputs: [NodeConnectionTypes.Main],
+		outputs: [NodeConnectionTypes.Main],
 		credentials: [{ name: 'enterspeedApi', required: true }],
 		codex: {
 			categories: ['Data & Storage', 'Development'],
