@@ -1,6 +1,6 @@
 # Architecture
 
-Technical blueprint for `n8n-nodes-enterspeed`. For conventions and rules, see
+Technical blueprint for `@enterspeed/n8n-nodes-enterspeed`. For conventions and rules, see
 [AGENTS.md](AGENTS.md). For Claude-specific shortcuts, see [CLAUDE.md](CLAUDE.md).
 
 ## System overview
@@ -84,10 +84,10 @@ This package ships two n8n node types plus one shared credential type:
   trigger a named workflow by REST call and poll its execution to
   completion. Neither is wired into `package.json` scripts — run with `node
   scripts/<file>.mjs` directly.
-- **`dist/`** — build output (`n8n-node build`, then `gulp
-  copy-credential-icons`), gitignored, never hand-edited. `package.json`'s
-  `n8n.nodes`/`n8n.credentials` arrays point here, so every node/credential
-  file must actually compile to something at that exact path.
+- **`dist/`** — build output (`n8n-node build`), gitignored, never
+  hand-edited. `package.json`'s `n8n.nodes`/`n8n.credentials` arrays point
+  here, so every node/credential file must actually compile to something at
+  that exact path.
 
 ## Core data models & state
 
@@ -134,12 +134,16 @@ or, in the polling-workflow pattern, a configurable marker/ID field name).
   `@n8n/scan-community-package` verification scanner runs, so a clean local
   `npm run lint` is a strong (though not perfect — see the note on
   `usableAsTool` below) signal the package will pass verification.
-- **Build**: `n8n-node build` compiles to `dist/` and copies node icons into
-  `dist/nodes`, then `gulp copy-credential-icons` (`gulpfile.js`) copies the
-  same SVG into `dist/credentials/` — `n8n-node build` doesn't know the
-  `EnterspeedApi` credential reuses the node's icon, so this one extra step
-  fills that gap. `npm run dev` runs the same gulp step before `n8n-node
-  dev` for the same reason.
+- **Build**: `n8n-node build` compiles to `dist/` and copies every
+  `**/*.{png,svg}` in the source tree into `dist/` at the same relative
+  path — this is how both the node's icon
+  (`nodes/Enterspeed/enterspeed.svg`) and the credential's own copy of the
+  same artwork (`credentials/enterspeed.svg`) end up in `dist/nodes/...` and
+  `dist/credentials/...` respectively. Each `icon: 'file:...'` reference
+  resolves relative to the compiled file that declares it, so the credential
+  needs its own copy rather than pointing at the node's; keep the two SVGs
+  identical if the icon ever changes. `npm run dev` copies the same assets
+  via `n8n-node dev`.
 - **Known lint inconsistency**: `n8n-node lint`'s bundled preset flags
   `EnterspeedTrigger` for not setting `usableAsTool: true` unconditionally,
   but that's not fixable — the type (`true | UsableAsToolDescription |
@@ -157,5 +161,5 @@ or, in the polling-workflow pattern, a configurable marker/ID field name).
 - **Local end-to-end testing** requires Docker (`docker-compose.yml` mounts
   `./dist` into n8n's custom-extensions folder) — nodes loaded this way
   register as `CUSTOM.enterspeed`, whereas `npm link` registers them as
-  `n8n-nodes-enterspeed.enterspeed`. Workflow templates are authored against
+  `@enterspeed/n8n-nodes-enterspeed.enterspeed`. Workflow templates are authored against
   the Docker path and will show "unknown node" if built via `npm link`.

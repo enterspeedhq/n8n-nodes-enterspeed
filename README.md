@@ -1,4 +1,4 @@
-# n8n-nodes-enterspeed
+# @enterspeed/n8n-nodes-enterspeed
 
 [![CI](https://github.com/enterspeedhq/n8n-nodes-enterspeed/actions/workflows/ci.yml/badge.svg)](https://github.com/enterspeedhq/n8n-nodes-enterspeed/actions/workflows/ci.yml)
 
@@ -13,12 +13,12 @@ No keys are bundled. The customer enters their own Enterspeed credentials at run
 
 ## Installation
 
-In n8n: **Settings → Community Nodes → Install** and enter `n8n-nodes-enterspeed`.
+In n8n: **Settings → Community Nodes → Install** and enter `@enterspeed/n8n-nodes-enterspeed`.
 
 Self-hosted via npm:
 
 ```bash
-npm install n8n-nodes-enterspeed
+npm install @enterspeed/n8n-nodes-enterspeed
 ```
 
 ## Credentials
