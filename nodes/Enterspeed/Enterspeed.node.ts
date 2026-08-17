@@ -42,6 +42,7 @@ export class Enterspeed implements INodeType {
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
 		description: 'Ingest, deliver and query data through Enterspeed',
 		defaults: { name: 'Enterspeed' },
+		usableAsTool: true,
 		inputs: [NodeConnectionTypes.Main],
 		outputs: [NodeConnectionTypes.Main],
 		credentials: [{ name: 'enterspeedApi', required: true }],

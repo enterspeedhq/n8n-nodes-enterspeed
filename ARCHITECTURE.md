@@ -152,16 +152,6 @@ or, in the polling-workflow pattern, a configurable marker/ID field name).
   as a tool). Omitting the property is correct; this rule's suggestion is a
   false positive in the CLI's own preset, not a real gap, so it's suppressed
   for this one file via a local override in `eslint.config.mjs`.
-- **`Enterspeed` (action node) also omits `usableAsTool`, and this one is a
-  real, open lint failure — not suppressed.** Unlike the trigger, this rule's
-  fix suggestion is *valid* here (an action node genuinely can be
-  tool-invocable), so `npm run lint` / `n8n-node lint` will keep failing on
-  it on purpose: `true` was previously set only to silence the rule, not as
-  a considered decision, and would have shipped an undocumented
-  AI-agent-invocable capability with no CHANGELOG entry. Left failing
-  (rather than suppressed in `eslint.config.mjs`) so it stays visible until
-  someone deliberately decides to set `true` (with a changelog entry and
-  testing as a tool) or gives it a `UsableAsToolDescription`.
 - **Three Enterspeed API hosts**, each with a public default the customer can
   override per environment: Ingest (`api.enterspeed.com`), Delivery
   (`delivery.enterspeed.com`), Query (`query.enterspeed.com`).
