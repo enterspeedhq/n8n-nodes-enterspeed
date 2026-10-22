@@ -17,7 +17,7 @@ import type {
 export class EnterspeedApi implements ICredentialType {
 	name = 'enterspeedApi';
 
-	displayName = 'Enterspeed API';
+	displayName = 'Enterspeed Core API';
 
 	icon = { light: 'file:enterspeed.svg', dark: 'file:enterspeed.dark.svg' } as const;
 

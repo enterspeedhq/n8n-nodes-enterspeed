@@ -6,8 +6,10 @@ n8n community nodes for [Enterspeed](https://www.enterspeed.com) — get data **
 
 This package ships two nodes:
 
-- **Enterspeed** (action) — Ingest, Delivery, Query and Routes operations.
-- **Enterspeed Webhook Trigger** (push) — starts a workflow when a view is deployed or removed.
+- **Enterspeed Core** (action) — Ingest, Delivery, Query and Routes operations.
+- **Enterspeed Core Webhook Trigger** (push) — starts a workflow when a view is deployed or removed.
+
+Before 0.2.0 these were labelled **Enterspeed**, **Enterspeed Webhook Trigger** and **Enterspeed API** (credential). Only the labels changed — the internal names (`enterspeed`, `enterspeedTrigger`, `enterspeedApi`) are the same, so existing workflows and credentials need no action. Nodes already in a workflow keep their names.
 
 No keys are bundled. The customer enters their own Enterspeed credentials at runtime.
 
@@ -23,7 +25,7 @@ npm install @enterspeed/n8n-nodes-enterspeed
 
 ## Credentials
 
-Create an **Enterspeed API** credential with:
+Create an **Enterspeed Core API** credential with:
 
 | Field | Where to get it | Used by |
 |---|---|---|
@@ -88,7 +90,7 @@ example workflow.
 
 ## Typical flows
 
-- **Ingest**: Source (PIM/CMS/ERP) → map → **Enterspeed: Save Entity**.
+- **Ingest**: Source (PIM/CMS/ERP) → map → **Enterspeed Core: Save Entity**.
 - **Delivery / last mile**: **Poll Index for Changes** → map to feed (XML/CSV) → push to Google / Meta / marketplace.
 
 ## Licence

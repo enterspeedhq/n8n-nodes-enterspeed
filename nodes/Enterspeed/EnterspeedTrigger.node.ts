@@ -15,20 +15,20 @@ import { handleWebhook } from './webhookTrigger/handler';
  * Delivery URL carried in the payload.
  *
  * name convention enterspeedTrigger for putting it under the Enterspeed node
- * instead of having a separate node called Enterspeed Webhook Trigger.
+ * instead of having a separate node called Enterspeed Core Webhook Trigger.
  * Properties + webhook handling live under ./webhookTrigger; this file just
  * wires them into the INodeType class.
  */
 export class EnterspeedTrigger implements INodeType {
 	description: INodeTypeDescription = {
-		displayName: 'Enterspeed Webhook Trigger',
+		displayName: 'Enterspeed Core Webhook Trigger',
 		name: 'enterspeedTrigger',
 		icon: { light: 'file:enterspeed.svg', dark: 'file:enterspeed.dark.svg' },
 		group: ['trigger'],
 		version: 1,
 		subtitle: '={{"Views: " + $parameter["actions"].join(", ")}}',
 		description: 'Starts a workflow when an Enterspeed view is deployed or removed',
-		defaults: { name: 'Enterspeed Webhook Trigger' },
+		defaults: { name: 'Enterspeed Core Webhook Trigger' },
 		inputs: [],
 		outputs: [NodeConnectionTypes.Main],
 		credentials: [{ name: 'enterspeedApi', required: true }],

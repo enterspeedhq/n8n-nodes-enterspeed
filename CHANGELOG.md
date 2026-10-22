@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- The action node, trigger and credential are now labelled **Enterspeed Core**, **Enterspeed Core Webhook Trigger** and **Enterspeed Core API** (previously **Enterspeed**, **Enterspeed Webhook Trigger** and **Enterspeed API**), to tell them apart from the upcoming Enterspeed Context Graph node. Newly added nodes get the default name "Enterspeed Core". Only display names changed — the internal names `enterspeed`, `enterspeedTrigger` and `enterspeedApi` are unchanged, so existing workflows and credentials need no action and existing nodes keep their names.
+
 ## [0.1.1] — 2026-08-17
 
 ### Added
