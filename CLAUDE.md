@@ -24,7 +24,9 @@ npm run test:watch    # vitest watch mode
 `nodes/Enterspeed/enterspeed.svg`; the `EnterspeedApi` credential reuses the
 same artwork but needs its own copy at `credentials/enterspeed.svg`, since
 each `icon: 'file:...'` reference resolves relative to the compiled file
-that declares it. Keep both files identical if the icon ever changes — there
+that declares it. The Context Graph node has a third copy in
+`nodes/EnterspeedContextGraph/`, and its credential reuses
+`credentials/enterspeed.svg`. Keep all copies identical if the icon ever changes — there
 used to be a `gulpfile.js` step for this, but the plain glob-copy makes it
 unnecessary.
 

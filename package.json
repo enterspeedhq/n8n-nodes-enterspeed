@@ -43,11 +43,13 @@
   "n8n": {
     "n8nNodesApiVersion": 1,
     "credentials": [
-      "dist/credentials/EnterspeedApi.credentials.js"
+      "dist/credentials/EnterspeedApi.credentials.js",
+      "dist/credentials/EnterspeedContextGraphApi.credentials.js"
     ],
     "nodes": [
       "dist/nodes/Enterspeed/Enterspeed.node.js",
-      "dist/nodes/Enterspeed/EnterspeedTrigger.node.js"
+      "dist/nodes/Enterspeed/EnterspeedTrigger.node.js",
+      "dist/nodes/EnterspeedContextGraph/EnterspeedContextGraph.node.js"
     ]
   },
   "devDependencies": {
