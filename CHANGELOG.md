@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+
+- **Enterspeed Context Graph** node and **Enterspeed Context Graph API** credential (API key, ingest URL, delivery URL, manifest version). The credential test reads the manifest document from the Delivery URL. The node has no operations yet and refuses to run.
+
 ### Changed
 
 - The action node, trigger and credential are now labelled **Enterspeed Core**, **Enterspeed Core Webhook Trigger** and **Enterspeed Core API** (previously **Enterspeed**, **Enterspeed Webhook Trigger** and **Enterspeed API**), to tell them apart from the upcoming Enterspeed Context Graph node. Newly added nodes get the default name "Enterspeed Core". Only display names changed — the internal names `enterspeed`, `enterspeedTrigger` and `enterspeedApi` are unchanged, so existing workflows and credentials need no action and existing nodes keep their names.

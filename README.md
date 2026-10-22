@@ -4,10 +4,11 @@
 
 n8n community nodes for [Enterspeed](https://www.enterspeed.com) — get data **into** Enterspeed and feeds **out** of it, then wire it to any of n8n's 1,100+ destinations.
 
-This package ships two nodes:
+This package ships three nodes:
 
 - **Enterspeed Core** (action) — Ingest, Delivery, Query and Routes operations.
 - **Enterspeed Core Webhook Trigger** (push) — starts a workflow when a view is deployed or removed.
+- **Enterspeed Context Graph** (action) — connects a workflow to a Context Graph. No operations yet; see [Context Graph](#context-graph).
 
 Before 0.2.0 these were labelled **Enterspeed**, **Enterspeed Webhook Trigger** and **Enterspeed API** (credential). Only the labels changed — the internal names (`enterspeed`, `enterspeedTrigger`, `enterspeedApi`) are the same, so existing workflows and credentials need no action. Nodes already in a workflow keep their names.
 
@@ -87,6 +88,21 @@ Poll* is enabled; change detection uses a configurable marker field (e.g.
 `updatedAt`) and ID field. See the
 [`poll-index-for-changes`](workflows/templates/poll-index-for-changes.json)
 example workflow.
+
+## Context Graph
+
+The **Enterspeed Context Graph** node uses its own **Enterspeed Context Graph API** credential, so it can't be run with an Enterspeed Core key by mistake. It has no operations yet, and running it fails with a message saying so.
+
+| Field | Used for |
+|---|---|
+| API Key | Sent as the `X-Api-Key` header on every call |
+| Ingest URL | Uploads (pre-filled with `https://api.enterspeed.com`, as in the Core credential) |
+| Delivery URL | Reads (pre-filled with `https://delivery.enterspeed.com`, as in the Core credential) |
+| Manifest Version | The `{manifest}` segment of every Delivery route (default `1.0.0`) |
+
+Testing the credential reads `GET {Delivery URL}/schema/msd/v1/{Manifest Version}`. It fails with a clear message if the URL can't be reached, the key is rejected (401) or the manifest version isn't hosted (404).
+
+**Against the local dev-server**, set both URLs to the dev-server's address. From the Docker n8n in this repo that is `http://host.docker.internal:5200`, not `localhost`. The dev-server accepts any API key, so the credential test there checks only the URL and manifest version.
 
 ## Typical flows
 
