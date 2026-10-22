@@ -9,7 +9,7 @@ Gemini CLI, ...) working in this repository. Tool-specific shortcuts live in
 
 `@enterspeed/n8n-nodes-enterspeed` is the n8n community node package for
 [Enterspeed](https://www.enterspeed.com), a headless data delivery platform.
-It ships two n8n node types plus one shared credential type (the community
+It ships three n8n node types and two credential types (the community
 node naming convention this package name follows is `@<scope>/n8n-nodes-<name>`):
 
 - **`Enterspeed`** — an action node covering four resources (`entity`,
@@ -18,8 +18,12 @@ node naming convention this package name follows is `@<scope>/n8n-nodes-<name>`)
 - **`EnterspeedTrigger`** — a push trigger ("Enterspeed Core Webhook Trigger")
   that reacts to Enterspeed view deploy/remove events, optionally fetching
   the full view from the Delivery API.
-- **`EnterspeedApi`** — the one credential type both nodes share (two API
+- **`EnterspeedApi`** — the credential type both Core nodes share (two API
   keys, three overridable host URLs).
+- **`EnterspeedContextGraph`** — a separate action node ("Enterspeed Context
+  Graph") with no operations yet; it refuses to run.
+- **`EnterspeedContextGraphApi`** — its own credential (one API key, ingest
+  URL, delivery URL, manifest version). Never shared with the Core nodes.
 
 See `ARCHITECTURE.md`'s "System overview" for how these fit together.
 
@@ -54,10 +58,14 @@ field points at the *compiled* output of both:
 ```json
 "n8n": {
   "n8nNodesApiVersion": 1,
-  "credentials": ["dist/credentials/EnterspeedApi.credentials.js"],
+  "credentials": [
+    "dist/credentials/EnterspeedApi.credentials.js",
+    "dist/credentials/EnterspeedContextGraphApi.credentials.js"
+  ],
   "nodes": [
     "dist/nodes/Enterspeed/Enterspeed.node.js",
-    "dist/nodes/Enterspeed/EnterspeedTrigger.node.js"
+    "dist/nodes/Enterspeed/EnterspeedTrigger.node.js",
+    "dist/nodes/EnterspeedContextGraph/EnterspeedContextGraph.node.js"
   ]
 }
 ```
@@ -82,12 +90,17 @@ nodes/Enterspeed/
   webhookTrigger/
     properties.ts                 Actions / Fetch Full View / Access Key parameters
     handler.ts                    webhook() logic: auth check, payload build, view fetch
+nodes/EnterspeedContextGraph/
+  EnterspeedContextGraph.node.ts  Context Graph action node — no operations yet
+  enterspeed.svg                  its own copy of the icon
 credentials/
   EnterspeedApi.credentials.ts    the enterspeedApi credential type
+  EnterspeedContextGraphApi.credentials.ts  the enterspeedContextGraphApi credential type
   enterspeed.svg                  copy of the node's icon (see ARCHITECTURE.md)
 tests/
   Enterspeed.node.test.ts
   EnterspeedTrigger.node.test.ts
+  EnterspeedContextGraph.node.test.ts  node + credential shape
   mocks.ts                        minimal IExecuteFunctions/IWebhookFunctions stand-ins
   workflow-templates.test.ts      validates every JSON file under workflows/templates/
 workflows/templates/*.json        example workflows (see "Example workflows" below)
