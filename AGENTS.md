@@ -15,7 +15,7 @@ node naming convention this package name follows is `@<scope>/n8n-nodes-<name>`)
 - **`Enterspeed`** — an action node covering four resources (`entity`,
   `delivery`, `query`, `route`), letting workflows ingest, deliver, and query
   Enterspeed data.
-- **`EnterspeedTrigger`** — a push trigger ("Enterspeed Webhook Trigger")
+- **`EnterspeedTrigger`** — a push trigger ("Enterspeed Core Webhook Trigger")
   that reacts to Enterspeed view deploy/remove events, optionally fetching
   the full view from the Delivery API.
 - **`EnterspeedApi`** — the one credential type both nodes share (two API
