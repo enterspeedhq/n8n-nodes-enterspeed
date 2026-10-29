@@ -85,3 +85,49 @@ export const defaultCreds: IDataObject = {
 	deliveryHost: 'https://delivery.enterspeed.com',
 	queryHost: 'https://query.enterspeed.com',
 };
+
+/**
+ * Builds a minimal IExecuteFunctions stand-in for the Context Graph node.
+ * A parameter may be a function of the item index, for per-item expressions
+ * (e.g. `delete: (i) => i === 1`). `httpRequestWithAuthentication` mirrors the
+ * `enterspeedContextGraphApi` credential's `authenticate` config (adds the API
+ * key as `X-Api-Key`), as the real n8n runtime does.
+ */
+export function createContextGraphExecuteMock(opts: {
+	params: Record<string, unknown | ((itemIndex: number) => unknown)>;
+	items?: IDataObject[];
+	creds?: IDataObject;
+	httpRequest: Mock;
+	continueOnFail?: boolean;
+}): IExecuteFunctions {
+	const creds = opts.creds ?? defaultContextGraphCreds;
+	const items = (opts.items ?? [{}]).map((json) => ({ json }));
+	return {
+		getInputData: () => items,
+		getCredentials: vi.fn(async () => creds),
+		getNodeParameter: (name: string, i: number, fallback?: unknown) => {
+			if (!(name in opts.params)) return fallback;
+			const value = opts.params[name];
+			return typeof value === 'function' ? (value as (i: number) => unknown)(i) : value;
+		},
+		getNode: () => ({ name: 'Enterspeed Context Graph' }),
+		continueOnFail: () => opts.continueOnFail ?? false,
+		helpers: {
+			httpRequestWithAuthentication: async (_credentialType: string, requestOptions: IDataObject) =>
+				opts.httpRequest({
+					...requestOptions,
+					headers: {
+						...(requestOptions.headers as IDataObject | undefined),
+						'X-Api-Key': creds.apiKey,
+					},
+				}),
+		},
+	} as unknown as IExecuteFunctions;
+}
+
+export const defaultContextGraphCreds: IDataObject = {
+	apiKey: 'cg-key',
+	ingestUrl: 'http://localhost:5200/',
+	deliveryUrl: 'http://localhost:5200',
+	manifestVersion: '1.0.0',
+};

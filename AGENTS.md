@@ -21,7 +21,7 @@ node naming convention this package name follows is `@<scope>/n8n-nodes-<name>`)
 - **`EnterspeedApi`** — the credential type both Core nodes share (two API
   keys, three overridable host URLs).
 - **`EnterspeedContextGraph`** — a separate action node ("Enterspeed Context
-  Graph") with no operations yet; it refuses to run.
+  Graph") with two operations so far, Entity › Push and Push Many.
 - **`EnterspeedContextGraphApi`** — its own credential (one API key, ingest
   URL, delivery URL, manifest version). Never shared with the Core nodes.
 
@@ -91,7 +91,10 @@ nodes/Enterspeed/
     properties.ts                 Actions / Fetch Full View / Access Key parameters
     handler.ts                    webhook() logic: auth check, payload build, view fetch
 nodes/EnterspeedContextGraph/
-  EnterspeedContextGraph.node.ts  Context Graph action node — no operations yet
+  EnterspeedContextGraph.node.ts  Context Graph action node — delegates to actions/router.ts
+  transport.ts                    httpRequestWithAuthentication wrapper (key via the credential)
+  actions/router.ts, types.ts     dispatch; handlers get all items at once (Push Many outputs per record)
+  actions/entity/                 Push and Push Many (NDJSON to POST /entities), shared.ts
   enterspeed.svg                  its own copy of the icon
 credentials/
   EnterspeedApi.credentials.ts    the enterspeedApi credential type
@@ -123,12 +126,14 @@ dist/                             build output — gitignored, never hand-edited
   `strict: true` and `noUnusedLocals: true`; don't reach for `any` or `as`
   casts to route around a type error.
 - **Never commit a real Enterspeed credential ID.** Every credential
-  reference inside `workflows/templates/*.json` must use the literal
-  placeholder `__ENTERSPEED_CREDENTIAL_ID__` — enforced by
+  reference inside `workflows/templates/*.json` must use a literal
+  placeholder — `__ENTERSPEED_CREDENTIAL_ID__` for Core,
+  `__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__` for Context Graph — enforced by
   `tests/workflow-templates.test.ts`, which also scans for any stray
   16-character alphanumeric string in a credential `"id"` field.
-- **Workflow templates must use node type `CUSTOM.enterspeed`**, the type
-  n8n assigns when loading via Docker's `N8N_CUSTOM_EXTENSIONS`. Templates
+- **Workflow templates must use node types `CUSTOM.enterspeed` /
+  `CUSTOM.enterspeedContextGraph`**, the types n8n assigns when loading via
+  Docker's `N8N_CUSTOM_EXTENSIONS`. Templates
   built against an `npm link`-loaded instance register as
   `@enterspeed/n8n-nodes-enterspeed.enterspeed` instead and will show "unknown node" for
   anyone importing them — always author/export templates from the Docker
@@ -183,6 +188,7 @@ working in an area:
 | Adding a new operation or resource      | "Key guidelines" above + `ARCHITECTURE.md`'s router/operation-module description |
 | Build, lint, test, or icon-copy issues   | `CLAUDE.md` (Commands) + `ARCHITECTURE.md` (Dependencies & constraints) |
 | Workflow templates under `workflows/templates/` | "Example workflows" above + `tests/workflow-templates.test.ts` |
+| The Context Graph node, its template, or the Tonevik demo | `docs/context-graph-demo/GUIDE.md` (the template and the guide change together, one step per PR) |
 | Versioning / release / CI               | "Workflow and PR rules" above + `ARCHITECTURE.md` (CI section) |
 | Starting a new task or planning         | `CLAUDE.md` (Claude tool preferences) |
 

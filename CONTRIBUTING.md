@@ -118,7 +118,7 @@ the same name, `--out <filename>.json` to control the output filename, or
 `--file <path>` to sanitize a `.json` file downloaded via the n8n UI's
 Menu → Download instead of pulling from Docker.
 
-> **Note:** templates use the node type `CUSTOM.enterspeed`, which is the prefix n8n assigns when loading via `N8N_CUSTOM_EXTENSIONS` (the Docker path). If you load the package via `npm link` instead, your nodes will be registered as `@enterspeed/n8n-nodes-enterspeed.enterspeed` and the imported template will show the nodes as unknown. Use the Docker setup when working with example workflows.
+> **Note:** templates use the node types `CUSTOM.enterspeed` and `CUSTOM.enterspeedContextGraph`, with the prefix n8n assigns when loading via `N8N_CUSTOM_EXTENSIONS` (the Docker path). If you load the package via `npm link` instead, your nodes will be registered as `@enterspeed/n8n-nodes-enterspeed.enterspeed` and the imported template will show the nodes as unknown. Use the Docker setup when working with example workflows.
 
 ## Branch and PR conventions
 
