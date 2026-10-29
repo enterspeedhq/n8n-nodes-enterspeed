@@ -3,6 +3,7 @@ import { NodeConnectionTypes } from 'n8n-workflow';
 import { router } from './actions/router';
 import * as entity from './actions/entity';
 import * as shape from './actions/shape';
+import * as index from './actions/index/index';
 
 const resourceSelector: INodeProperties = {
 	displayName: 'Resource',
@@ -12,6 +13,7 @@ const resourceSelector: INodeProperties = {
 	options: [
 		{ name: 'Entity', value: 'entity' },
 		{ name: 'Shape', value: 'shape' },
+		{ name: 'Index', value: 'index' },
 	],
 	default: 'entity',
 };
@@ -26,6 +28,7 @@ const resourceSelector: INodeProperties = {
  *                       per item (Push) or a list in one item (Push Many)
  *  - Shape (Delivery) : read shapes by key, one per item (Get) or a list
  *                       in one item (Get Many)
+ *  - Index (Delivery) : query an index, one query per item, all in one request
  *
  * Each resource's properties and execute logic live under ./actions/<resource>;
  * execute() below just delegates to ./actions/router.
@@ -53,7 +56,7 @@ export class EnterspeedContextGraph implements INodeType {
 				primaryDocumentation: [{ url: 'https://docs.enterspeed.com' }],
 			},
 		},
-		properties: [resourceSelector, ...entity.description, ...shape.description],
+		properties: [resourceSelector, ...entity.description, ...shape.description, ...index.description],
 	};
 
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {

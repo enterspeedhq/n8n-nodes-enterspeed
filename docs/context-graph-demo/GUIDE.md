@@ -17,7 +17,9 @@ does with the data (models, shapes, indexes, routes), read the SDK's
 When clicking           │
 'Execute workflow' ─────┼─ Step 2 · Get PIM products ─── Collect products ─── Push products ─── Shape keys ─ Read back
                         │
-                        └─ Step 3 · Get PIM deletes ──── Collect deletes ──── Push deletes ──── Shape keys ─ Read back
+                        ├─ Step 3 · Get PIM deletes ──── Collect deletes ──── Push deletes ──── Shape keys ─ Read back
+                        │
+                        └─ Step 4 · Query headphones
 ```
 
 (Every node's name starts with its step, e.g. *Step 1 · Shape keys*.)
@@ -28,6 +30,7 @@ When clicking           │
 | 1 | The PIM's categories | **The record**: what a Context Graph record is, and why Push Many sends it as it is. **Shapes**: reading back what the graph made of it | 4 results, accepted; 4 `CategoryRef` shapes |
 | 2 | The PIM's products | Records linking up in the graph: a product finds its category. Reading many shapes, and when to read one | 12 results, accepted; 12 `ProductCard` shapes |
 | 3 | A retired product | Deleting a record by its key | 1 delete, accepted; its shape is gone |
+| 4 | A query on the product index | **Indexes and queries**: finding records with filters, sorting and paging | 4 headphones in stock, most expensive first |
 
 The workflow reads left to right in the order the data travels: a **Get**
 node stands in for the source system, an **Aggregate** node collects its
@@ -244,6 +247,78 @@ A key with no shape comes back as `status: 404` with `data: null`, and the
 other keys still return. The delete named the record by its `$id`; the
 shape key names the product by its own `id`.
 
+## Step 4 · Querying the product index
+
+**Run:** *Step 4 · Query headphones*. Run steps 1–3 first: the index is
+built from the products they pushed.
+
+Shapes are read by key, so you need to know which records you want. An
+**index** answers the other question: *which* records match. Tonevik's
+schema declares `ProductIndex` over the products, with `categoryId`, `sku`,
+`price` and `inStock` as fields you can filter on, `price` as a field you
+can sort by, and `name` as a field you can search.
+
+*Step 4 · Query headphones* uses **Index › Query** to find the headphones
+in stock, most expensive first. The query is written as JSON, in the node's
+*Query* field:
+
+```json
+{
+  "index": "ProductIndex",
+  "filters": {
+    "and": [
+      { "field": "categoryId", "operator": "equals", "value": "cat-headphones" },
+      { "field": "inStock", "operator": "equals", "value": true }
+    ]
+  },
+  "sort": [{ "field": "price", "order": "desc" }]
+}
+```
+
+- `index` names the index to search. It's the only member a query needs.
+- `filters` keeps the products whose `categoryId` is `cat-headphones` **and**
+  whose `inStock` is `true`. Conditions can be grouped with `and` and `or`,
+  nested as deep as you need.
+- `sort` orders the matches by `price`, highest first.
+
+An empty *Query* field shows an example with every member a query can
+have; the README's *Index — Query* section describes each one.
+
+**Expect** one item, the query's result as the graph returns it:
+
+```json
+{
+  "id": "0",
+  "index": "ProductIndex",
+  "items": [
+    { "$id": "ProductIndex:productId:p-1002", "sku": "AUR-HP-200", "name": "Aurora H200 Pro Headphones", "price": 4350 },
+    { "$id": "ProductIndex:productId:p-1001", "sku": "AUR-HP-100", "name": "Aurora H100 Over-Ear Headphones", "price": 2700 },
+    { "$id": "ProductIndex:productId:p-1008", "sku": "AUR-HP-050", "name": "Aurora Commute Headphones", "price": 1300 },
+    { "$id": "ProductIndex:productId:p-1003", "sku": "FJD-HP-050", "name": "Fjord Lite Wireless Earbuds", "price": 1000 }
+  ],
+  "totalCount": 4,
+  "next": null
+}
+```
+
+Each match carries only the fields the index displays, plus its `$id` in the
+index. A query that matches nothing returns `items: []` and
+`totalCount: 0`; it doesn't fail. A filter on a field the index doesn't
+allow fails with the graph's own message, saying which field and why.
+
+**One query per item.** Each input item is one query, and the node sends
+all of them in one request. To ask several questions at once, give the
+node several items, e.g. from a Code node, and build each query with an
+expression such as `{{ { "index": "ProductIndex", "filters": { "field": "categoryId", "operator": "equals", "value": $json.categoryId } } }}`.
+Each item gets back its own result.
+
+**Paging.** `limit` (up to 100, default 20) sets how many matches each
+page holds, and `totalCount` is the number of matches across all pages. For
+the next page, set `cursor` to the result's `next`. The dev-server doesn't
+hand out cursors (`next` is always `null` there), so against it raise
+`page` instead: 0, 1, 2 and so on, until a page holds fewer matches than
+`limit`.
+
 ## When your source doesn't send Context Graph records
 
 Tonevik's PIM already delivers Context Graph records. Most real sources
@@ -270,7 +345,7 @@ the same every time it's sent.
 
 ## Reference
 
-- **Push, Push Many, Get and Get Many:** the *Context Graph* section of the
+- **Push, Push Many, Get, Get Many and Query:** the *Context Graph* section of the
   package README.
 - **The rules behind the record:** the Context Graph's *Ingest NDJSON*
   contract (semantic-graph › contracts › spec) and its ingest ADRs

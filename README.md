@@ -8,7 +8,7 @@ This package ships three nodes:
 
 - **Enterspeed Core** (action) — Ingest, Delivery, Query and Routes operations.
 - **Enterspeed Core Webhook Trigger** (push) — starts a workflow when a view is deployed or removed.
-- **Enterspeed Context Graph** (action) — pushes records into a Context Graph as source entities, one per item or a list at once, and reads back its shapes; see [Context Graph](#context-graph).
+- **Enterspeed Context Graph** (action) — pushes records into a Context Graph as source entities, one per item or a list at once, reads back its shapes and queries its indexes; see [Context Graph](#context-graph).
 
 Before 0.2.0 these were labelled **Enterspeed**, **Enterspeed Webhook Trigger** and **Enterspeed API** (credential). Only the labels changed — the internal names (`enterspeed`, `enterspeedTrigger`, `enterspeedApi`) are the same, so existing workflows and credentials need no action. Nodes already in a workflow keep their names.
 
@@ -154,6 +154,47 @@ Both read the graph's **shapes**: the views its schema declares over the data, b
 - *Get* is for a workflow that handles one key at a time, such as a lookup triggered by a webhook. It takes one *Shape Key* per item, sends one request per item and outputs the shape exactly as the Context Graph returns it. A key with no shape fails with *No shape for key …*; the Context Graph answers a shape the key may not see the same way.
 - A malformed key fails with the Context Graph's own message (e.g. *Shape key is missing the "id" segment …*); with *Get Many* against the local dev-server it comes out as a `400` item instead.
 - A rejected key (401), an API version the Context Graph no longer serves (410) or an unreachable Delivery URL fails the run with a message saying which. With *Continue On Fail*, the affected items come out as `{ key, error, description? }` instead.
+
+### Index — Query
+
+`POST {Delivery URL}/query/v1/{Manifest Version}`
+
+Finds records in an **index** the schema declares, with filters, sorting and paging. The *Query* field takes the query as a JSON object, sent as written.
+
+- Each input item is one query. All items' queries are sent in one request, and each item gets back its result exactly as the Context Graph returns it: `{ id, index, items, totalCount, next }`. A query that matches nothing returns `items: []`; it doesn't fail.
+- An invalid query, such as a filter on a field the index doesn't allow, fails with the Context Graph's own message. The Context Graph then rejects the whole request, so with *Continue On Fail* every query in it comes out with `error`.
+
+| Member | Required | What it is |
+|---|---|---|
+| `index` | yes | The name of the index shape, e.g. `ProductIndex`. |
+| `filters` | no | One condition `{ "field", "operator", "value" }`, or a group `{ "and": [...] }` / `{ "or": [...] }`, nested freely. Only fields the index declares filterable. |
+| `sort` | no | `[{ "field", "order": "asc" \| "desc" }]`, in order of priority. Only fields the index declares sortable. |
+| `limit` | no | Results per page, up to 100. Default 20. |
+| `page` | no | The page, counted from 0. Default 0. |
+| `cursor` | no | The `next` of the previous result, for the page after it. |
+| `search` | no | Full-text search: `{ "query", "literal"?, "fields"?, "language"? }`. `literal: true` turns fuzzy matching off. |
+| `aggregations` | no | `[{ "type": "values" \| "metrics" \| "range", "name", "field", "size"?, "ranges"? }]`. |
+| `args` | no | Values for `${token}` placeholders in `filters` and `search.query`, by name. |
+
+Operators: `equals`, `notEquals`, `greaterThan`, `greaterThanOrEquals`, `lessThan`, `lessThanOrEquals`, `contains`, `in` (the value is a list).
+
+```json
+{
+  "index": "ProductIndex",
+  "filters": {
+    "and": [
+      { "field": "categoryId", "operator": "equals", "value": "cat-headphones" },
+      { "field": "inStock", "operator": "equals", "value": true }
+    ]
+  },
+  "sort": [{ "field": "price", "order": "desc" }],
+  "limit": 20
+}
+```
+
+**Paging.** `totalCount` counts all matches. For the next page, raise `page`, or set `cursor` to the previous result's `next`, e.g. `"cursor": "{{ $json.next }}"`. The local dev-server hands out no cursors (`next` is always `null`), so use `page` there.
+
+**With an AI Agent.** The node can be an agent's tool. Click ✨ on *Query* to let the model write the query; it reads the field's description, which states the format above. Tell the agent which indexes and fields exist, in its prompt or in the `$fromAI` description, because it can't see the schema.
 
 **New to the Context Graph?** Follow the step-by-step guide, [docs/context-graph-demo/GUIDE.md](docs/context-graph-demo/GUIDE.md): it builds the Tonevik demo shop with the workflow `workflows/templates/Context-Graph-Tonevik-Demo.json` against the local dev-server.
 
