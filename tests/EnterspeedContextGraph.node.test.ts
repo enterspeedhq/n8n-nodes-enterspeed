@@ -1,11 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { IDataObject, INode, INodeExecutionData } from 'n8n-workflow';
+import type { IDataObject, INode, INodeExecutionData, JsonObject } from 'n8n-workflow';
 import { NodeApiError } from 'n8n-workflow';
 import { EnterspeedContextGraph } from '../nodes/EnterspeedContextGraph/EnterspeedContextGraph.node';
 import {
 	MAX_REQUEST_BYTES,
 	MAX_THROTTLE_RETRIES,
 } from '../nodes/EnterspeedContextGraph/actions/entity/shared';
+import { MAX_BODY_BYTES } from '../nodes/EnterspeedContextGraph/actions/shape/getMany.operation';
 import { EnterspeedContextGraphApi } from '../credentials/EnterspeedContextGraphApi.credentials';
 import { createContextGraphExecuteMock } from './mocks';
 
@@ -579,6 +580,369 @@ describe('EnterspeedContextGraph — Entity › Push Many', () => {
 			[false, 'The API key was rejected by the Ingest URL.'],
 			[false, 'The API key was rejected by the Ingest URL.'],
 		]);
+	});
+});
+
+/**
+ * Shape › Get reads one shape per item with `GET {deliveryUrl}/shapes/v1/{manifest}/{key}`;
+ * Shape › Get Many reads one item's list of keys in one `POST {deliveryUrl}/shapes/v1/{manifest}`,
+ * answered 207 with one `{ key, status, data }` per key (Shapes batch envelope).
+ * Shapes from the Tonevik example's stage 1 schema.
+ */
+
+const speakers = { name: 'Speakers' };
+const p1001 = { name: 'Aurora H100 Over-Ear Headphones', categoryId: 'cat-headphones', price: 2700 };
+const categoryKeys = ['CategoryRef:categoryId:cat-audio', 'CategoryRef:categoryId:cat-speakers'];
+
+/** A failed request as the tests' mock throws it: the HTTP error itself. */
+const httpError = (status: number, data?: unknown) =>
+	Object.assign(new Error(`Request failed with status code ${status}`), { response: { status, data } });
+
+/** A failed request as n8n's request helper throws it: wrapped in a NodeApiError. */
+const n8nError = (status: number, data?: unknown) =>
+	new NodeApiError({ name: 'Enterspeed Context Graph' } as INode, httpError(status, data) as unknown as JsonObject);
+
+/**
+ * Get gets one key per item; Get Many gets all the keys as one
+ * list in one item (what its Shape Keys default, {{ $json.keys }}, resolves to).
+ */
+async function readShapes(opts: {
+	operation: 'get' | 'getMany';
+	keys: unknown;
+	httpRequest: ReturnType<typeof vi.fn>;
+	continueOnFail?: boolean;
+}) {
+	const keys = opts.keys as unknown[];
+	const ctx = createContextGraphExecuteMock({
+		params:
+			opts.operation === 'get'
+				? { resource: 'shape', operation: 'get', shapeKey: (i: number) => keys[i] }
+				: { resource: 'shape', operation: 'getMany', shapeKeys: opts.keys },
+		items: opts.operation === 'get' ? keys.map(() => ({})) : [{}],
+		httpRequest: opts.httpRequest,
+		continueOnFail: opts.continueOnFail,
+	});
+	const [out] = (await node.execute.call(ctx)) as INodeExecutionData[][];
+	return out;
+}
+
+/** Answers a batch with the given item per key, in request order. */
+const batchOf = (answer: (key: string) => IDataObject) =>
+	vi.fn(async (req: IDataObject) => ((req.body as IDataObject).keys as string[]).map(answer));
+
+describe('EnterspeedContextGraph — Shape', () => {
+	it('has Get (a Shape Key per item) and Get Many (a list of Shape Keys in one item)', () => {
+		const shapeFields = node.description.properties.filter((p) =>
+			(p.displayOptions?.show?.resource as string[] | undefined)?.includes('shape'),
+		);
+		const selector = shapeFields.find((p) => p.name === 'operation');
+		expect(selector?.options?.map((o) => (o as { name: string }).name)).toEqual(['Get', 'Get Many']);
+		expect(selector?.options?.map((o) => (o as { value: string }).value)).toEqual(['get', 'getMany']);
+		const field = (name: string) => shapeFields.find((p) => p.name === name);
+		expect(shapeFields.filter((p) => p.name !== 'operation').map((p) => p.name)).toEqual(['shapeKey', 'shapeKeys']);
+		expect(field('shapeKey')?.displayOptions?.show?.operation).toEqual(['get']);
+		expect(field('shapeKeys')?.displayOptions?.show?.operation).toEqual(['getMany']);
+		expect(field('shapeKeys')?.default).toBe('={{ $json.keys }}');
+	});
+});
+
+describe('EnterspeedContextGraph — Shape › Get', () => {
+	it('reads {deliveryUrl}/shapes/v1/{manifest}/{key as path segments} with the API key', async () => {
+		const httpRequest = vi.fn(async () => speakers);
+		await readShapes({ operation: 'get', keys: ['CategoryRef:categoryId:cat-speakers'], httpRequest });
+		const req = httpRequest.mock.calls[0][0] as IDataObject;
+		expect(req.method).toBe('GET');
+		expect(req.url).toBe('http://localhost:5200/shapes/v1/1.0.0/CategoryRef/categoryId/cat-speakers');
+		expect((req.headers as IDataObject)['X-Api-Key']).toBe('cg-key');
+	});
+
+	it('outputs the shape exactly as delivered, paired to its item', async () => {
+		const out = await readShapes({
+			operation: 'get',
+			keys: ['ProductCard:productId:p-1001'],
+			httpRequest: vi.fn(async () => p1001),
+		});
+		expect(out).toEqual([{ json: p1001, pairedItem: { item: 0 } }]);
+	});
+
+	it('sends one request per item and keeps the output in item order', async () => {
+		const httpRequest = vi.fn(async (req: IDataObject) => ({ name: String(req.url).split('/').pop() }));
+		const out = await readShapes({ operation: 'get', keys: categoryKeys, httpRequest });
+		expect(httpRequest).toHaveBeenCalledTimes(2);
+		expect(out.map((o) => o.json.name)).toEqual(['cat-audio', 'cat-speakers']);
+		expect(out.map((o) => o.pairedItem)).toEqual([{ item: 0 }, { item: 1 }]);
+	});
+
+	it('percent-encodes each segment, so values with URL characters reach the service verbatim', async () => {
+		const httpRequest = vi.fn(async () => ({}));
+		await readShapes({ operation: 'get', keys: ['Card:sku:a=b c%d?e&f#g~h'], httpRequest });
+		expect((httpRequest.mock.calls[0][0] as IDataObject).url).toBe(
+			'http://localhost:5200/shapes/v1/1.0.0/Card/sku/a%3Db%20c%25d%3Fe%26f%23g~h',
+		);
+	});
+
+	it('parses a shape that arrives as a string', async () => {
+		const out = await readShapes({
+			operation: 'get',
+			keys: ['CategoryRef:categoryId:cat-speakers'],
+			httpRequest: vi.fn(async () => JSON.stringify(speakers)),
+		});
+		expect(out[0].json).toEqual(speakers);
+	});
+
+	describe('a key with no shape (404)', () => {
+		it('fails with a not-found error naming the key', async () => {
+			const httpRequest = vi.fn(async () => {
+				throw httpError(404);
+			});
+			await expect(
+				readShapes({ operation: 'get', keys: ['ProductCard:productId:p-1010'], httpRequest }),
+			).rejects.toThrow('No shape for key "ProductCard:productId:p-1010".');
+		});
+
+		it('fails the same way when n8n hands the failure over wrapped', async () => {
+			const httpRequest = vi.fn(async () => {
+				throw n8nError(404);
+			});
+			const error = await readShapes({ operation: 'get', keys: ['ProductCard:productId:p-1010'], httpRequest }).catch(
+				(e: NodeApiError) => e,
+			);
+			expect((error as NodeApiError).message).toBe('No shape for key "ProductCard:productId:p-1010".');
+			expect((error as NodeApiError).httpCode).toBe('404');
+		});
+
+		it('with Continue On Fail, outputs an error item and still reads the other keys', async () => {
+			const httpRequest = vi
+				.fn()
+				.mockRejectedValueOnce(httpError(404))
+				.mockResolvedValueOnce(p1001);
+			const out = await readShapes({
+				operation: 'get',
+				keys: ['ProductCard:productId:p-1010', 'ProductCard:productId:p-1001'],
+				httpRequest,
+				continueOnFail: true,
+			});
+			expect(out).toEqual([
+				{
+					json: { key: 'ProductCard:productId:p-1010', error: 'No shape for key "ProductCard:productId:p-1010".' },
+					pairedItem: { item: 0 },
+				},
+				{ json: p1001, pairedItem: { item: 1 } },
+			]);
+		});
+	});
+
+	describe("a malformed key (400): the service's own message", () => {
+		it('from the dev-server ({ error, message })', async () => {
+			const httpRequest = vi.fn(async () => {
+				throw n8nError(400, { error: 'invalid_key', message: 'Shape "Nope" is not in the manifest.' });
+			});
+			await expect(readShapes({ operation: 'get', keys: ['Nope:id:1'], httpRequest })).rejects.toThrow(
+				'Shape "Nope" is not in the manifest.',
+			);
+		});
+
+		it('from the deployed service (a bare JSON string)', async () => {
+			const httpRequest = vi.fn(async () => {
+				throw httpError(400, '"Missing shape key"');
+			});
+			await expect(readShapes({ operation: 'get', keys: [':'], httpRequest })).rejects.toThrow('Missing shape key');
+		});
+	});
+
+	it("uses the service's message for a 404 that has one, e.g. an unknown manifest version", async () => {
+		const message = 'No manifest "2.0.0" — this dev server hosts v1.0.0.';
+		const httpRequest = vi.fn(async () => {
+			throw httpError(404, { error: 'not_found', message });
+		});
+		await expect(readShapes({ operation: 'get', keys: ['CategoryRef:categoryId:x'], httpRequest })).rejects.toThrow(
+			message,
+		);
+	});
+
+	it('reports a missing, blank or non-text key without sending it', async () => {
+		const httpRequest = vi.fn(async () => speakers);
+		const out = await readShapes({ operation: 'get', keys: [undefined, '  ', 42], httpRequest, continueOnFail: true });
+		expect(httpRequest).not.toHaveBeenCalled();
+		expect(out.map((o) => o.json.error)).toEqual([
+			'Item 0 has no Shape Key.',
+			'Item 1 has no Shape Key.',
+			'Item 2 has a Shape Key that is not text.',
+		]);
+	});
+
+	it('gives clear messages for a rejected key, a retired API version and an unreachable URL, without the key', async () => {
+		const fails = (error: unknown) =>
+			readShapes({
+				operation: 'get',
+				keys: ['CategoryRef:categoryId:cat-speakers'],
+				httpRequest: vi.fn(async () => {
+					throw error;
+				}),
+			}).catch((e: Error) => e.message);
+		expect(await fails(n8nError(401))).toBe('The API key was rejected by the Delivery URL.');
+		expect(await fails(httpError(410))).toBe("The Delivery URL no longer serves API version v1.");
+		expect(await fails(Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }))).toBe(
+			"Couldn't reach the Delivery URL (http://localhost:5200).",
+		);
+		expect(await fails(httpError(500))).toBe('The Delivery URL answered with status 500.');
+		expect(await fails(n8nError(401))).not.toContain('cg-key');
+	});
+});
+
+describe('EnterspeedContextGraph — Shape › Get Many', () => {
+	it('sends the list of keys in one POST to {deliveryUrl}/shapes/v1/{manifest}, in list order', async () => {
+		const httpRequest = batchOf((key) => ({ key, status: 200, data: speakers }));
+		await readShapes({ operation: 'getMany', keys: categoryKeys, httpRequest });
+		expect(httpRequest).toHaveBeenCalledTimes(1);
+		const req = httpRequest.mock.calls[0][0] as IDataObject;
+		expect(req.method).toBe('POST');
+		expect(req.url).toBe('http://localhost:5200/shapes/v1/1.0.0');
+		expect(req.body).toEqual({ keys: categoryKeys });
+		expect((req.headers as IDataObject)['X-Api-Key']).toBe('cg-key');
+	});
+
+	it('outputs each { key, status, data } exactly as delivered, in list order, paired to the item the list came from', async () => {
+		const out = await readShapes({
+			operation: 'getMany',
+			keys: categoryKeys,
+			httpRequest: batchOf((key) => ({ key, status: 200, data: { name: key.split(':').pop() } })),
+		});
+		expect(out).toEqual([
+			{ json: { key: categoryKeys[0], status: 200, data: { name: 'cat-audio' } }, pairedItem: { item: 0 } },
+			{ json: { key: categoryKeys[1], status: 200, data: { name: 'cat-speakers' } }, pairedItem: { item: 0 } },
+		]);
+	});
+
+	it("sends each item's list in its own request", async () => {
+		const lists = [[categoryKeys[0]], [categoryKeys[1], 'ProductCard:productId:p-1001']];
+		const httpRequest = batchOf((key) => ({ key, status: 200, data: {} }));
+		const ctx = createContextGraphExecuteMock({
+			params: { resource: 'shape', operation: 'getMany', shapeKeys: (i: number) => lists[i] },
+			items: [{}, {}],
+			httpRequest,
+		});
+		const [out] = (await node.execute.call(ctx)) as INodeExecutionData[][];
+		expect(httpRequest.mock.calls.map((c) => ((c[0] as IDataObject).body as IDataObject).keys)).toEqual(lists);
+		expect(out.map((o) => o.pairedItem)).toEqual([{ item: 0 }, { item: 1 }, { item: 1 }]);
+	});
+
+	it('accepts the list typed in as JSON text', async () => {
+		const httpRequest = batchOf((key) => ({ key, status: 200, data: speakers }));
+		await readShapes({ operation: 'getMany', keys: JSON.stringify(categoryKeys), httpRequest });
+		expect((httpRequest.mock.calls[0][0] as IDataObject).body).toEqual({ keys: categoryKeys });
+	});
+
+	it('fails when Shape Keys is not a list, or with Continue On Fail reports it on the item', async () => {
+		const httpRequest = vi.fn();
+		await expect(readShapes({ operation: 'getMany', keys: categoryKeys[0], httpRequest })).rejects.toThrow(
+			'Item 0 has Shape Keys that are not a list.',
+		);
+		const out = await readShapes({ operation: 'getMany', keys: { keys: [] }, httpRequest, continueOnFail: true });
+		expect(out).toEqual([{ json: { error: 'Item 0 has Shape Keys that are not a list.' }, pairedItem: { item: 0 } }]);
+		expect(httpRequest).not.toHaveBeenCalled();
+	});
+
+	it('outputs a key with no shape as a 404 item with data null, and still returns the others', async () => {
+		const out = await readShapes({
+			operation: 'getMany',
+			keys: ['ProductCard:productId:p-1010', 'ProductCard:productId:p-1001'],
+			httpRequest: batchOf((key) =>
+				key.endsWith('p-1010') ? { key, status: 404, data: null } : { key, status: 200, data: p1001 },
+			),
+		});
+		expect(out.map((o) => o.json)).toEqual([
+			{ key: 'ProductCard:productId:p-1010', status: 404, data: null },
+			{ key: 'ProductCard:productId:p-1001', status: 200, data: p1001 },
+		]);
+	});
+
+	it("passes the dev-server's other per-key statuses (400, 500) through unchanged", async () => {
+		const out = await readShapes({
+			operation: 'getMany',
+			keys: ['Nope:id:1', 'CategoryRef:categoryId:cat-audio'],
+			httpRequest: batchOf((key) => ({ key, status: key.startsWith('Nope') ? 400 : 500, data: null })),
+		});
+		expect(out.map((o) => o.json.status)).toEqual([400, 500]);
+	});
+
+	it('parses items that arrive as a string', async () => {
+		const out = await readShapes({
+			operation: 'getMany',
+			keys: [categoryKeys[1]],
+			httpRequest: vi.fn(async () => JSON.stringify([{ key: categoryKeys[1], status: 200, data: speakers }])),
+		});
+		expect(out[0].json).toEqual({ key: categoryKeys[1], status: 200, data: speakers });
+	});
+
+	it('sends nothing and outputs nothing for an empty list', async () => {
+		const httpRequest = vi.fn();
+		expect(await readShapes({ operation: 'getMany', keys: [], httpRequest })).toEqual([]);
+		expect(httpRequest).not.toHaveBeenCalled();
+	});
+
+	it('fails on a missing or non-text key without sending anything', async () => {
+		const httpRequest = vi.fn();
+		await expect(
+			readShapes({ operation: 'getMany', keys: [categoryKeys[0], ''], httpRequest }),
+		).rejects.toThrow('Item 0, key 1 has no Shape Key.');
+		expect(httpRequest).not.toHaveBeenCalled();
+	});
+
+	it('with Continue On Fail, outputs an error item for a missing key and still sends the others', async () => {
+		const httpRequest = batchOf((key) => ({ key, status: 200, data: speakers }));
+		const out = await readShapes({
+			operation: 'getMany',
+			keys: [categoryKeys[0], '', categoryKeys[1]],
+			httpRequest,
+			continueOnFail: true,
+		});
+		expect((httpRequest.mock.calls[0][0] as IDataObject).body).toEqual({ keys: categoryKeys });
+		expect(out.map((o) => [o.pairedItem, o.json.status ?? o.json.error])).toEqual([
+			[{ item: 0 }, 200],
+			[{ item: 0 }, 'Item 0, key 1 has no Shape Key.'],
+			[{ item: 0 }, 200],
+		]);
+	});
+
+	it('starts a new request before a body would pass the service\'s 32 KiB limit, keeping output in list order', async () => {
+		// Each key is ~10 KiB, so two fit in one request and the third starts the next.
+		const keys = [1, 2, 3].map((n) => `Card:id:${String(n).repeat(10 * 1024)}`);
+		const httpRequest = batchOf((key) => ({ key, status: 200, data: {} }));
+		const out = await readShapes({ operation: 'getMany', keys, httpRequest });
+		const bodies = httpRequest.mock.calls.map((c) => ((c[0] as IDataObject).body as IDataObject).keys as string[]);
+		expect(bodies.map((b) => b.length)).toEqual([2, 1]);
+		for (const b of bodies) expect(new TextEncoder().encode(JSON.stringify({ keys: b })).length).toBeLessThan(MAX_BODY_BYTES);
+		expect(out.map((o) => o.json.key)).toEqual(keys);
+	});
+
+	it('fails when the whole request fails, with the same messages as Get', async () => {
+		const httpRequest = vi.fn(async () => {
+			throw n8nError(401);
+		});
+		await expect(readShapes({ operation: 'getMany', keys: categoryKeys, httpRequest })).rejects.toThrow(
+			'The API key was rejected by the Delivery URL.',
+		);
+	});
+
+	it('with Continue On Fail, reports a failed request on each of its keys', async () => {
+		const httpRequest = vi.fn(async () => {
+			throw n8nError(400, { error: 'invalid_request', message: 'Request body must be { "keys": string[] }.' });
+		});
+		const out = await readShapes({ operation: 'getMany', keys: categoryKeys, httpRequest, continueOnFail: true });
+		expect(out).toEqual(
+			categoryKeys.map((key) => ({
+				json: { key, error: 'Request body must be { "keys": string[] }.' },
+				pairedItem: { item: 0 },
+			})),
+		);
+	});
+
+	it('fails when the service answers a different number of items than keys sent', async () => {
+		const httpRequest = vi.fn(async () => [{ key: categoryKeys[0], status: 200, data: speakers }]);
+		await expect(readShapes({ operation: 'getMany', keys: categoryKeys, httpRequest })).rejects.toThrow(
+			'Expected 2 shapes from the Delivery URL but got 1',
+		);
 	});
 });
 

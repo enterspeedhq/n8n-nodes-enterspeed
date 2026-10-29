@@ -8,7 +8,7 @@ This package ships three nodes:
 
 - **Enterspeed Core** (action) — Ingest, Delivery, Query and Routes operations.
 - **Enterspeed Core Webhook Trigger** (push) — starts a workflow when a view is deployed or removed.
-- **Enterspeed Context Graph** (action) — pushes records into a Context Graph as source entities, one per item or a list at once; see [Context Graph](#context-graph).
+- **Enterspeed Context Graph** (action) — pushes records into a Context Graph as source entities, one per item or a list at once, and reads back its shapes; see [Context Graph](#context-graph).
 
 Before 0.2.0 these were labelled **Enterspeed**, **Enterspeed Webhook Trigger** and **Enterspeed API** (credential). Only the labels changed — the internal names (`enterspeed`, `enterspeedTrigger`, `enterspeedApi`) are the same, so existing workflows and credentials need no action. Nodes already in a workflow keep their names.
 
@@ -145,6 +145,15 @@ return $input.all().map(({ json }) => ({
 - Outputs one result per record — `{ id, type, source, action, accepted, statusCode, error? }`, paired to the item it came from. A rejected record, or one without a valid `$id` or `$type`, comes out with `accepted: false` and the reason; the rest are still stored. Push Many fails an item whose *Records* isn't a list. `accepted: true` also covers a record whose content was unchanged, and one superseded by a newer *Modified At* — both are accepted with nothing written.
 - When the Context Graph is busy it refuses a request with `429` and says how long to wait. The node waits that long and resends the refused request, up to 3 times (nothing was written when it was refused). If it is still refused, or asked to wait more than five minutes, the run fails.
 - A rejected key (401), a key without write access (403), a request that is too large (413), continued throttling (429) or an unreachable Ingest URL fails the run with a message saying which. With *Continue On Fail*, the affected records come out with `error` and `description` instead.
+
+**Shape — Get** — `GET {Delivery URL}/shapes/v1/{Manifest Version}/{key}` · **Shape — Get Many** — `POST {Delivery URL}/shapes/v1/{Manifest Version}`
+
+Both read the graph's **shapes**: the views its schema declares over the data, by **shape key**: the shape's name, then each ID segment's name and value, joined with colons: `productPage:id:42`, or with two segments `productVariant:productId:42:sku:SKU-9`. The values are the record's own data (its `id`, say), not its `$id`.
+
+- *Get Many* is the one to use for a list of keys. It takes one item holding the list in *Shape Keys* (default `{{ $json.keys }}`, e.g. built in a Code node: `return [{ json: { keys: [...] } }]`), sends the whole list in one request (several only if the keys pass the Context Graph's 32 KiB request limit) and outputs one item per key, in list order: `{ key, status, data }` exactly as returned. An item whose *Shape Keys* isn't a list fails. A key with no shape comes out as `status: 404` with `data: null`, and the other keys still return. The request succeeds even when no key is found, so check each item's `status`. With no keys, nothing is sent.
+- *Get* is for a workflow that handles one key at a time, such as a lookup triggered by a webhook. It takes one *Shape Key* per item, sends one request per item and outputs the shape exactly as the Context Graph returns it. A key with no shape fails with *No shape for key …*; the Context Graph answers a shape the key may not see the same way.
+- A malformed key fails with the Context Graph's own message (e.g. *Shape key is missing the "id" segment …*); with *Get Many* against the local dev-server it comes out as a `400` item instead.
+- A rejected key (401), an API version the Context Graph no longer serves (410) or an unreachable Delivery URL fails the run with a message saying which. With *Continue On Fail*, the affected items come out as `{ key, error, description? }` instead.
 
 **New to the Context Graph?** Follow the step-by-step guide, [docs/context-graph-demo/GUIDE.md](docs/context-graph-demo/GUIDE.md): it builds the Tonevik demo shop with the workflow `workflows/templates/Context-Graph-Tonevik-Demo.json` against the local dev-server.
 

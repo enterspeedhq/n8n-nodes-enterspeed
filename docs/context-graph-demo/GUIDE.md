@@ -13,26 +13,31 @@ does with the data (models, shapes, indexes, routes), read the SDK's
 ## What you'll build
 
 ```
-                        ┌─ Step 1 · Get PIM categories ─ Step 1 · Collect categories ─ Step 1 · Push categories
+                        ┌─ Step 1 · Get PIM categories ─ Collect categories ─ Push categories ─ Shape keys ─ Read back
 When clicking           │
-'Execute workflow' ─────┼─ Step 2 · Get PIM products ─── Step 2 · Collect products ─── Step 2 · Push products
+'Execute workflow' ─────┼─ Step 2 · Get PIM products ─── Collect products ─── Push products ─── Shape keys ─ Read back
                         │
-                        └─ Step 3 · Get PIM deletes ──── Step 3 · Collect deletes ──── Step 3 · Push deletes
+                        └─ Step 3 · Get PIM deletes ──── Collect deletes ──── Push deletes ──── Shape keys ─ Read back
 ```
+
+(Every node's name starts with its step, e.g. *Step 1 · Shape keys*.)
 
 | Step | What you add | What it teaches | Expect |
 |---|---|---|---|
 | 0 | The dev-server, n8n and the workflow | Setting up | The Tonevik schema is served |
-| 1 | The PIM's categories | **The record**: what a Context Graph record is, and why Push Many sends it as it is | 4 results, accepted |
-| 2 | The PIM's products | Records linking up in the graph: a product finds its category | 12 results, accepted |
-| 3 | A retired product | Deleting a record by its key | 1 delete, accepted |
+| 1 | The PIM's categories | **The record**: what a Context Graph record is, and why Push Many sends it as it is. **Shapes**: reading back what the graph made of it | 4 results, accepted; 4 `CategoryRef` shapes |
+| 2 | The PIM's products | Records linking up in the graph: a product finds its category. Reading many shapes, and when to read one | 12 results, accepted; 12 `ProductCard` shapes |
+| 3 | A retired product | Deleting a record by its key | 1 delete, accepted; its shape is gone |
 
 The workflow reads left to right in the order the data travels: a **Get**
 node stands in for the source system, an **Aggregate** node collects its
 records into one list, and a **Push** node sends that list to the graph
-with *Entity › Push Many*, in one request. Each step's check is the Push
-node's output, one result per record. Reading the data back out of the graph in n8n, and a second
-source system, are later steps that will be added as the node grows.
+with *Entity › Push Many*, in one request. A **Code** node then lists the
+shape keys to check, and a **Read back** node reads what the graph made of
+the records with *Shape › Get Many*, also in one request. Each step has two
+checks: the Push node's output, one result per record, and the Read back
+node's output, the graph's shapes for those records. A second source
+system is a later step that will be added as the node grows.
 
 ## Step 0 · Set up
 
@@ -74,13 +79,13 @@ You need Docker, Node.js and a checkout of semantic-graph-sdk.
    source, you started `start-demo.ts`.
 
 Open n8n at `http://localhost:5678` and open the workflow. Run one step at a
-time: open the step's **Push** node and click **Execute step**. That runs
-the step's **Get**, **Collect** and **Push** nodes only. (*Execute workflow*
-runs all three steps at once.)
+time, in order: open the step's **Read back** node and click **Execute
+step**. That runs the step's own nodes only, from its **Get** node to its
+**Read back** node. (*Execute workflow* runs all three steps at once.)
 
 ## Step 1 · Categories: the record
 
-**Run:** *Step 1 · Push categories*.
+**Run:** *Step 1 · Read back*.
 
 *Step 1 · Get PIM categories* returns the PIM's four categories, exactly as
 the PIM delivers them:
@@ -119,7 +124,8 @@ and sends every record in one request, exactly as it is. Each record carries
 its own `$` fields, so there is nothing to set. n8n is only the
 integration; it never reshapes the data.
 
-**Expect** four results, one per record in the list:
+**Expect** four results from *Step 1 · Push categories*, one per record in
+the list:
 
 ```json
 { "id": "pim-cat-dd34d4", "type": "category", "source": "pim", "action": "upsert", "accepted": true, "statusCode": 200 }
@@ -129,9 +135,44 @@ In the graph, the schema finds the category by its own `id`
 (`cat-speakers`), not its `$id`: the graph works with the record's data,
 while `$id` keeps track of where it came from.
 
+### What the graph made of it: shapes
+
+The graph doesn't hand records back as they were sent. The schema declares
+**shapes**: views of its data, each with a name and the fields it shows.
+Tonevik's `CategoryRef` shape shows a category's `name`.
+
+You read a shape by its **shape key**: the shape's name, then the name and
+value of each part of the ID it's found by, joined with colons:
+
+```
+CategoryRef:categoryId:cat-speakers
+```
+
+The value is the category's own `id`, `cat-speakers`, not the PIM's key
+`pim-cat-dd34d4`. That's the point made above: the graph works with the
+record's data.
+
+*Step 1 · Shape keys* is a **Code** node. It builds one key per category,
+from the category's `id` in *Step 1 · Get PIM categories*, and returns them
+as one item holding the list:
+
+```js
+const records = $('Step 1 · Get PIM categories').all();
+return [{ json: { keys: records.map(({ json }) => `CategoryRef:categoryId:${json.id}`) } }];
+```
+
+*Step 1 · Read back* is the node's **Shape › Get Many**. It reads that list
+from its *Shape Keys* field (`{{ $json.keys }}`) and reads all four shapes
+in one request. **Expect** four items, each with the key, its status and the
+shape:
+
+```json
+{ "key": "CategoryRef:categoryId:cat-speakers", "status": 200, "data": { "id": "categorymodel:cat-speakers", "name": "Speakers" } }
+```
+
 ## Step 2 · Products: records link up
 
-**Run:** *Step 2 · Push products*.
+**Run:** *Step 2 · Read back*.
 
 *Step 2 · Get PIM products* returns the PIM's twelve products. Each names its
 category in its own data:
@@ -145,15 +186,34 @@ sends the twelve in one request, the same way as the categories. Nothing in n8n 
 product to its category: the schema declares that `categoryId` points at a
 category, and the graph makes the link from the pushed data.
 
-**Expect** twelve results, all `accepted: true`.
+**Expect** twelve results from *Step 2 · Push products*, all
+`accepted: true`.
+
+*Step 2 · Shape keys* lists every product's `ProductCard` key,
+`ProductCard:productId:<the product's id>`, and *Step 2 · Read back* reads
+them with **Shape › Get Many**: twelve keys, one request. **Expect** twelve
+items with `status: 200`, e.g. for `p-1001`:
+
+```json
+{ "key": "ProductCard:productId:p-1001", "status": 200, "data": { "categoryId": "cat-headphones", "id": "productmodel:p-1001", "name": "Aurora H100 Over-Ear Headphones", "price": 2700 } }
+```
+
+The answer is the same whether every key is found or none is, so check each
+item's `status`, for example with an **If** node on `{{ $json.status }}`.
+
+The node also has **Shape › Get**, which takes one key per item, reads one
+key per request and outputs the shape on its own, failing when there is
+none (*No shape for key …*). Use it when the workflow really handles one key
+at a time, such as a lookup triggered by a webhook. For a list of keys, use
+*Get Many*: one request instead of one per key.
 
 The schema now has what it needs for a product page: `/products/p-1001`
 shows the product together with its category, *Headphones*, found through
-`categoryId`. Reading it back in n8n is a later step.
+`categoryId`. Reading that page in n8n is a later step.
 
 ## Step 3 · A retired product: deleting
 
-**Run:** *Step 3 · Push deletes*.
+**Run:** *Step 3 · Read back*.
 
 The PIM retires *Vega Band Kids*. *Step 3 · Get PIM deletes* returns the
 record the PIM sends for that:
@@ -167,8 +227,22 @@ A delete names the record by its `$id` (`pim-prd-2005f2`), not by its own
 Push Many sees the record's own `$action: "delete"` and sends a delete. A
 delete carries no other fields.
 
-**Expect** one result with `action: "delete"` and `accepted: true`. The
-product is gone from the graph; the other products are still there.
+**Expect** one result from *Step 3 · Push deletes*, with `action: "delete"`
+and `accepted: true`.
+
+*Step 3 · Shape keys* lists two shape keys: the retired product's (`p-1010`)
+and one the PIM still sells (`p-1001`). *Step 3 · Read back* reads both with
+**Shape › Get Many**. **Expect** the retired product to be gone and the
+other still there:
+
+```json
+{ "key": "ProductCard:productId:p-1010", "status": 404, "data": null }
+{ "key": "ProductCard:productId:p-1001", "status": 200, "data": { "categoryId": "cat-headphones", "id": "productmodel:p-1001", "name": "Aurora H100 Over-Ear Headphones", "price": 2700 } }
+```
+
+A key with no shape comes back as `status: 404` with `data: null`, and the
+other keys still return. The delete named the record by its `$id`; the
+shape key names the product by its own `id`.
 
 ## When your source doesn't send Context Graph records
 
@@ -196,7 +270,8 @@ the same every time it's sent.
 
 ## Reference
 
-- **Push and Push Many:** the *Context Graph* section of the package README.
+- **Push, Push Many, Get and Get Many:** the *Context Graph* section of the
+  package README.
 - **The rules behind the record:** the Context Graph's *Ingest NDJSON*
   contract (semantic-graph › contracts › spec) and its ingest ADRs
   (semantic-graph › contracts › docs › adr › ingest).

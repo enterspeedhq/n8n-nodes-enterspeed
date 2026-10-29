@@ -21,7 +21,8 @@ node naming convention this package name follows is `@<scope>/n8n-nodes-<name>`)
 - **`EnterspeedApi`** — the credential type both Core nodes share (two API
   keys, three overridable host URLs).
 - **`EnterspeedContextGraph`** — a separate action node ("Enterspeed Context
-  Graph") with two operations so far, Entity › Push and Push Many.
+  Graph") with two resources so far: Entity › Push / Push Many, and
+  Shape › Get / Get Many.
 - **`EnterspeedContextGraphApi`** — its own credential (one API key, ingest
   URL, delivery URL, manifest version). Never shared with the Core nodes.
 
@@ -93,8 +94,9 @@ nodes/Enterspeed/
 nodes/EnterspeedContextGraph/
   EnterspeedContextGraph.node.ts  Context Graph action node — delegates to actions/router.ts
   transport.ts                    httpRequestWithAuthentication wrapper (key via the credential)
-  actions/router.ts, types.ts     dispatch; handlers get all items at once (Push Many outputs per record)
+  actions/router.ts, types.ts     dispatch; handlers get all items at once (the Many operations output per record/key)
   actions/entity/                 Push and Push Many (NDJSON to POST /entities), shared.ts
+  actions/shape/                  Get (GET /shapes/v1/…) and Get Many (POST /shapes/v1/…), shared.ts
   enterspeed.svg                  its own copy of the icon
 credentials/
   EnterspeedApi.credentials.ts    the enterspeedApi credential type
@@ -103,7 +105,7 @@ credentials/
 tests/
   Enterspeed.node.test.ts
   EnterspeedTrigger.node.test.ts
-  EnterspeedContextGraph.node.test.ts  node + credential shape
+  EnterspeedContextGraph.node.test.ts  node, operations + credential shape
   mocks.ts                        minimal IExecuteFunctions/IWebhookFunctions stand-ins
   workflow-templates.test.ts      validates every JSON file under workflows/templates/
 workflows/templates/*.json        example workflows (see "Example workflows" below)
