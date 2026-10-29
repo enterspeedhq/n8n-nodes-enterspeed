@@ -33,8 +33,8 @@ This package ships three n8n node types and two credential types:
   (`nodes/EnterspeedContextGraph/EnterspeedContextGraph.node.ts`) — the
   action node for Enterspeed Context Graph (`actions/router.ts` →
   `actions/<resource>/*.operation.ts`, plus `transport.ts`). Its handlers
-  receive **all** input items at once, because Entity › Push Many outputs one
-  result per record, not per item. Records follow the Context Graph's
+  receive **all** input items at once, because Entity › Push Many and Shape ›
+  Get Many output one result per record or key, not per item. Records follow the Context Graph's
   *Ingest NDJSON* contract (semantic-graph repository › contracts › spec)
   and are sent unchanged as NDJSON lines to `POST {ingestUrl}/entities`
   (`actions/entity/shared.ts` builds and sends them). **Push** takes one
@@ -58,6 +58,19 @@ This package ships three n8n node types and two credential types:
   otherwise), which is zipped back onto the records. Records without a
   valid `$id` or `$type` are reported as failed without being sent. Requests go through
   `httpRequestWithAuthentication`, so operation code never touches the key.
+  The **Shape** resource reads the graph's shapes by shape key, in the
+  canonical `{shapeName}:{segKey}:{value}:…` form (*Shape key* contract).
+  *Get* takes one key per item and sends `GET {deliveryUrl}/shapes/v1/{manifest}/{key}`, the
+  key's colon-joined parts as percent-encoded path segments (delivery/ADR-030
+  §3; a segment value can't hold `:` or `/`, so the split is exact), and
+  outputs the shape unchanged; a 404 fails the item. *Get Many*
+  takes one item holding a list of keys (`={{ $json.keys }}`) and sends the
+  list in `POST {deliveryUrl}/shapes/v1/{manifest}` `{ keys }`, closing a
+  request before 30 KiB (delivery caps the body at 32 KiB), and outputs each
+  `{ key, status, data }` of the always-207 answer unchanged, paired to the
+  item the list came from (*Shapes batch envelope* contract). n8n hands a failed
+  request over as a NodeApiError with the HTTP error as its `cause`;
+  `transport.ts`'s `httpFailure` reads the status and body from either.
 - **`EnterspeedContextGraphApi`**
   (`credentials/EnterspeedContextGraphApi.credentials.ts`) — the Context
   Graph's own credential: one API key (sent as `X-Api-Key` via `authenticate`),
