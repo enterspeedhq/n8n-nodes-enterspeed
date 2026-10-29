@@ -3,8 +3,9 @@ import * as entity from './entity';
 import type { ContextGraphCredentials } from './types';
 
 /**
- * Unlike Core's router, handlers receive every input item at once: push
- * batches items into shared requests, so it can't run one item at a time.
+ * Unlike Core's router, handlers receive every input item at once: Push Many
+ * outputs one result per record, not per item, so it can't run one item at a
+ * time.
  */
 interface OperationHandler {
 	execute(this: IExecuteFunctions, creds: ContextGraphCredentials): Promise<INodeExecutionData[]>;

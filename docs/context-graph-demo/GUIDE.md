@@ -13,24 +13,25 @@ does with the data (models, shapes, indexes, routes), read the SDK's
 ## What you'll build
 
 ```
-                        ┌─ Step 1 · Get PIM categories ─ Step 1 · Push categories
+                        ┌─ Step 1 · Get PIM categories ─ Step 1 · Collect categories ─ Step 1 · Push categories
 When clicking           │
-'Execute workflow' ─────┼─ Step 2 · Get PIM products ─── Step 2 · Push products
+'Execute workflow' ─────┼─ Step 2 · Get PIM products ─── Step 2 · Collect products ─── Step 2 · Push products
                         │
-                        └─ Step 3 · Get PIM deletes ──── Step 3 · Push deletes
+                        └─ Step 3 · Get PIM deletes ──── Step 3 · Collect deletes ──── Step 3 · Push deletes
 ```
 
 | Step | What you add | What it teaches | Expect |
 |---|---|---|---|
 | 0 | The dev-server, n8n and the workflow | Setting up | The Tonevik schema is served |
-| 1 | The PIM's categories | **The record**: what a Context Graph record is, and why Push sends it as it is | 4 results, accepted |
+| 1 | The PIM's categories | **The record**: what a Context Graph record is, and why Push Many sends it as it is | 4 results, accepted |
 | 2 | The PIM's products | Records linking up in the graph: a product finds its category | 12 results, accepted |
 | 3 | A retired product | Deleting a record by its key | 1 delete, accepted |
 
 The workflow reads left to right in the order the data travels: a **Get**
-node stands in for the source system, and a **Push** node sends what it
-gets to the graph. Each step's check is the Push node's output, one result
-per record. Reading the data back out of the graph in n8n, and a second
+node stands in for the source system, an **Aggregate** node collects its
+records into one list, and a **Push** node sends that list to the graph
+with *Entity › Push Many*, in one request. Each step's check is the Push
+node's output, one result per record. Reading the data back out of the graph in n8n, and a second
 source system, are later steps that will be added as the node grows.
 
 ## Step 0 · Set up
@@ -59,8 +60,8 @@ You need Docker, Node.js and a checkout of semantic-graph-sdk.
    `setup.mjs` creates an *Enterspeed Context Graph account* credential
    pointing at the dev-server (`http://host.docker.internal:5200`, as n8n
    sees it from inside Docker) and imports the workflow
-   **Context Graph: Tonevik demo**. It also needs the Enterspeed Core
-   keys in `.env` (see `.env.example`).
+   **Context Graph: Tonevik demo**. It reads `.env` and needs the keys
+   listed in `.env.example`.
 
    If you import the workflow through n8n's UI instead, its credential
    can't be filled in for you: open each **Push** node and select
@@ -74,8 +75,8 @@ You need Docker, Node.js and a checkout of semantic-graph-sdk.
 
 Open n8n at `http://localhost:5678` and open the workflow. Run one step at a
 time: open the step's **Push** node and click **Execute step**. That runs
-the step's **Get** node and its **Push** node only. (*Execute workflow* runs
-all three steps at once.)
+the step's **Get**, **Collect** and **Push** nodes only. (*Execute workflow*
+runs all three steps at once.)
 
 ## Step 1 · Categories: the record
 
@@ -106,12 +107,19 @@ category's own identity, the one the schema's models and other records use
 to find it. The graph keeps both. Never set `$id` from `id`: that cuts the
 link back to the PIM record the entity came from.
 
-**Push** has one field per `$` field, each defaulting to the record's own
-value (`{{ $json.$id }}`, and so on). The records already carry them, so
-nothing is set: Push sends each record exactly as it is. n8n is only the
+*Step 1 · Collect categories* is an **Aggregate** node (*All Item Data*).
+It turns the four records into one item holding them as a list:
+
+```json
+{ "data": [ { "$id": "pim-cat-26474b", … }, { "$id": "pim-cat-e8da45", … }, … ] }
+```
+
+**Push Many** reads that list from its *Records* field (`{{ $json.data }}`)
+and sends every record in one request, exactly as it is. Each record carries
+its own `$` fields, so there is nothing to set. n8n is only the
 integration; it never reshapes the data.
 
-**Expect** four results, one per category:
+**Expect** four results, one per record in the list:
 
 ```json
 { "id": "pim-cat-dd34d4", "type": "category", "source": "pim", "action": "upsert", "accepted": true, "statusCode": 200 }
@@ -132,7 +140,8 @@ category in its own data:
 { "$id": "pim-prd-5ce6b5", "$type": "product", "$source": "pim", "id": "p-1001", "sku": "AUR-HP-100", "name": "Aurora H100 Over-Ear Headphones", "categoryId": "cat-headphones", "price": 2700, "inStock": true }
 ```
 
-Push sends them the same way as the categories. Nothing in n8n joins a
+*Step 2 · Collect products* collects them into one list, and Push Many
+sends the twelve in one request, the same way as the categories. Nothing in n8n joins a
 product to its category: the schema declares that `categoryId` points at a
 category, and the graph makes the link from the pushed data.
 
@@ -155,8 +164,8 @@ record the PIM sends for that:
 
 A delete names the record by its `$id` (`pim-prd-2005f2`), not by its own
 `id` (`p-1010`), which is one more reason `$id` must stay the source's key.
-Push sees `$action: "delete"` (its *Action* field defaults to the record's
-own) and sends a delete. A delete carries no other fields.
+Push Many sees the record's own `$action: "delete"` and sends a delete. A
+delete carries no other fields.
 
 **Expect** one result with `action: "delete"` and `accepted: true`. The
 product is gone from the graph; the other products are still there.
@@ -164,15 +173,9 @@ product is gone from the graph; the other products are still there.
 ## When your source doesn't send Context Graph records
 
 Tonevik's PIM already delivers Context Graph records. Most real sources
-don't. There are two ways to fit their records, and both stay in the
-workflow, where you can see them:
-
-- **Map the `$` fields in Push.** Change a field's default to take the value
-  from the record's own data, e.g. *Entity ID* `{{ $json.recordKey }}`,
-  *Entity Type* `category`, *Action* `{{ $json.deleted ? 'delete' : '' }}`,
-  *Modified At* `{{ $json.updatedAt }}`.
-- **Reshape in a Code or Edit Fields node before Push**, for anything Push's
-  fields can't express: renamed fields, transformed values, another format.
+don't. Push Many sends each record as it is, so fit the records in a
+**Code** or **Edit Fields** node before the Aggregate node, where you can
+see it in the workflow:
 
 ```js
 // Fit each source record to a Context Graph record.
@@ -193,7 +196,7 @@ the same every time it's sent.
 
 ## Reference
 
-- **The Push operation:** the *Context Graph* section of the package README.
+- **Push and Push Many:** the *Context Graph* section of the package README.
 - **The rules behind the record:** the Context Graph's *Ingest NDJSON*
   contract (semantic-graph › contracts › spec) and its ingest ADRs
   (semantic-graph › contracts › docs › adr › ingest).
