@@ -4,211 +4,29 @@ import { contextGraphApiRequest, httpFailure } from '../../transport';
 import type { ContextGraphCredentials } from '../types';
 
 const show = { resource: ['index'], operation: ['query'] };
-const showFields = { ...show, specifyQuery: ['fields'] };
+
+const QUERY_REFERENCE_URL = 'https://github.com/enterspeedhq/n8n-nodes-enterspeed#index--query';
 
 export const properties: INodeProperties[] = [
 	{
 		displayName:
-			'Each input item is one query. All items are sent in one request, and each item gets back its result unchanged, as the Context Graph returns it, with its items, totalCount and next. For the next page, pass next back as Cursor, or raise Page.',
+			'Each input item is one query. All items are sent in one request, and each item gets back its result unchanged: items, totalCount and next.<br><br>Example: <code>{ "index": "ProductIndex", "filters": { "field": "inStock", "operator": "equals", "value": true }, "sort": [{ "field": "price", "order": "desc" }], "limit": 20 }</code>',
 		name: 'queryNotice',
 		type: 'notice',
 		default: '',
 		displayOptions: { show },
 	},
 	{
-		displayName: 'Index',
-		name: 'index',
-		type: 'string',
+		displayName: 'Query',
+		name: 'query',
+		type: 'json',
 		default: '',
 		required: true,
-		placeholder: 'e.g. ProductIndex',
-		description: 'The name of the index shape to query',
-		displayOptions: { show },
-	},
-	{
-		displayName: 'Specify Query',
-		name: 'specifyQuery',
-		type: 'options',
-		options: [
-			{ name: 'Using Fields', value: 'fields' },
-			{ name: 'Using JSON', value: 'json' },
-		],
-		default: 'fields',
-		description: 'Whether to build the query from the fields below or write it as JSON',
-		displayOptions: { show },
-	},
-	{
-		displayName: 'Filters Combinator',
-		name: 'filtersCombinator',
-		type: 'options',
-		options: [
-			{ name: 'AND', value: 'and' },
-			{ name: 'OR', value: 'or' },
-		],
-		default: 'and',
-		description: 'How the filter conditions below are combined. For nested AND/OR groups, use "Using JSON".',
-		displayOptions: { show: showFields },
-	},
-	{
-		displayName: 'Filters',
-		name: 'filtersUi',
-		type: 'fixedCollection',
-		typeOptions: { multipleValues: true },
-		default: {},
-		placeholder: 'Add Filter',
-		description: 'Conditions on fields the index declares as filterable',
-		displayOptions: { show: showFields },
-		options: [
-			{
-				name: 'condition',
-				displayName: 'Condition',
-				values: [
-					{ displayName: 'Field', name: 'field', type: 'string', default: '', description: 'The index field to filter on' },
-					{
-						displayName: 'Operator',
-						name: 'operator',
-						type: 'options',
-						options: [
-							{ name: 'Contains', value: 'contains' },
-							{ name: 'Equals', value: 'equals' },
-							{ name: 'Greater Than', value: 'greaterThan' },
-							{ name: 'Greater Than Or Equals', value: 'greaterThanOrEquals' },
-							{ name: 'In', value: 'in' },
-							{ name: 'Less Than', value: 'lessThan' },
-							{ name: 'Less Than Or Equals', value: 'lessThanOrEquals' },
-							{ name: 'Not Equals', value: 'notEquals' },
-						],
-						default: 'equals',
-						description: 'How the field is compared with the value',
-					},
-					{
-						displayName: 'Value',
-						name: 'value',
-						type: 'string',
-						default: '',
-						description:
-							'Sent as a number, true/false or list when written as JSON (1000, true, ["a","b"]), otherwise as text. "In" takes a list.',
-					},
-				],
-			},
-		],
-	},
-	{
-		displayName: 'Sort',
-		name: 'sortUi',
-		type: 'fixedCollection',
-		typeOptions: { multipleValues: true },
-		default: {},
-		placeholder: 'Add Sort Field',
-		description: 'Fields the index declares as sortable, in order of priority',
-		displayOptions: { show: showFields },
-		options: [
-			{
-				name: 'item',
-				displayName: 'Sort',
-				values: [
-					{ displayName: 'Field', name: 'field', type: 'string', default: '', description: 'The index field to sort by' },
-					{
-						displayName: 'Order',
-						name: 'order',
-						type: 'options',
-						options: [
-							{ name: 'Ascending', value: 'asc' },
-							{ name: 'Descending', value: 'desc' },
-						],
-						default: 'asc',
-						description: 'The sort direction',
-					},
-				],
-			},
-		],
-	},
-	{
-		displayName: 'Page Size',
-		name: 'pageSize',
-		type: 'number',
-		typeOptions: { minValue: 1, maxValue: 100 },
-		default: 20,
-		description: 'How many results each page holds (sent as limit). The Context Graph allows up to 100.',
-		displayOptions: { show: showFields },
-	},
-	{
-		displayName: 'Page',
-		name: 'page',
-		type: 'number',
-		typeOptions: { minValue: 0 },
-		default: 0,
-		description: 'The page to return, counted from 0',
-		displayOptions: { show: showFields },
-	},
-	{
-		displayName: 'Cursor',
-		name: 'cursor',
-		type: 'string',
-		default: '',
-		description: 'The next value from the previous page, to get the page after it. Leave empty for the first page.',
-		displayOptions: { show: showFields },
-	},
-	{
-		displayName: 'Options',
-		name: 'queryOptions',
-		type: 'collection',
-		placeholder: 'Add Option',
-		default: {},
-		displayOptions: { show: showFields },
-		options: [
-			{
-				displayName: 'Aggregations (JSON)',
-				name: 'aggregations',
-				type: 'json',
-				default: '[]',
-				description: 'A list of { type: "values" | "metrics" | "range", name, field, size?, ranges? }',
-			},
-			{
-				displayName: 'Args (JSON)',
-				name: 'args',
-				type: 'json',
-				default: '{}',
-				description: 'Values for the ${token} placeholders in the filters and search, by name',
-			},
-			{
-				displayName: 'Search Fields',
-				name: 'searchFields',
-				type: 'string',
-				default: '',
-				description: 'Comma-separated searchable fields to search in. Leave empty to search every one.',
-			},
-			{
-				displayName: 'Search Language',
-				name: 'searchLanguage',
-				type: 'string',
-				default: '',
-				description: 'Search only fields that declare this language',
-			},
-			{
-				displayName: 'Search Literal',
-				name: 'searchLiteral',
-				type: 'boolean',
-				default: false,
-				description: 'Whether to turn fuzzy matching off, e.g. for SKU and code lookups',
-			},
-			{
-				displayName: 'Search Text',
-				name: 'searchQuery',
-				type: 'string',
-				default: '',
-				description: 'Full-text search across the index\'s searchable fields',
-			},
-		],
-	},
-	{
-		displayName: 'Query (JSON)',
-		name: 'queryJson',
-		type: 'json',
-		default: '{\n  "limit": 20\n}',
+		hint: `Only index is required. Every member (filters, sort, limit, page, cursor, search, aggregations, args), the operators and paging: <a href="${QUERY_REFERENCE_URL}" target="_blank">Query reference</a>.`,
+		// Also what an AI Agent reads when it fills this field ($fromAI), so it states the whole format.
 		description:
-			'The query without its index: filters, sort, limit, page, cursor, search, aggregations and args. All are optional.',
-		displayOptions: { show: { ...show, specifyQuery: ['json'] } },
+			'A Context Graph query as a JSON object, sent as written. "index" (required): the index shape name. "filters": { "field", "operator", "value" } or { "and": [...] } / { "or": [...] }, nested freely; operators: equals, notEquals, greaterThan, greaterThanOrEquals, lessThan, lessThanOrEquals, contains, in (value is a list). "sort": [{ "field", "order": "asc" | "desc" }]. "limit": results per page, up to 100 (default 20). "page": from 0. "cursor": the previous result\'s "next". "search": { "query", "literal"?, "fields"?, "language"? }. "aggregations": [{ "type": "values" | "metrics" | "range", "name", "field", "size"?, "ranges"? }]. "args": values for ${token} placeholders. Only fields the index declares as filterable or sortable can be filtered or sorted on.',
+		displayOptions: { show },
 	},
 ];
 
@@ -225,69 +43,15 @@ function parseJson(this: IExecuteFunctions, value: unknown, name: string): unkno
 	}
 }
 
-/** A filter value: JSON when it reads as JSON (a number, true/false, a list), otherwise the text. */
-function filterValue(value: unknown): unknown {
-	if (typeof value !== 'string') return value;
-	try {
-		return JSON.parse(value);
-	} catch {
-		return value;
-	}
-}
-
-/** The query for one item, from the fields or the JSON, with the index set. */
+/** The item's query, as written. Only its index is checked; the rest is the platform's to judge. */
 function buildQuery(this: IExecuteFunctions, itemIndex: number): IDataObject {
-	const index = this.getNodeParameter('index', itemIndex, '');
-	if (typeof index !== 'string' || index.trim() === '') throw new NodeOperationError(this.getNode(), 'Index is empty.');
-
-	if (this.getNodeParameter('specifyQuery', itemIndex, 'fields') === 'json') {
-		const json = parseJson.call(this, this.getNodeParameter('queryJson', itemIndex, '{}'), 'Query (JSON)');
-		if (!isObject(json)) throw new NodeOperationError(this.getNode(), 'Query (JSON) must be an object.');
-		return { ...json, index };
+	const raw = this.getNodeParameter('query', itemIndex, '');
+	if (typeof raw === 'string' && raw.trim() === '') throw new NodeOperationError(this.getNode(), 'Query is empty.');
+	const query = parseJson.call(this, raw, 'Query');
+	if (!isObject(query)) throw new NodeOperationError(this.getNode(), 'Query must be a JSON object.');
+	if (typeof query.index !== 'string' || query.index.trim() === '') {
+		throw new NodeOperationError(this.getNode(), 'Query has no index.');
 	}
-
-	const query: IDataObject = { index };
-
-	const conditions = (this.getNodeParameter('filtersUi.condition', itemIndex, []) as IDataObject[]).map((c) => ({
-		field: c.field,
-		operator: c.operator,
-		value: filterValue(c.value),
-	}));
-	if (conditions.length === 1) query.filters = conditions[0];
-	else if (conditions.length > 1) {
-		query.filters = { [this.getNodeParameter('filtersCombinator', itemIndex, 'and') as string]: conditions };
-	}
-
-	const sort = this.getNodeParameter('sortUi.item', itemIndex, []) as IDataObject[];
-	if (sort.length) query.sort = sort.map((s) => ({ field: s.field, order: s.order }));
-
-	query.limit = this.getNodeParameter('pageSize', itemIndex, 20);
-	query.page = this.getNodeParameter('page', itemIndex, 0);
-	const cursor = this.getNodeParameter('cursor', itemIndex, '');
-	if (cursor) query.cursor = cursor;
-
-	const options = this.getNodeParameter('queryOptions', itemIndex, {}) as IDataObject;
-	if (options.searchQuery) {
-		const fields = String(options.searchFields ?? '')
-			.split(',')
-			.map((f) => f.trim())
-			.filter(Boolean);
-		query.search = {
-			query: options.searchQuery,
-			...(options.searchLiteral ? { literal: true } : {}),
-			...(fields.length ? { fields } : {}),
-			...(options.searchLanguage ? { language: options.searchLanguage } : {}),
-		};
-	}
-	if (options.aggregations !== undefined) {
-		const aggregations = parseJson.call(this, options.aggregations, 'Aggregations (JSON)');
-		if (Array.isArray(aggregations) && aggregations.length) query.aggregations = aggregations;
-	}
-	if (options.args !== undefined) {
-		const args = parseJson.call(this, options.args, 'Args (JSON)');
-		if (isObject(args) && Object.keys(args).length) query.args = args;
-	}
-
 	return query;
 }
 

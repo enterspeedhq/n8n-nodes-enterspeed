@@ -259,13 +259,30 @@ schema declares `ProductIndex` over the products, with `categoryId`, `sku`,
 can sort by, and `name` as a field you can search.
 
 *Step 4 · Query headphones* uses **Index › Query** to find the headphones
-in stock, most expensive first:
+in stock, most expensive first. The query is written as JSON, in the node's
+*Query* field:
 
-| Setting | Value |
-|---|---|
-| Index | `ProductIndex` |
-| Filters | `categoryId` *Equals* `cat-headphones`, AND `inStock` *Equals* `true` |
-| Sort | `price`, *Descending* |
+```json
+{
+  "index": "ProductIndex",
+  "filters": {
+    "and": [
+      { "field": "categoryId", "operator": "equals", "value": "cat-headphones" },
+      { "field": "inStock", "operator": "equals", "value": true }
+    ]
+  },
+  "sort": [{ "field": "price", "order": "desc" }]
+}
+```
+
+- `index` names the index to search. It's the only member a query needs.
+- `filters` keeps the products whose `categoryId` is `cat-headphones` **and**
+  whose `inStock` is `true`. Conditions can be grouped with `and` and `or`,
+  nested as deep as you need.
+- `sort` orders the matches by `price`, highest first.
+
+An empty *Query* field shows an example with every member a query can
+have; the README's *Index — Query* section describes each one.
 
 **Expect** one item, the query's result as the graph returns it:
 
@@ -291,16 +308,16 @@ allow fails with the graph's own message, saying which field and why.
 
 **One query per item.** Each input item is one query, and the node sends
 all of them in one request. To ask several questions at once, give the
-node several items, e.g. from a Code node, and set the fields with
-expressions such as `{{ $json.categoryId }}`. Each item gets back its own
-result.
+node several items, e.g. from a Code node, and build each query with an
+expression such as `{{ { "index": "ProductIndex", "filters": { "field": "categoryId", "operator": "equals", "value": $json.categoryId } } }}`.
+Each item gets back its own result.
 
-**Paging.** *Page Size* (up to 100, default 20) sets how many matches
-each page holds. `totalCount` is the number of matches across all pages.
-For the next page, pass the result's `next` back as *Cursor*. The
-dev-server doesn't hand out cursors (`next` is always `null` there), so
-against it raise *Page* instead: 0, 1, 2 and so on, until a page holds
-fewer matches than *Page Size*.
+**Paging.** `limit` (up to 100, default 20) sets how many matches each
+page holds, and `totalCount` is the number of matches across all pages. For
+the next page, set `cursor` to the result's `next`. The dev-server doesn't
+hand out cursors (`next` is always `null` there), so against it raise
+`page` instead: 0, 1, 2 and so on, until a page holds fewer matches than
+`limit`.
 
 ## When your source doesn't send Context Graph records
 

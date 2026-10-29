@@ -969,7 +969,7 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 	}) {
 		const httpRequest = opts.httpRequest ?? answerEach();
 		const ctx = createContextGraphExecuteMock({
-			params: { resource: 'index', operation: 'query', index: 'ProductIndex', specifyQuery: 'fields', ...opts.params },
+			params: { resource: 'index', operation: 'query', query: '{"index":"ProductIndex"}', ...opts.params },
 			items: opts.items ?? [{}],
 			httpRequest,
 			continueOnFail: opts.continueOnFail,
@@ -985,73 +985,50 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 		expect(notice?.type).toBe('notice');
 	});
 
+	it('takes the query as one JSON field, empty by default, with an example in the notice and a reference link in the hint', () => {
+		const shown = node.description.properties.filter((p) =>
+			(p.displayOptions?.show?.resource as string[] | undefined)?.includes('index'),
+		);
+		expect(shown.map((p) => p.name)).toEqual(['operation', 'queryNotice', 'query']);
+		const [, notice, query] = shown;
+		expect(notice.displayName).toContain('"index": "ProductIndex"');
+		expect(query.type).toBe('json');
+		expect(query.default).toBe('');
+		expect(query.hint).toContain('#index--query');
+	});
+
 	it('POSTs an array of queries to /query/v1/{manifest} on the Delivery URL (ADR-030 §3)', async () => {
 		const { httpRequest } = await query({});
 		const req = httpRequest.mock.calls[0][0] as IDataObject;
 		expect(req.method).toBe('POST');
 		expect(req.url).toBe('http://localhost:5200/query/v1/1.0.0');
-		expect(body(httpRequest)).toEqual([{ index: 'ProductIndex', limit: 20, page: 0, id: '0' }]);
+		expect(body(httpRequest)).toEqual([{ index: 'ProductIndex', id: '0' }]);
 	});
 
-	it('builds filters, sort, cursor, search, aggregations and args from the fields', async () => {
-		const { httpRequest } = await query({
-			params: {
-				'filtersUi.condition': [
-					{ field: 'price', operator: 'greaterThan', value: '1000' },
-					{ field: 'sku', operator: 'in', value: '["AUR-HP-100","AUR-SP-200"]' },
-					{ field: 'categoryId', operator: 'equals', value: 'cat-speakers' },
-				],
-				filtersCombinator: 'or',
-				'sortUi.item': [{ field: 'price', order: 'desc' }],
-				pageSize: 10,
-				page: 1,
-				cursor: 'abc',
-				queryOptions: {
-					searchQuery: 'aurora',
-					searchLiteral: true,
-					searchFields: 'name, sku',
-					aggregations: '[{"type":"values","name":"byCategory","field":"categoryId"}]',
-					args: '{"min":1000}',
-				},
-			},
-		});
-		expect(body(httpRequest)[0]).toEqual({
+	it('sends the query exactly as written, adding only its id', async () => {
+		const written = {
 			index: 'ProductIndex',
 			filters: {
-				or: [
-					{ field: 'price', operator: 'greaterThan', value: 1000 },
-					{ field: 'sku', operator: 'in', value: ['AUR-HP-100', 'AUR-SP-200'] },
-					{ field: 'categoryId', operator: 'equals', value: 'cat-speakers' },
+				and: [
+					{ field: 'categoryId', operator: 'equals', value: 'cat-headphones' },
+					{ or: [{ field: 'inStock', operator: 'equals', value: true }, { field: 'price', operator: 'lessThan', value: 500 }] },
 				],
 			},
 			sort: [{ field: 'price', order: 'desc' }],
 			limit: 10,
 			page: 1,
 			cursor: 'abc',
-			search: { query: 'aurora', literal: true, fields: ['name', 'sku'] },
+			search: { query: 'aurora', literal: true, fields: ['name'] },
 			aggregations: [{ type: 'values', name: 'byCategory', field: 'categoryId' }],
 			args: { min: 1000 },
-			id: '0',
-		});
+		};
+		const { httpRequest } = await query({ params: { query: JSON.stringify(written) } });
+		expect(body(httpRequest)).toEqual([{ ...written, id: '0' }]);
 	});
 
-	it('sends one condition as a plain filter, without a combinator', async () => {
-		const { httpRequest } = await query({
-			params: { 'filtersUi.condition': [{ field: 'inStock', operator: 'equals', value: 'true' }] },
-		});
-		expect(body(httpRequest)[0].filters).toEqual({ field: 'inStock', operator: 'equals', value: true });
-	});
-
-	it('takes the whole query as JSON, with the index from its field', async () => {
-		const { httpRequest } = await query({
-			params: {
-				specifyQuery: 'json',
-				queryJson: '{"filters":{"and":[{"field":"price","operator":"lessThan","value":500}]}}',
-			},
-		});
-		expect(body(httpRequest)).toEqual([
-			{ filters: { and: [{ field: 'price', operator: 'lessThan', value: 500 }] }, index: 'ProductIndex', id: '0' },
-		]);
+	it('takes the query as an object too (an expression)', async () => {
+		const { httpRequest } = await query({ params: { query: { index: 'ProductIndex', limit: 5 } } });
+		expect(body(httpRequest)).toEqual([{ index: 'ProductIndex', limit: 5, id: '0' }]);
 	});
 
 	it("sends every item's query in one request and outputs each result unchanged, paired to its item", async () => {
@@ -1079,16 +1056,16 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 		expect(out).toEqual([]);
 	});
 
-	it('rejects an empty index before sending', async () => {
-		const { httpRequest } = await query({ params: { index: ' ' }, continueOnFail: true });
+	it('rejects an empty query, a non-object or a query without index before sending', async () => {
+		const { httpRequest } = await query({ params: { query: '' }, continueOnFail: true });
 		expect(httpRequest).not.toHaveBeenCalled();
-		await expect(query({ params: { index: '' } })).rejects.toThrow('Item 0: Index is empty.');
+		await expect(query({ params: { query: ' ' } })).rejects.toThrow('Item 0: Query is empty.');
+		await expect(query({ params: { query: '[]' } })).rejects.toThrow('Item 0: Query must be a JSON object.');
+		await expect(query({ params: { query: '{"limit":5}' } })).rejects.toThrow('Item 0: Query has no index.');
 	});
 
 	it('rejects invalid JSON before sending', async () => {
-		await expect(query({ params: { specifyQuery: 'json', queryJson: '{nope' } })).rejects.toThrow(
-			'Item 0: Query (JSON) is not valid JSON.',
-		);
+		await expect(query({ params: { query: '{nope' } })).rejects.toThrow('Item 0: Query is not valid JSON.');
 	});
 
 	describe('failed requests', () => {
