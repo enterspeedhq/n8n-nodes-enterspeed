@@ -8,8 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Added
 
-- **Enterspeed Context Graph** node and **Enterspeed Context Graph API** credential (API key, ingest URL, delivery URL, manifest version). The credential test reads the manifest document from the Delivery URL. **Entity — Push** sends each input item, as the record it is, to the Context Graph (`POST {Ingest URL}/entities`). Entity ID, Entity Type, Source, Action and Modified At set the record's `$id`, `$type`, `$source`, `$action` and `$modifiedAt`, each defaulting to the record's own. Outputs one accepted/rejected result per item.
-- **Context Graph: Tonevik demo** example workflow (`workflows/templates/Context-Graph-Tonevik-Demo.json`): the Tonevik demo shop's PIM categories, products and a retired product, pushed step by step against the local dev-server, with a guide (`docs/context-graph-demo/GUIDE.md`). `scripts/setup.mjs` now creates an Enterspeed Context Graph credential (local dev-server by default).
+- **Enterspeed Context Graph** node and **Enterspeed Context Graph API** credential (API key, ingest URL, delivery URL, manifest version). The credential test reads the manifest document from the Delivery URL. **Entity — Push** sends each input item, as the record it is, to the Context Graph (`POST {Ingest URL}/entities`), one request per item. Entity ID, Entity Type, Source, Action and Modified At set the record's `$id`, `$type`, `$source`, `$action` and `$modifiedAt`, each defaulting to the record's own. **Entity — Push Many** sends a list of records held in one item (e.g. from an Aggregate node) in one request; each record keeps its own `$` fields. Both output one accepted/rejected result per record.
+- **Context Graph: Tonevik demo** example workflow (`workflows/templates/Context-Graph-Tonevik-Demo.json`): the Tonevik demo shop's PIM categories, products and a retired product, pushed step by step with Push Many against the local dev-server, with a guide (`docs/context-graph-demo/GUIDE.md`). `scripts/setup.mjs` now creates an Enterspeed Context Graph credential (local dev-server by default).
 
 ### Changed
 

@@ -27,16 +27,27 @@
     },
     {
       "parameters": {
-        "entityId": "={{ $json.$id }}",
-        "entityType": "={{ $json.$type }}",
-        "source": "={{ $json.$source }}",
-        "action": "={{ $json.$action }}",
-        "modifiedAt": "={{ $json.$modifiedAt }}"
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        560,
+        0
+      ],
+      "id": "0b6f3c1e-8a2d-4f5b-9c7e-1d2a3b4c5d01",
+      "name": "Step 1 · Collect categories"
+    },
+    {
+      "parameters": {
+        "operation": "pushMany",
+        "records": "={{ $json.data }}"
       },
       "type": "CUSTOM.enterspeedContextGraph",
       "typeVersion": 1,
       "position": [
-        560,
+        840,
         0
       ],
       "id": "964e4874-e0dd-44e2-9aef-f75735bc8e30",
@@ -63,16 +74,27 @@
     },
     {
       "parameters": {
-        "entityId": "={{ $json.$id }}",
-        "entityType": "={{ $json.$type }}",
-        "source": "={{ $json.$source }}",
-        "action": "={{ $json.$action }}",
-        "modifiedAt": "={{ $json.$modifiedAt }}"
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        560,
+        320
+      ],
+      "id": "0b6f3c1e-8a2d-4f5b-9c7e-1d2a3b4c5d02",
+      "name": "Step 2 · Collect products"
+    },
+    {
+      "parameters": {
+        "operation": "pushMany",
+        "records": "={{ $json.data }}"
       },
       "type": "CUSTOM.enterspeedContextGraph",
       "typeVersion": 1,
       "position": [
-        560,
+        840,
         320
       ],
       "id": "b2e4d6f8-1a3c-4b5d-8e7f-9a0b1c2d3e4f",
@@ -99,16 +121,27 @@
     },
     {
       "parameters": {
-        "entityId": "={{ $json.$id }}",
-        "entityType": "={{ $json.$type }}",
-        "source": "={{ $json.$source }}",
-        "action": "={{ $json.$action }}",
-        "modifiedAt": "={{ $json.$modifiedAt }}"
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        560,
+        640
+      ],
+      "id": "0b6f3c1e-8a2d-4f5b-9c7e-1d2a3b4c5d03",
+      "name": "Step 3 · Collect deletes"
+    },
+    {
+      "parameters": {
+        "operation": "pushMany",
+        "records": "={{ $json.data }}"
       },
       "type": "CUSTOM.enterspeedContextGraph",
       "typeVersion": 1,
       "position": [
-        560,
+        840,
         640
       ],
       "id": "d4a6b8c0-3e5f-4d7a-8b9c-2c3d4e5f6a71",
@@ -122,7 +155,7 @@
     },
     {
       "parameters": {
-        "content": "## Context Graph: Tonevik demo\n\nThe **Tonevik** demo shop's PIM sends its records to an Enterspeed Context Graph with the **Enterspeed Context Graph** node's *Entity › Push*, one step at a time:\n\n1. **Categories**: the record, and why Push sends it as it is\n2. **Products**: records linking up in the graph\n3. **A retired product**: deleting a record\n\nEach **Get** node stands in for the PIM. A record, exactly as the PIM delivers it:\n\n```json\n{ \"$id\": \"pim-cat-dd34d4\", \"$type\": \"category\", \"$source\": \"pim\",\n  \"id\": \"cat-speakers\", \"name\": \"Speakers\" }\n```\n\n`$id` is the PIM's own key for the record; `id` is the category's own identity. The graph keeps both.\n\nRun a step: open its **Push** node and click **Execute step**. The guide, `docs/context-graph-demo/GUIDE.md`, explains each step.",
+        "content": "## Context Graph: Tonevik demo\n\nThe **Tonevik** demo shop's PIM sends its records to an Enterspeed Context Graph with the **Enterspeed Context Graph** node's *Entity › Push Many*, one step at a time:\n\n1. **Categories**: the record, and why Push sends it as it is\n2. **Products**: records linking up in the graph\n3. **A retired product**: deleting a record\n\nEach **Get** node stands in for the PIM. A record, exactly as the PIM delivers it:\n\n```json\n{ \"$id\": \"pim-cat-dd34d4\", \"$type\": \"category\", \"$source\": \"pim\",\n  \"id\": \"cat-speakers\", \"name\": \"Speakers\" }\n```\n\n`$id` is the PIM's own key for the record; `id` is the category's own identity. The graph keeps both.\n\nAn **Aggregate** node collects a step's records into one list, and **Push Many** sends that list in one request.\n\nRun a step: open its **Push** node and click **Execute step**. The guide, `docs/context-graph-demo/GUIDE.md`, explains each step.",
         "height": 480,
         "width": 740
       },
@@ -137,7 +170,7 @@
     },
     {
       "parameters": {
-        "content": "## How Push maps a record\n\n| Push field | Default | Sets |\n|---|---|---|\n| Entity ID | `{{ $json.$id }}` | `$id` |\n| Entity Type | `{{ $json.$type }}` | `$type` |\n| Source | `{{ $json.$source }}` | `$source` |\n| Action | `{{ $json.$action }}` | `$action` |\n| Modified At | `{{ $json.$modifiedAt }}` | `$modifiedAt` |\n\nEvery other field, such as `id` and `name`, is kept on the entity.",
+        "content": "## How Push Many sends records\n\n**Aggregate** (*All Item Data*) turns the records into one item:\n\n```json\n{ \"data\": [ { \"$id\": \"pim-cat-26474b\", … }, … ] }\n```\n\n**Push Many** reads that list from *Records* (`{{ $json.data }}`) and sends every record in one request, as it is. Each record carries its own `$id`, `$type` and `$source`, and `$action` for a delete.\n\nIt outputs one result per record.",
         "height": 480,
         "width": 540,
         "color": 5
@@ -149,7 +182,7 @@
       ],
       "typeVersion": 1,
       "id": "5c0e2a51-7a43-4c1e-9f0b-3d8e6a2b7f14",
-      "name": "How Push maps a record"
+      "name": "How Push Many sends records"
     },
     {
       "parameters": {
@@ -160,7 +193,7 @@
       },
       "type": "n8n-nodes-base.stickyNote",
       "position": [
-        800,
+        1080,
         -60
       ],
       "typeVersion": 1,
@@ -176,7 +209,7 @@
       },
       "type": "n8n-nodes-base.stickyNote",
       "position": [
-        800,
+        1080,
         260
       ],
       "typeVersion": 1,
@@ -192,7 +225,7 @@
       },
       "type": "n8n-nodes-base.stickyNote",
       "position": [
-        800,
+        1080,
         580
       ],
       "typeVersion": 1,
@@ -243,7 +276,7 @@
       "main": [
         [
           {
-            "node": "Step 1 · Push categories",
+            "node": "Step 1 · Collect categories",
             "type": "main",
             "index": 0
           }
@@ -254,7 +287,7 @@
       "main": [
         [
           {
-            "node": "Step 2 · Push products",
+            "node": "Step 2 · Collect products",
             "type": "main",
             "index": 0
           }
@@ -262,6 +295,39 @@
       ]
     },
     "Step 3 · Get PIM deletes": {
+      "main": [
+        [
+          {
+            "node": "Step 3 · Collect deletes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 1 · Collect categories": {
+      "main": [
+        [
+          {
+            "node": "Step 1 · Push categories",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 2 · Collect products": {
+      "main": [
+        [
+          {
+            "node": "Step 2 · Push products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 3 · Collect deletes": {
       "main": [
         [
           {

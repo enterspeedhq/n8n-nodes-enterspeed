@@ -8,7 +8,7 @@ This package ships three nodes:
 
 - **Enterspeed Core** (action) — Ingest, Delivery, Query and Routes operations.
 - **Enterspeed Core Webhook Trigger** (push) — starts a workflow when a view is deployed or removed.
-- **Enterspeed Context Graph** (action) — pushes workflow items into a Context Graph as source entities; see [Context Graph](#context-graph).
+- **Enterspeed Context Graph** (action) — pushes records into a Context Graph as source entities, one per item or a list at once; see [Context Graph](#context-graph).
 
 Before 0.2.0 these were labelled **Enterspeed**, **Enterspeed Webhook Trigger** and **Enterspeed API** (credential). Only the labels changed — the internal names (`enterspeed`, `enterspeedTrigger`, `enterspeedApi`) are the same, so existing workflows and credentials need no action. Nodes already in a workflow keep their names.
 
@@ -91,20 +91,25 @@ example workflow.
 
 ## Context Graph
 
-The **Enterspeed Context Graph** node uses its own **Enterspeed Context Graph API** credential, so it can't be run with an Enterspeed Core key by mistake.
+The **Enterspeed Context Graph** node uses its own **Enterspeed Context Graph API** credential.
 
 | Field | Used for |
 |---|---|
 | API Key | Sent as the `X-Api-Key` header on every call |
-| Ingest URL | Uploads (pre-filled with `https://api.enterspeed.com`, as in the Core credential) |
-| Delivery URL | Reads (pre-filled with `https://delivery.enterspeed.com`, as in the Core credential) |
+| Ingest URL | Writes (pre-filled with `https://api.enterspeed.com`) |
+| Delivery URL | Reads (pre-filled with `https://delivery.enterspeed.com`) |
 | Manifest Version | The `{manifest}` segment of every Delivery route (default `1.0.0`) |
 
 Testing the credential reads `GET {Delivery URL}/schema/msd/v1/{Manifest Version}`. It fails with a clear message if the URL can't be reached, the key is rejected (401) or the manifest version isn't hosted (404).
 
-**Entity — Push** — `POST {Ingest URL}/entities`
+**Entity — Push** and **Push Many** — `POST {Ingest URL}/entities`
 
-Push sends records as they change. Each input item **is** the record, and Push sends it to the Context Graph as it is. A Context Graph record looks like this:
+Both send records as they change, to the Context Graph as they are:
+
+- **Push** takes one record per item and sends **one request per item**.
+- **Push Many** takes one item holding a **list** of records and sends the whole list in **one request**. Collect the records into one item with an **Aggregate** node (*All Item Data*) first; *Records* defaults to the list it makes, `{{ $json.data }}`.
+
+A Context Graph record looks like this:
 
 | Field | | What it is |
 |---|---|---|
@@ -115,9 +120,11 @@ Push sends records as they change. Each input item **is** the record, and Push s
 | `$modifiedAt` | optional | When the record last changed in the source (ISO 8601 with an offset). Saves and deletes to an entity are applied in this order, so an older write that arrives late doesn't overwrite a newer one. In production, sources are expected to send it: a record without one is applied, but a later upload of the source's export can overwrite it. |
 | anything else | | The entity's properties, stored exactly as sent. A save replaces the whole stored record. |
 
-Push has one field per `$` field — *Entity ID*, *Entity Type*, *Source*, *Action* and *Modified At* — each defaulting to the record's own (`{{ $json.$id }}` and so on). Records that already have these fields need no setup; change a field only to take the value from somewhere else, e.g. *Action* `{{ $json.deleted ? 'delete' : '' }}`. Values are sent as given, never converted or trimmed: an ID that isn't text is reported as failed.
+Push has one field per `$` field — *Entity ID*, *Entity Type*, *Source*, *Action* and *Modified At* — each defaulting to the record's own (`{{ $json.$id }}` and so on). Records that already have these fields need no setup; change a field only to take the value from somewhere else, e.g. *Action* `{{ $json.deleted ? 'delete' : '' }}`.
 
-If the source's records need more than that — renamed fields, transformed values, another format — reshape them in a **Code** or **Edit Fields** node before Push:
+Push Many has no such fields: each record in the list must carry its own `$id` and `$type`, and `$source`, `$action` and `$modifiedAt` where it has them. Either way, values are sent as given, never converted or trimmed: a `$id` that isn't text is reported as failed.
+
+If the source's records need more than that — renamed fields, transformed values, another format — reshape them in a **Code** or **Edit Fields** node before Push (or before the Aggregate node for Push Many):
 
 ```js
 // Fit each source record to a Context Graph record.
@@ -134,8 +141,8 @@ return $input.all().map(({ json }) => ({
 ```
 
 - A delete sends only `$id`, `$type`, `$source` and `$modifiedAt`.
-- Push is not for bulk loads; a source's complete export goes in as an upload (coming in a later release). A run is sent in as few requests as fit under the Context Graph's 32 MiB request limit; a single record too large for one request is reported as failed.
-- Outputs one result per item — `{ id, type, source, action, accepted, statusCode, error? }`. A rejected record, or one without a valid ID or type, comes out with `accepted: false` and the reason; the rest are still stored. `accepted: true` also covers a record whose content was unchanged, and one superseded by a newer *Modified At* — both are accepted with nothing written.
+- Neither is for bulk loads; a source's complete export goes in as an upload (coming in a later release). Push Many splits a list into more requests only past the Context Graph's 32 MiB request limit; a single record too large for one request is reported as failed.
+- Outputs one result per record — `{ id, type, source, action, accepted, statusCode, error? }`, paired to the item it came from. A rejected record, or one without a valid `$id` or `$type`, comes out with `accepted: false` and the reason; the rest are still stored. Push Many fails an item whose *Records* isn't a list. `accepted: true` also covers a record whose content was unchanged, and one superseded by a newer *Modified At* — both are accepted with nothing written.
 - When the Context Graph is busy it refuses a request with `429` and says how long to wait. The node waits that long and resends the refused request, up to 3 times (nothing was written when it was refused). If it is still refused, or asked to wait more than five minutes, the run fails.
 - A rejected key (401), a key without write access (403), a request that is too large (413), continued throttling (429) or an unreachable Ingest URL fails the run with a message saying which. With *Continue On Fail*, the affected records come out with `error` and `description` instead.
 

@@ -15,12 +15,11 @@ const resourceSelector: INodeProperties = {
 /**
  * Enterspeed Context Graph action node.
  *
- * A sibling of Enterspeed Core with its own credential
- * (`enterspeedContextGraphApi`), so a workflow can never send Context Graph
- * calls with a Core key or the other way round.
+ * Uses its own credential (`enterspeedContextGraphApi`).
  *
  * Resources:
- *  - Entity (Ingest) : push input items as source entities (save or delete)
+ *  - Entity (Ingest) : push records as source entities (save or delete), one
+ *                      per item (Push) or a list in one item (Push Many)
  *
  * Each resource's properties and execute logic live under ./actions/<resource>;
  * execute() below just delegates to ./actions/router.

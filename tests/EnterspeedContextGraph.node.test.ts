@@ -1,10 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { IDataObject, INodeExecutionData } from 'n8n-workflow';
+import type { IDataObject, INode, INodeExecutionData } from 'n8n-workflow';
+import { NodeApiError } from 'n8n-workflow';
 import { EnterspeedContextGraph } from '../nodes/EnterspeedContextGraph/EnterspeedContextGraph.node';
 import {
 	MAX_REQUEST_BYTES,
 	MAX_THROTTLE_RETRIES,
-} from '../nodes/EnterspeedContextGraph/actions/entity/push.operation';
+} from '../nodes/EnterspeedContextGraph/actions/entity/shared';
 import { EnterspeedContextGraphApi } from '../credentials/EnterspeedContextGraphApi.credentials';
 import { createContextGraphExecuteMock } from './mocks';
 
@@ -17,8 +18,10 @@ vi.mock('n8n-workflow', async (importOriginal) => ({
 
 /**
  * Push sends each input item, as the record it is, to `POST {ingestUrl}/entities`
- * (one NDJSON line per item, per the Context Graph's Ingest NDJSON contract)
- * and outputs one result per item. The service answers a per-line
+ * (one NDJSON line, per the Context Graph's Ingest NDJSON contract), one
+ * request per item, and outputs one result per item. Push Many sends a list
+ * of records held in one item in one request, and outputs one result per
+ * record. The service answers a per-line
  * `{ id, accepted, error?, statusCode }` array in line order, with 200 when
  * every line is accepted and 207 otherwise.
  */
@@ -57,6 +60,22 @@ function ndjsonLines(req: IDataObject): IDataObject[] {
 
 const sent = (httpRequest: ReturnType<typeof vi.fn>, call = 0) =>
 	ndjsonLines(httpRequest.mock.calls[call][0] as IDataObject);
+
+/** Every line sent, across all requests, in order. */
+const allSent = (httpRequest: ReturnType<typeof vi.fn>) =>
+	httpRequest.mock.calls.flatMap((c) => ndjsonLines(c[0] as IDataObject));
+
+/** The $id of each line, one array per request. */
+const perRequest = (httpRequest: ReturnType<typeof vi.fn>) =>
+	httpRequest.mock.calls.map((c) => ndjsonLines(c[0] as IDataObject).map((l) => l.$id));
+
+/**
+ * A failure as n8n hands it to the node: a NodeApiError, with the HTTP
+ * error (status and headers) as its `cause`.
+ */
+const httpNode = { id: '1', name: 'HTTP', type: 'n8n-nodes-base.httpRequest', typeVersion: 1, position: [0, 0], parameters: {} } as INode;
+const n8nFailure = (status: number, headers: IDataObject = {}) =>
+	Object.assign(new NodeApiError(httpNode, { httpCode: String(status) }), { cause: { response: { status, headers } } });
 
 async function push(opts: {
 	params?: Record<string, unknown>;
@@ -123,8 +142,9 @@ describe('EnterspeedContextGraph — Entity › Push', () => {
 			const stamped = { ...navPricing, $modifiedAt: '2026-06-01T09:00:00Z' };
 			const items: IDataObject[] = [pimCategory, stamped];
 			const { httpRequest } = await push({ items });
-			const req = httpRequest.mock.calls[0][0] as IDataObject;
-			expect(req.body).toBe(items.map((i) => JSON.stringify(i)).join('\n') + '\n');
+			expect(httpRequest.mock.calls.map((c) => (c[0] as IDataObject).body)).toEqual(
+				items.map((i) => JSON.stringify(i) + '\n'),
+			);
 		});
 
 		it('sends to {ingestUrl}/entities as NDJSON with the API key header', async () => {
@@ -214,7 +234,7 @@ describe('EnterspeedContextGraph — Entity › Push', () => {
 				items,
 				params: { action: (i: number) => (items[i].deleted ? 'delete' : '') },
 			});
-			expect(sent(httpRequest)).toEqual([
+			expect(allSent(httpRequest)).toEqual([
 				pimCategory,
 				{ $id: 'nav-prc-541690', $type: 'pricing', $source: 'nav', $action: 'delete' },
 			]);
@@ -228,7 +248,7 @@ describe('EnterspeedContextGraph — Entity › Push', () => {
 				{ ...pimDelete, $modifiedAt: '2026-06-02T10:00:00+02:00' },
 			];
 			const { httpRequest } = await push({ items });
-			expect(sent(httpRequest)).toEqual(items);
+			expect(allSent(httpRequest)).toEqual(items);
 		});
 
 		it('stamps from a mapped field, sent as resolved', async () => {
@@ -260,11 +280,11 @@ describe('EnterspeedContextGraph — Entity › Push', () => {
 			]);
 		});
 
-		it('reports records the service rejected (207) without dropping the accepted ones', async () => {
-			const httpRequest = vi.fn(async () => [
-				{ id: 'pim-cat-dd34d4', accepted: true, statusCode: 200 },
-				{ id: 'nav-prc-541690', accepted: false, error: 'Write failed.', statusCode: 500 },
-			]);
+		it('reports records the service rejected without dropping the accepted ones', async () => {
+			const httpRequest = vi
+				.fn()
+				.mockResolvedValueOnce([{ id: 'pim-cat-dd34d4', accepted: true, statusCode: 200 }])
+				.mockResolvedValueOnce([{ id: 'nav-prc-541690', accepted: false, error: 'Write failed.', statusCode: 500 }]);
 			const { out } = await push({ items: [pimCategory, navPricing], httpRequest });
 			expect(out.map((o) => o.json.accepted)).toEqual([true, false]);
 			expect(out[1].json).toMatchObject({ statusCode: 500, error: 'Write failed.' });
@@ -277,37 +297,23 @@ describe('EnterspeedContextGraph — Entity › Push', () => {
 		});
 
 		it('fails when the service answers a different number of results than lines sent', async () => {
-			const httpRequest = vi.fn(async () => [{ id: 'pim-cat-dd34d4', accepted: true }]);
-			await expect(push({ items: [pimCategory, navPricing], httpRequest })).rejects.toThrow(
-				'Expected 2 results from the Ingest URL but got 1',
-			);
+			const httpRequest = vi.fn(async () => []);
+			await expect(push({ httpRequest })).rejects.toThrow('Expected 1 results from the Ingest URL but got 0');
 		});
 	});
 
-	describe('request size (ingest/ADR-020 D5: 32 MiB body limit; Push is not the bulk path)', () => {
-		it('sends a whole run in one request when it fits, whatever the number of records', async () => {
-			const items = Array.from({ length: 1201 }, (_, i) => ({ ...pimCategory, $id: `pim-cat-${i}` }));
-			const { httpRequest, out } = await push({ items });
-			expect(httpRequest).toHaveBeenCalledTimes(1);
-			expect(out).toHaveLength(1201);
+	describe('one request per item', () => {
+		it('sends each item in its own request, keeping output in input order', async () => {
+			const { httpRequest, out } = await push({ items: [pimCategory, navPricing, pimDelete] });
+			expect(perRequest(httpRequest)).toEqual([['pim-cat-dd34d4'], ['nav-prc-541690'], ['pim-prd-2005f2']]);
+			expect(out.map((o) => o.json.id)).toEqual(['pim-cat-dd34d4', 'nav-prc-541690', 'pim-prd-2005f2']);
 		});
 
-		it('starts a new request before one would go over the limit, keeping output in input order', async () => {
-			const { httpRequest, out } = await push({ items: big(3) });
-			expect(httpRequest.mock.calls.map((c) => ndjsonLines(c[0] as IDataObject).length)).toEqual([2, 1]);
-			for (const call of httpRequest.mock.calls) {
-				expect(new TextEncoder().encode((call[0] as IDataObject).body as string).length).toBeLessThanOrEqual(
-					MAX_REQUEST_BYTES,
-				);
-			}
-			expect(out.map((o) => o.json.id)).toEqual(['big-1', 'big-2', 'big-3']);
-		});
-
-		it('reports a single record over the limit without sending it, and still pushes the rest', async () => {
+		it('reports a record over the 32 MiB request limit (ingest/ADR-020 D5) without sending it, and still pushes the rest', async () => {
 			const { httpRequest, out } = await push({
 				items: [pimCategory, { ...navPricing, huge: 'x'.repeat(MAX_REQUEST_BYTES) }],
 			});
-			expect(sent(httpRequest).map((l) => l.$id)).toEqual(['pim-cat-dd34d4']);
+			expect(allSent(httpRequest).map((l) => l.$id)).toEqual(['pim-cat-dd34d4']);
 			expect(out[1].json).toMatchObject({
 				accepted: false,
 				error: 'Item 1 is larger than the Ingest URL accepts in one request.',
@@ -327,6 +333,18 @@ describe('EnterspeedContextGraph — Entity › Push', () => {
 				throw Object.assign(new Error(`Request failed with status code ${status}`), { response: { status } });
 			});
 			await expect(push({ httpRequest })).rejects.toThrow(message);
+		});
+
+		it.each([
+			[401, 'The API key was rejected by the Ingest URL.'],
+			[403, "The API key isn't allowed to write to this Context Graph."],
+		])('keeps its own message for %i when n8n hands the failure over as a NodeApiError', async (status, message) => {
+			const httpRequest = vi.fn(async () => {
+				throw n8nFailure(status);
+			});
+			const error = (await push({ httpRequest }).catch((e: Error) => e)) as NodeApiError;
+			expect(error.message).toBe(message);
+			expect(error.httpCode).toBe(String(status));
 		});
 
 		it('fails with a clear message when the Ingest URL cannot be reached', async () => {
@@ -354,8 +372,8 @@ describe('EnterspeedContextGraph — Entity › Push', () => {
 				.mockImplementationOnce(async (req: IDataObject) =>
 					ndjsonLines(req).map((l) => ({ id: l.$id, accepted: true, statusCode: 200 })),
 				);
-			const { out } = await push({ items: big(3), httpRequest, continueOnFail: true });
-			expect(out.map((o) => o.json.accepted)).toEqual([false, false, true]);
+			const { out } = await push({ items: [pimCategory, navPricing], httpRequest, continueOnFail: true });
+			expect(out.map((o) => o.json.accepted)).toEqual([false, true]);
 			expect(out[0].json).toMatchObject({
 				error: "Couldn't reach the Ingest URL (http://localhost:5200).",
 				description: 'connect ECONNREFUSED',
@@ -365,13 +383,13 @@ describe('EnterspeedContextGraph — Entity › Push', () => {
 		it('with Continue On Fail, reports a result-count mismatch per item and sends the next request', async () => {
 			const httpRequest = vi
 				.fn()
-				.mockResolvedValueOnce([{ id: 'big-1', accepted: true }])
+				.mockResolvedValueOnce([])
 				.mockImplementationOnce(async (req: IDataObject) =>
 					ndjsonLines(req).map((l) => ({ id: l.$id, accepted: true, statusCode: 200 })),
 				);
-			const { out } = await push({ items: big(3), httpRequest, continueOnFail: true });
-			expect(out.map((o) => o.json.accepted)).toEqual([false, false, true]);
-			expect(out[0].json.error).toBe('Expected 2 results from the Ingest URL but got 1');
+			const { out } = await push({ items: [pimCategory, navPricing], httpRequest, continueOnFail: true });
+			expect(out.map((o) => o.json.accepted)).toEqual([false, true]);
+			expect(out[0].json.error).toBe('Expected 1 results from the Ingest URL but got 0');
 		});
 	});
 
@@ -390,12 +408,13 @@ describe('EnterspeedContextGraph — Entity › Push', () => {
 				.mockImplementationOnce(accept)
 				.mockRejectedValueOnce(throttled('2'))
 				.mockImplementation(accept);
-			const { out } = await push({ items: big(3), httpRequest });
+			const { out } = await push({ items: [pimCategory, navPricing, pimDelete], httpRequest });
 			expect(sleep).toHaveBeenCalledWith(2000);
-			expect(httpRequest.mock.calls.map((c) => ndjsonLines(c[0] as IDataObject).map((l) => l.$id))).toEqual([
-				['big-1', 'big-2'],
-				['big-3'],
-				['big-3'],
+			expect(perRequest(httpRequest)).toEqual([
+				['pim-cat-dd34d4'],
+				['nav-prc-541690'],
+				['nav-prc-541690'],
+				['pim-prd-2005f2'],
 			]);
 			expect(out.map((o) => o.json.accepted)).toEqual([true, true, true]);
 		});
@@ -410,6 +429,16 @@ describe('EnterspeedContextGraph — Entity › Push', () => {
 			const waited = sleep.mock.calls[0][0];
 			expect(waited).toBeGreaterThan(3000);
 			expect(waited).toBeLessThanOrEqual(5000);
+		});
+
+		it('reads the Retry-After when n8n hands the 429 over as a NodeApiError', async () => {
+			sleep.mockClear();
+			const httpRequest = vi
+				.fn()
+				.mockRejectedValueOnce(n8nFailure(429, { 'retry-after': '7' }))
+				.mockImplementation(accept);
+			await push({ httpRequest });
+			expect(sleep).toHaveBeenCalledWith(7000);
 		});
 
 		it(`gives up after ${MAX_THROTTLE_RETRIES} retries`, async () => {
@@ -435,6 +464,121 @@ describe('EnterspeedContextGraph — Entity › Push', () => {
 			await expect(push({ httpRequest })).rejects.toThrow();
 			expect(httpRequest).toHaveBeenCalledTimes(1);
 		});
+	});
+});
+
+describe('EnterspeedContextGraph — Entity › Push Many', () => {
+	async function pushMany(opts: {
+		records?: unknown | ((i: number) => unknown);
+		items?: IDataObject[];
+		httpRequest?: ReturnType<typeof vi.fn>;
+		continueOnFail?: boolean;
+	}) {
+		const httpRequest = opts.httpRequest ?? acceptAll();
+		const ctx = createContextGraphExecuteMock({
+			params: {
+				resource: 'entity',
+				operation: 'pushMany',
+				// What the Records field's default ({{ $json.data }}) resolves to.
+				records: opts.records ?? [pimCategory, navPricing, pimDelete],
+			},
+			items: opts.items ?? [{}],
+			httpRequest,
+			continueOnFail: opts.continueOnFail,
+		});
+		const [out] = (await node.execute.call(ctx)) as INodeExecutionData[][];
+		return { out, httpRequest };
+	}
+
+	it('defaults Records to the data field an Aggregate node collects records into', () => {
+		const records = node.description.properties.find((p) => p.name === 'records');
+		expect(records?.default).toBe('={{ $json.data }}');
+	});
+
+	it("has no $ field settings: each record keeps its own", () => {
+		const shown = node.description.properties.filter((p) =>
+			(p.displayOptions?.show?.operation as string[] | undefined)?.includes('pushMany'),
+		);
+		expect(shown.map((p) => p.name)).toEqual(['records']);
+	});
+
+	it('sends the whole list in one request, each record exactly as it is', async () => {
+		const { httpRequest } = await pushMany({});
+		expect(httpRequest).toHaveBeenCalledTimes(1);
+		expect((httpRequest.mock.calls[0][0] as IDataObject).body).toBe(
+			[pimCategory, navPricing, pimDelete].map((r) => JSON.stringify(r)).join('\n') + '\n',
+		);
+	});
+
+	it('outputs one result per record, in list order, paired to the item the list came from', async () => {
+		const { out } = await pushMany({});
+		expect(out.map((o) => [o.json.id, o.json.action, o.json.accepted, o.pairedItem])).toEqual([
+			['pim-cat-dd34d4', 'upsert', true, { item: 0 }],
+			['nav-prc-541690', 'upsert', true, { item: 0 }],
+			['pim-prd-2005f2', 'delete', true, { item: 0 }],
+		]);
+	});
+
+	it('sends each item’s list in its own request', async () => {
+		const lists = [[pimCategory], [navPricing, pimDelete]];
+		const { httpRequest, out } = await pushMany({ items: [{}, {}], records: (i: number) => lists[i] });
+		expect(perRequest(httpRequest)).toEqual([['pim-cat-dd34d4'], ['nav-prc-541690', 'pim-prd-2005f2']]);
+		expect(out.map((o) => o.pairedItem)).toEqual([{ item: 0 }, { item: 1 }, { item: 1 }]);
+	});
+
+	it('accepts the list typed in as JSON text', async () => {
+		const { httpRequest } = await pushMany({ records: JSON.stringify([pimCategory]) });
+		expect(sent(httpRequest)).toEqual([pimCategory]);
+	});
+
+	it('reports a record without a text $id or $type, or that is not an object, without sending it', async () => {
+		const { httpRequest, out } = await pushMany({
+			records: [pimCategory, { name: 'no key' }, { ...navPricing, $id: 42 }, 'text'],
+		});
+		expect(sent(httpRequest)).toEqual([pimCategory]);
+		expect(out.map((o) => o.json.error)).toEqual([
+			undefined,
+			'Item 0, record 1 is missing Entity ID and is missing Entity Type.',
+			'Item 0, record 2 has Entity ID that is not text.',
+			'Item 0, record 3 is not an object.',
+		]);
+	});
+
+	it('sends nothing for an empty list', async () => {
+		const { httpRequest, out } = await pushMany({ records: [] });
+		expect(httpRequest).not.toHaveBeenCalled();
+		expect(out).toEqual([]);
+	});
+
+	it('fails when Records is not a list, or with Continue On Fail reports it on the item', async () => {
+		await expect(pushMany({ records: pimCategory })).rejects.toThrow('Item 0 has Records that are not a list.');
+		const { out } = await pushMany({ records: 'not json', continueOnFail: true });
+		expect(out).toEqual([
+			{ json: { accepted: false, error: 'Item 0 has Records that are not a list.' }, pairedItem: { item: 0 } },
+		]);
+	});
+
+	it('splits a list only before the 32 MiB request limit (ingest/ADR-020 D5)', async () => {
+		const { httpRequest, out } = await pushMany({ records: big(3) });
+		expect(perRequest(httpRequest)).toEqual([['big-1', 'big-2'], ['big-3']]);
+		for (const call of httpRequest.mock.calls) {
+			expect(new TextEncoder().encode((call[0] as IDataObject).body as string).length).toBeLessThanOrEqual(
+				MAX_REQUEST_BYTES,
+			);
+		}
+		expect(out.map((o) => o.json.id)).toEqual(['big-1', 'big-2', 'big-3']);
+	});
+
+	it('with Continue On Fail, reports a failed request on each of its records', async () => {
+		const httpRequest = vi.fn(async () => {
+			throw n8nFailure(401);
+		});
+		const { out } = await pushMany({ httpRequest, continueOnFail: true });
+		expect(out.map((o) => [o.json.accepted, o.json.error])).toEqual([
+			[false, 'The API key was rejected by the Ingest URL.'],
+			[false, 'The API key was rejected by the Ingest URL.'],
+			[false, 'The API key was rejected by the Ingest URL.'],
+		]);
 	});
 });
 
