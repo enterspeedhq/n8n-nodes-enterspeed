@@ -354,29 +354,7 @@
       "parameters": {
         "resource": "index",
         "operation": "query",
-        "index": "ProductIndex",
-        "filtersUi": {
-          "condition": [
-            {
-              "field": "categoryId",
-              "operator": "equals",
-              "value": "cat-headphones"
-            },
-            {
-              "field": "inStock",
-              "operator": "equals",
-              "value": "true"
-            }
-          ]
-        },
-        "sortUi": {
-          "item": [
-            {
-              "field": "price",
-              "order": "desc"
-            }
-          ]
-        }
+        "query": "{\n  \"index\": \"ProductIndex\",\n  \"filters\": {\n    \"and\": [\n      {\n        \"field\": \"categoryId\",\n        \"operator\": \"equals\",\n        \"value\": \"cat-headphones\"\n      },\n      {\n        \"field\": \"inStock\",\n        \"operator\": \"equals\",\n        \"value\": true\n      }\n    ]\n  },\n  \"sort\": [\n    {\n      \"field\": \"price\",\n      \"order\": \"desc\"\n    }\n  ]\n}"
       },
       "type": "CUSTOM.enterspeedContextGraph",
       "typeVersion": 1,
