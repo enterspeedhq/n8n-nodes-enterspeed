@@ -14,6 +14,10 @@
 //   CONTENTFUL_SPACE_ID
 //   CONTENTFUL_DELIVERY_TOKEN
 //   CONTENTFUL_PREVIEW_TOKEN
+//   CONTEXT_GRAPH_API_KEY           (default: dev-server, which ignores the key)
+//   CONTEXT_GRAPH_INGEST_URL        (default: http://host.docker.internal:5200, the local dev-server)
+//   CONTEXT_GRAPH_DELIVERY_URL      (default: http://host.docker.internal:5200)
+//   CONTEXT_GRAPH_MANIFEST_VERSION  (default: 1.0.0)
 
 import { execSync } from 'child_process';
 import { readFileSync, readdirSync, existsSync } from 'fs';
@@ -87,12 +91,35 @@ if (hasContentful) {
   });
 }
 
+// The Context Graph credential defaults to the local dev-server, which needs
+// no real key, so it is always set up.
+const contextGraphCred = existing.find(
+  (c) => c.name === 'Enterspeed Context Graph account' && c.type === 'enterspeedContextGraphApi',
+);
+const contextGraphCredentialId = contextGraphCred?.id ?? crypto.randomUUID();
+console.log(contextGraphCred
+  ? `Updating Enterspeed Context Graph credential (ID: ${contextGraphCredentialId})...`
+  : 'Creating Enterspeed Context Graph credential...');
+
+credentials.push({
+  id: contextGraphCredentialId,
+  name: 'Enterspeed Context Graph account',
+  type: 'enterspeedContextGraphApi',
+  data: {
+    apiKey: process.env.CONTEXT_GRAPH_API_KEY || 'dev-server',
+    ingestUrl: process.env.CONTEXT_GRAPH_INGEST_URL || 'http://host.docker.internal:5200',
+    deliveryUrl: process.env.CONTEXT_GRAPH_DELIVERY_URL || 'http://host.docker.internal:5200',
+    manifestVersion: process.env.CONTEXT_GRAPH_MANIFEST_VERSION || '1.0.0',
+  },
+});
+
 const importResult = execSync(
   `docker exec -i ${CONTAINER} n8n import:credentials --input=/dev/stdin`,
   { input: JSON.stringify(credentials), encoding: 'utf-8' },
 );
 console.log(importResult.trim());
 console.log(`Enterspeed credential ready with ID: ${credentialId}`);
+console.log(`Enterspeed Context Graph credential ready with ID: ${contextGraphCredentialId}`);
 if (hasContentful) {
   console.log(`Contentful credential ready with ID: ${contentfulCredentialId}`);
 }
@@ -112,7 +139,8 @@ const templates = readdirSync(templatesDir).filter((f) => f.endsWith('.json'));
 
 for (const file of templates) {
   let templateContent = readFileSync(join(templatesDir, file), 'utf-8')
-    .replaceAll('__ENTERSPEED_CREDENTIAL_ID__', credentialId);
+    .replaceAll('__ENTERSPEED_CREDENTIAL_ID__', credentialId)
+    .replaceAll('__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__', contextGraphCredentialId);
 
   if (hasContentful) {
     templateContent = templateContent.replaceAll('__CONTENTFUL_CREDENTIAL_ID__', contentfulCredentialId);

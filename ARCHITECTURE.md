@@ -31,8 +31,29 @@ This package ships three n8n node types and two credential types:
   URLs (see Core Data Models below).
 - **`EnterspeedContextGraph`**
   (`nodes/EnterspeedContextGraph/EnterspeedContextGraph.node.ts`) — a sibling
-  action node for Enterspeed Context Graph. It has no operations yet;
-  `execute()` throws a `NodeOperationError` saying so.
+  action node for Enterspeed Context Graph, laid out like Core
+  (`actions/router.ts` → `actions/<resource>/*.operation.ts`, plus
+  `transport.ts`). One difference: its handlers receive **all** input items at
+  once, because Entity › Push sends a run's records in shared requests.
+  Each item **is** the record, per the Context Graph's *Ingest NDJSON*
+  contract (semantic-graph repository › contracts › spec): Push sends it
+  unchanged as one NDJSON line to `POST {ingestUrl}/entities`, setting
+  `$id`, `$type`, `$source`, `$action` and `$modifiedAt` from five node
+  parameters that default to the record's own (`={{ $json.$id }}` etc.), and
+  never reshapes or converts values (a non-string `$id`/`$type` is reported
+  as failed, as the contract makes it a parse error). `$source` is optional
+  (derived from the key when absent, ingest/ADR-005). A delete line carries
+  only the `$` fields. Push is not the bulk path — that is an artifact
+  upload (cross/ADR-022, ingest/ADR-017) — so the only split is at the
+  request body limit: requests close before 30 MiB (ingest caps a body at 32
+  MiB, ingest/ADR-020 D5) and are sent one at a time. A `429` is retried
+  after its `Retry-After`, up to 3 times, as ADR-020 requires of
+  workflow-tool integrations (the ADRs live in the semantic-graph repository
+  › contracts › docs › adr). The service answers a per-line `{ id,
+  accepted, error?, statusCode }` array in line order (200 all accepted, 207
+  otherwise), which is zipped back onto the input items. Items without a
+  valid ID or type are reported as failed without being sent. Requests go through
+  `httpRequestWithAuthentication`, so operation code never touches the key.
 - **`EnterspeedContextGraphApi`**
   (`credentials/EnterspeedContextGraphApi.credentials.ts`) — the Context
   Graph's own credential: one API key (sent as `X-Api-Key` via `authenticate`),
