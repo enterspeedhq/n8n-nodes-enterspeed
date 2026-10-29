@@ -946,6 +946,193 @@ describe('EnterspeedContextGraph — Shape › Get Many', () => {
 	});
 });
 
+describe('EnterspeedContextGraph — Index › Query', () => {
+	// The query-envelope contract's result: { id, index, items, totalCount, next }.
+	const envelope = (id: string, items: IDataObject[] = [], next: string | null = null) => ({
+		id,
+		index: 'ProductIndex',
+		items,
+		totalCount: items.length,
+		next,
+	});
+	const product = { $id: 'ProductIndex:productId:p-1001', sku: 'AUR-HP-100', name: 'Aurora H100', price: 2499 };
+
+	/** Answers each query in the batch with its own envelope, by id. */
+	const answerEach = (items: IDataObject[] = [product]) =>
+		vi.fn(async (req: IDataObject) => (req.body as IDataObject[]).map((q) => envelope(q.id as string, items)));
+
+	async function query(opts: {
+		params?: Record<string, unknown>;
+		items?: IDataObject[];
+		httpRequest?: ReturnType<typeof vi.fn>;
+		continueOnFail?: boolean;
+	}) {
+		const httpRequest = opts.httpRequest ?? answerEach();
+		const ctx = createContextGraphExecuteMock({
+			params: { resource: 'index', operation: 'query', index: 'ProductIndex', specifyQuery: 'fields', ...opts.params },
+			items: opts.items ?? [{}],
+			httpRequest,
+			continueOnFail: opts.continueOnFail,
+		});
+		const [out] = (await node.execute.call(ctx)) as INodeExecutionData[][];
+		return { out, httpRequest };
+	}
+	const body = (httpRequest: ReturnType<typeof vi.fn>) =>
+		(httpRequest.mock.calls[0][0] as IDataObject).body as IDataObject[];
+
+	it('explains the operation in a notice', () => {
+		const notice = node.description.properties.find((p) => p.name === 'queryNotice');
+		expect(notice?.type).toBe('notice');
+	});
+
+	it('POSTs an array of queries to /query/v1/{manifest} on the Delivery URL (ADR-030 §3)', async () => {
+		const { httpRequest } = await query({});
+		const req = httpRequest.mock.calls[0][0] as IDataObject;
+		expect(req.method).toBe('POST');
+		expect(req.url).toBe('http://localhost:5200/query/v1/1.0.0');
+		expect(body(httpRequest)).toEqual([{ index: 'ProductIndex', limit: 20, page: 0, id: '0' }]);
+	});
+
+	it('builds filters, sort, cursor, search, aggregations and args from the fields', async () => {
+		const { httpRequest } = await query({
+			params: {
+				'filtersUi.condition': [
+					{ field: 'price', operator: 'greaterThan', value: '1000' },
+					{ field: 'sku', operator: 'in', value: '["AUR-HP-100","AUR-SP-200"]' },
+					{ field: 'categoryId', operator: 'equals', value: 'cat-speakers' },
+				],
+				filtersCombinator: 'or',
+				'sortUi.item': [{ field: 'price', order: 'desc' }],
+				pageSize: 10,
+				page: 1,
+				cursor: 'abc',
+				queryOptions: {
+					searchQuery: 'aurora',
+					searchLiteral: true,
+					searchFields: 'name, sku',
+					aggregations: '[{"type":"values","name":"byCategory","field":"categoryId"}]',
+					args: '{"min":1000}',
+				},
+			},
+		});
+		expect(body(httpRequest)[0]).toEqual({
+			index: 'ProductIndex',
+			filters: {
+				or: [
+					{ field: 'price', operator: 'greaterThan', value: 1000 },
+					{ field: 'sku', operator: 'in', value: ['AUR-HP-100', 'AUR-SP-200'] },
+					{ field: 'categoryId', operator: 'equals', value: 'cat-speakers' },
+				],
+			},
+			sort: [{ field: 'price', order: 'desc' }],
+			limit: 10,
+			page: 1,
+			cursor: 'abc',
+			search: { query: 'aurora', literal: true, fields: ['name', 'sku'] },
+			aggregations: [{ type: 'values', name: 'byCategory', field: 'categoryId' }],
+			args: { min: 1000 },
+			id: '0',
+		});
+	});
+
+	it('sends one condition as a plain filter, without a combinator', async () => {
+		const { httpRequest } = await query({
+			params: { 'filtersUi.condition': [{ field: 'inStock', operator: 'equals', value: 'true' }] },
+		});
+		expect(body(httpRequest)[0].filters).toEqual({ field: 'inStock', operator: 'equals', value: true });
+	});
+
+	it('takes the whole query as JSON, with the index from its field', async () => {
+		const { httpRequest } = await query({
+			params: {
+				specifyQuery: 'json',
+				queryJson: '{"filters":{"and":[{"field":"price","operator":"lessThan","value":500}]}}',
+			},
+		});
+		expect(body(httpRequest)).toEqual([
+			{ filters: { and: [{ field: 'price', operator: 'lessThan', value: 500 }] }, index: 'ProductIndex', id: '0' },
+		]);
+	});
+
+	it("sends every item's query in one request and outputs each result unchanged, paired to its item", async () => {
+		const httpRequest = vi.fn(async (req: IDataObject) =>
+			(req.body as IDataObject[])
+				.map((q) => envelope(q.id as string, [product], q.id === '1' ? 'cursor-2' : null))
+				.reverse(),
+		);
+		const { out } = await query({ items: [{}, {}], httpRequest });
+		expect(httpRequest).toHaveBeenCalledTimes(1);
+		expect(out).toEqual([
+			{ json: envelope('0', [product]), pairedItem: { item: 0 } },
+			{ json: envelope('1', [product], 'cursor-2'), pairedItem: { item: 1 } },
+		]);
+	});
+
+	it('outputs an empty result, not a failure, when nothing matches', async () => {
+		const { out } = await query({ httpRequest: answerEach([]) });
+		expect(out[0].json).toEqual(envelope('0', []));
+	});
+
+	it('sends no request when there are no items', async () => {
+		const { out, httpRequest } = await query({ items: [] });
+		expect(httpRequest).not.toHaveBeenCalled();
+		expect(out).toEqual([]);
+	});
+
+	it('rejects an empty index before sending', async () => {
+		const { httpRequest } = await query({ params: { index: ' ' }, continueOnFail: true });
+		expect(httpRequest).not.toHaveBeenCalled();
+		await expect(query({ params: { index: '' } })).rejects.toThrow('Item 0: Index is empty.');
+	});
+
+	it('rejects invalid JSON before sending', async () => {
+		await expect(query({ params: { specifyQuery: 'json', queryJson: '{nope' } })).rejects.toThrow(
+			'Item 0: Query (JSON) is not valid JSON.',
+		);
+	});
+
+	describe('failed requests', () => {
+		const failWith = (status: number, data?: unknown) =>
+			vi.fn(async () => {
+				throw Object.assign(new NodeApiError(httpNode, { httpCode: String(status) }), {
+					cause: { response: { status, data } },
+				});
+			});
+
+		it("shows the platform's message for an unknown index or invalid filter (400)", async () => {
+			const data = { error: 'invalid_query', message: 'Unknown index "Nope".' };
+			await expect(query({ httpRequest: failWith(400, data) })).rejects.toThrow('Unknown index "Nope".');
+		});
+
+		it('says when the API key is rejected (401)', async () => {
+			await expect(query({ httpRequest: failWith(401) })).rejects.toThrow(
+				'The API key was rejected by the Delivery URL.',
+			);
+		});
+
+		it('says when the Delivery URL is unreachable', async () => {
+			const httpRequest = vi.fn(async () => {
+				throw new Error('connect ECONNREFUSED');
+			});
+			await expect(query({ httpRequest })).rejects.toThrow(
+				"Couldn't reach the Delivery URL (http://localhost:5200/query/v1/1.0.0).",
+			);
+		});
+
+		it('with Continue On Fail, fails every query in the rejected batch', async () => {
+			const { out } = await query({
+				items: [{}, {}],
+				httpRequest: failWith(400, { message: 'Bad filter.' }),
+				continueOnFail: true,
+			});
+			expect(out.map((o) => [o.json.error, o.pairedItem])).toEqual([
+				['Bad filter.', { item: 0 }],
+				['Bad filter.', { item: 1 }],
+			]);
+		});
+	});
+});
+
 describe('EnterspeedContextGraphApi credential', () => {
 	const field = (name: string) => credential.properties.find((p) => p.name === name);
 

@@ -8,7 +8,7 @@ This package ships three nodes:
 
 - **Enterspeed Core** (action) — Ingest, Delivery, Query and Routes operations.
 - **Enterspeed Core Webhook Trigger** (push) — starts a workflow when a view is deployed or removed.
-- **Enterspeed Context Graph** (action) — pushes records into a Context Graph as source entities, one per item or a list at once, and reads back its shapes; see [Context Graph](#context-graph).
+- **Enterspeed Context Graph** (action) — pushes records into a Context Graph as source entities, one per item or a list at once, reads back its shapes and queries its indexes; see [Context Graph](#context-graph).
 
 Before 0.2.0 these were labelled **Enterspeed**, **Enterspeed Webhook Trigger** and **Enterspeed API** (credential). Only the labels changed — the internal names (`enterspeed`, `enterspeedTrigger`, `enterspeedApi`) are the same, so existing workflows and credentials need no action. Nodes already in a workflow keep their names.
 
@@ -154,6 +154,15 @@ Both read the graph's **shapes**: the views its schema declares over the data, b
 - *Get* is for a workflow that handles one key at a time, such as a lookup triggered by a webhook. It takes one *Shape Key* per item, sends one request per item and outputs the shape exactly as the Context Graph returns it. A key with no shape fails with *No shape for key …*; the Context Graph answers a shape the key may not see the same way.
 - A malformed key fails with the Context Graph's own message (e.g. *Shape key is missing the "id" segment …*); with *Get Many* against the local dev-server it comes out as a `400` item instead.
 - A rejected key (401), an API version the Context Graph no longer serves (410) or an unreachable Delivery URL fails the run with a message saying which. With *Continue On Fail*, the affected items come out as `{ key, error, description? }` instead.
+
+**Index — Query** — `POST {Delivery URL}/query/v1/{Manifest Version}`
+
+Finds records in an **index** the schema declares, with filters, sorting and paging.
+
+- Each input item is one query. All items' queries are sent in one request, and each item gets back its result exactly as the Context Graph returns it: `{ id, index, items, totalCount, next }`. A query that matches nothing returns `items: []`; it doesn't fail.
+- *Using Fields* builds the query: *Filters* (each *Field*, *Operator*, *Value*, combined with AND or OR), *Sort*, *Page Size* (sent as `limit`; up to 100, default 20), *Page* and *Cursor*, with *Search Text* (plus fields, language, literal), *Aggregations* and *Args* under *Options*. A filter *Value* written as JSON is sent as such (`1000`, `true`, `["a","b"]`), otherwise as text. *Using JSON* takes the whole query (filters may nest AND/OR groups), with the index from *Index*.
+- For the next page, pass `next` back as *Cursor*. The local dev-server hands out no cursors (`next` is always `null`), so there raise *Page* instead.
+- An invalid query, such as a filter on a field the index doesn't allow, fails with the Context Graph's own message. The Context Graph rejects the whole request then, so with *Continue On Fail* every query in it comes out with `error`.
 
 **New to the Context Graph?** Follow the step-by-step guide, [docs/context-graph-demo/GUIDE.md](docs/context-graph-demo/GUIDE.md): it builds the Tonevik demo shop with the workflow `workflows/templates/Context-Graph-Tonevik-Demo.json` against the local dev-server.
 
