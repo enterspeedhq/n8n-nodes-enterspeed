@@ -73,8 +73,10 @@ This package ships three n8n node types and two credential types:
   `transport.ts`'s `httpFailure` reads the status and body from either.
   The **Index** resource's *Query* takes one query per item and sends every
   item's query in one `POST {deliveryUrl}/query/v1/{manifest}` array
-  (delivery/ADR-030 §3), each with the item's position as its `id`, so the
-  batch's ids are always distinct (*Query envelope* contract). Each
+  (delivery/ADR-030 §3), as written. Each query's `id` is its own, else its
+  position in the request (*Query envelope* contract); two queries that would
+  share an id fail the batch before it is sent, as the platform answers such a
+  batch `400` and the dev-server doesn't check it yet. Each
   `{ id, index, items, totalCount, next }` result is output unchanged,
   paired to its item by `id`. The platform rejects the whole batch when one
   query is invalid (`400`, its own message passed through), so a failed
