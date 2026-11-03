@@ -957,9 +957,11 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 	});
 	const product = { $id: 'ProductIndex:productId:p-1001', sku: 'AUR-HP-100', name: 'Aurora H100', price: 2499 };
 
+	/** The id the platform gives a query: its own, else its position (query-envelope contract). */
+	const idOf = (q: IDataObject, position: number) => (q.id === undefined || q.id === null ? String(position) : String(q.id));
 	/** Answers each query in the batch with its own envelope, by id. */
 	const answerEach = (items: IDataObject[] = [product]) =>
-		vi.fn(async (req: IDataObject) => (req.body as IDataObject[]).map((q) => envelope(q.id as string, items)));
+		vi.fn(async (req: IDataObject) => (req.body as IDataObject[]).map((q, i) => envelope(idOf(q, i), items)));
 
 	async function query(opts: {
 		params?: Record<string, unknown>;
@@ -985,15 +987,31 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 		expect(notice?.type).toBe('notice');
 	});
 
-	it('takes the query as one JSON field, empty by default, with an example in the notice and a reference link in the hint', () => {
+	it('takes the query as one JSON field, pre-filled with a working example, with a reference link in the hint', () => {
 		const shown = node.description.properties.filter((p) =>
 			(p.displayOptions?.show?.resource as string[] | undefined)?.includes('index'),
 		);
 		expect(shown.map((p) => p.name)).toEqual(['operation', 'queryNotice', 'query']);
 		const [, notice, query] = shown;
-		expect(notice.displayName).toContain('"index": "ProductIndex"');
+		expect(notice.displayName).not.toContain('"index"');
 		expect(query.type).toBe('json');
-		expect(query.default).toBe('');
+		expect(JSON.parse(query.default as string)).toEqual({
+			index: 'ProductIndex',
+			filters: {
+				and: [
+					{ field: 'inStock', operator: 'equals', value: true },
+					{
+						or: [
+							{ field: 'price', operator: 'lessThan', value: 3000 },
+							{ field: 'categoryId', operator: 'equals', value: 'cat-headphones' },
+						],
+					},
+				],
+			},
+			sort: [{ field: 'price', order: 'desc' }],
+			limit: 20,
+			page: 0,
+		});
 		expect(query.hint).toContain('#index--query');
 	});
 
@@ -1002,10 +1020,10 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 		const req = httpRequest.mock.calls[0][0] as IDataObject;
 		expect(req.method).toBe('POST');
 		expect(req.url).toBe('http://localhost:5200/query/v1/1.0.0');
-		expect(body(httpRequest)).toEqual([{ index: 'ProductIndex', id: '0' }]);
+		expect(body(httpRequest)).toEqual([{ index: 'ProductIndex' }]);
 	});
 
-	it('sends the query exactly as written, adding only its id', async () => {
+	it('sends the query exactly as written, adding nothing', async () => {
 		const written = {
 			index: 'ProductIndex',
 			filters: {
@@ -1023,18 +1041,18 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 			args: { min: 1000 },
 		};
 		const { httpRequest } = await query({ params: { query: JSON.stringify(written) } });
-		expect(body(httpRequest)).toEqual([{ ...written, id: '0' }]);
+		expect(body(httpRequest)).toEqual([written]);
 	});
 
 	it('takes the query as an object too (an expression)', async () => {
 		const { httpRequest } = await query({ params: { query: { index: 'ProductIndex', limit: 5 } } });
-		expect(body(httpRequest)).toEqual([{ index: 'ProductIndex', limit: 5, id: '0' }]);
+		expect(body(httpRequest)).toEqual([{ index: 'ProductIndex', limit: 5 }]);
 	});
 
 	it("sends every item's query in one request and outputs each result unchanged, paired to its item", async () => {
 		const httpRequest = vi.fn(async (req: IDataObject) =>
 			(req.body as IDataObject[])
-				.map((q) => envelope(q.id as string, [product], q.id === '1' ? 'cursor-2' : null))
+				.map((q, i) => envelope(idOf(q, i), [product], i === 1 ? 'cursor-2' : null))
 				.reverse(),
 		);
 		const { out } = await query({ items: [{}, {}], httpRequest });
@@ -1043,6 +1061,45 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 			{ json: envelope('0', [product]), pairedItem: { item: 0 } },
 			{ json: envelope('1', [product], 'cursor-2'), pairedItem: { item: 1 } },
 		]);
+	});
+
+	it("keeps a query's own id and pairs its result by it", async () => {
+		const ids = ['headphones', undefined];
+		const httpRequest = vi.fn(async (req: IDataObject) =>
+			(req.body as IDataObject[]).map((q, i) => envelope(idOf(q, i), [product])).reverse(),
+		);
+		const { out } = await query({
+			items: [{}, {}],
+			params: { query: (i: number) => ({ index: 'ProductIndex', id: ids[i] }) },
+			httpRequest,
+		});
+		expect(body(httpRequest)).toEqual([{ index: 'ProductIndex', id: 'headphones' }, { index: 'ProductIndex' }]);
+		expect(out.map((o) => [o.json.id, o.pairedItem])).toEqual([
+			['headphones', { item: 0 }],
+			['1', { item: 1 }],
+		]);
+	});
+
+	it('fails before sending when two queries would get the same id (query-envelope contract)', async () => {
+		// Item 0 names itself "1", which is also item 1's position: the platform answers such a batch 400.
+		const ids = ['1', undefined];
+		const params = { query: (i: number) => ({ index: 'ProductIndex', id: ids[i] }) };
+		const httpRequest = answerEach();
+		await expect(query({ items: [{}, {}], params, httpRequest })).rejects.toThrow(
+			'Items 0 and 1 both have the query id "1". Each query in a run needs its own id.',
+		);
+		expect(httpRequest).not.toHaveBeenCalled();
+	});
+
+	it('with Continue On Fail, fails every query in a batch with a duplicate id', async () => {
+		const { out, httpRequest } = await query({
+			items: [{}, {}],
+			params: { query: { index: 'ProductIndex', id: 'same' } },
+			continueOnFail: true,
+		});
+		expect(httpRequest).not.toHaveBeenCalled();
+		expect(out.map((o) => o.pairedItem)).toEqual([{ item: 0 }, { item: 1 }]);
+		expect(out[0].json.error).toContain('both have the query id "same"');
 	});
 
 	it('outputs an empty result, not a failure, when nothing matches', async () => {

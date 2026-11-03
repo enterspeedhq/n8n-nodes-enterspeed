@@ -163,6 +163,7 @@ Both read the graph's **shapes**: the views its schema declares over the data, b
 Finds records in an **index** the schema declares, with filters, sorting and paging. The *Query* field takes the query as a JSON object, sent as written.
 
 - Each input item is one query. All items' queries are sent in one request, and each item gets back its result exactly as the Context Graph returns it: `{ id, index, items, totalCount, next }`. A query that matches nothing returns `items: []`; it doesn't fail.
+- The *Query* field starts with a working example to edit. A query's `id` is optional: its result comes back labelled with it, or with the query's position in the request when it has none. Two queries in one run can't share an id; the node fails before sending, as the Context Graph would reject the request.
 - An invalid query, such as a filter on a field the index doesn't allow, fails with the Context Graph's own message. The Context Graph then rejects the whole request, so with *Continue On Fail* every query in it comes out with `error`.
 
 | Member | Required | What it is |
