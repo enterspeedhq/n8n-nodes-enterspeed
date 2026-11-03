@@ -283,8 +283,8 @@ in stock, most expensive first. The query is written as JSON, in the node's
   nested as deep as you need.
 - `sort` orders the matches by `price`, highest first.
 
-An empty *Query* field shows an example with every member a query can
-have; the README's *Index — Query* section describes each one.
+The *Query* field starts with a working example to edit; the README's
+*Index — Query* section describes every member a query can have.
 
 **Expect** one item, the query's result as the graph returns it:
 
