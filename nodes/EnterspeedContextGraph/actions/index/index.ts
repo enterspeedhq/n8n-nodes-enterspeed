@@ -1,7 +1,8 @@
 import type { INodeProperties } from 'n8n-workflow';
+import * as get from './get.operation';
 import * as query from './query.operation';
 
-export const operations = { query };
+export const operations = { get, query };
 
 const operationSelector: INodeProperties = {
 	displayName: 'Operation',
@@ -10,6 +11,12 @@ const operationSelector: INodeProperties = {
 	noDataExpression: true,
 	displayOptions: { show: { resource: ['index'] } },
 	options: [
+		{
+			name: 'Get',
+			value: 'get',
+			action: 'Get an index document',
+			description: 'Read one document from an index by its ID. Each item is one document.',
+		},
 		{
 			name: 'Query',
 			value: 'query',
@@ -20,4 +27,4 @@ const operationSelector: INodeProperties = {
 	default: 'query',
 };
 
-export const description: INodeProperties[] = [operationSelector, ...query.properties];
+export const description: INodeProperties[] = [operationSelector, ...get.properties, ...query.properties];
