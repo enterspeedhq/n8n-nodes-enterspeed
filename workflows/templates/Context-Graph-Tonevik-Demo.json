@@ -242,7 +242,7 @@
       "type": "n8n-nodes-base.stickyNote",
       "position": [
         -80,
-        900
+        1240
       ],
       "typeVersion": 1,
       "id": "a3f9d2c4-6b1e-4f7a-8c5d-2e9b0f4a6d31",
@@ -349,6 +349,43 @@
           "name": "Enterspeed Context Graph account"
         }
       }
+    },
+    {
+      "parameters": {
+        "resource": "index",
+        "operation": "query",
+        "query": "{\n  \"index\": \"ProductIndex\",\n  \"filters\": {\n    \"and\": [\n      {\n        \"field\": \"categoryId\",\n        \"operator\": \"equals\",\n        \"value\": \"cat-headphones\"\n      },\n      {\n        \"field\": \"inStock\",\n        \"operator\": \"equals\",\n        \"value\": true\n      }\n    ]\n  },\n  \"sort\": [\n    {\n      \"field\": \"price\",\n      \"order\": \"desc\"\n    }\n  ]\n}"
+      },
+      "type": "CUSTOM.enterspeedContextGraph",
+      "typeVersion": 1,
+      "position": [
+        280,
+        960
+      ],
+      "id": "7fe6a0fc-e093-46b0-8c38-f9258bcf16d2",
+      "name": "Step 4 · Query headphones",
+      "credentials": {
+        "enterspeedContextGraphApi": {
+          "id": "__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__",
+          "name": "Enterspeed Context Graph account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "### Step 4 · Query the product index\nFinds the headphones in stock, most expensive first, with *Index › Query* on `ProductIndex`: `categoryId` equals `cat-headphones` AND `inStock` equals `true`, sorted by `price` descending.\n\n**Expect** one item: `totalCount: 4`, `next: null`, and `items` from Aurora H200 Pro (4350) down to Fjord Lite (1000).\n\nRun steps 1–3 first: the index is built from the pushed products.",
+        "height": 280,
+        "width": 480,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1640,
+        860
+      ],
+      "typeVersion": 1,
+      "id": "c4f18960-4bab-4593-9ed7-fcc658dfd625",
+      "name": "Step 4"
     }
   ],
   "pinData": {},
@@ -368,6 +405,11 @@
           },
           {
             "node": "Step 3 · Get PIM deletes",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Step 4 · Query headphones",
             "type": "main",
             "index": 0
           }
