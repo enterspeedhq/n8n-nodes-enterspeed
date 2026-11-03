@@ -22,7 +22,7 @@ node naming convention this package name follows is `@<scope>/n8n-nodes-<name>`)
   keys, three overridable host URLs).
 - **`EnterspeedContextGraph`** — a separate action node ("Enterspeed Context
   Graph") with four resources so far: Entity › Push / Push Many,
-  Shape › Get / Get Many, Index › Query, and Representation › Get.
+  Shape › Get / Get Many, Index › Get / Query, and Representation › Get.
 - **`EnterspeedContextGraphApi`** — its own credential (one API key, ingest
   URL, delivery URL, manifest version). Never shared with the Core nodes.
 
@@ -97,7 +97,7 @@ nodes/EnterspeedContextGraph/
   actions/router.ts, types.ts     dispatch; handlers get all items at once (the Many operations output per record/key)
   actions/entity/                 Push and Push Many (NDJSON to POST /entities), shared.ts
   actions/shape/                  Get (GET /shapes/v1/…) and Get Many (POST /shapes/v1/…), shared.ts
-  actions/index/                  Query (POST /query/v1/…)
+  actions/index/                  Get (GET /query/v1/…/{index}/{id}) and Query (POST /query/v1/…)
   actions/representation/         Get (GET /v1/{manifest}{route})
   enterspeed.svg                  its own copy of the icon
 credentials/
