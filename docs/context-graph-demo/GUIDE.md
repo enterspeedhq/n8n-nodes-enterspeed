@@ -19,7 +19,9 @@ When clicking           │
                         │
                         ├─ Step 3 · Get PIM deletes ──── Collect deletes ──── Push deletes ──── Shape keys ─ Read back
                         │
-                        └─ Step 4 · Query headphones
+                        ├─ Step 4 · Query headphones
+                        │
+                        └─ Step 5 · Route to read ─ Read the product representation
 ```
 
 (Every node's name starts with its step, e.g. *Step 1 · Shape keys*.)
@@ -31,6 +33,7 @@ When clicking           │
 | 2 | The PIM's products | Records linking up in the graph: a product finds its category. Reading many shapes, and when to read one | 12 results, accepted; 12 `ProductCard` shapes |
 | 3 | A retired product | Deleting a record by its key | 1 delete, accepted; its shape is gone |
 | 4 | A query on the product index | **Indexes and queries**: finding records with filters, sorting and paging | 4 headphones in stock, most expensive first |
+| 5 | A product's representation | **Representations**: one resource, served for a route, composed from shapes and a query; each slot's state | The product, its category and 4 related products, all `fresh` |
 
 The workflow reads left to right in the order the data travels: a **Get**
 node stands in for the source system, an **Aggregate** node collects its
@@ -318,6 +321,65 @@ the next page, set `cursor` to the result's `next`. The dev-server doesn't
 hand out cursors (`next` is always `null` there), so against it raise
 `page` instead: 0, 1, 2 and so on, until a page holds fewer matches than
 `limit`.
+
+## Step 5 · Reading the product representation
+
+**Run:** *Step 5 · Read the product representation*. Run steps 1–3 first.
+
+Shapes and queries are the graph's building blocks. A **representation**
+puts them together into one resource, served for a **route**: what an
+application calls to get everything it needs about, say, one product.
+Tonevik's schema declares the representation `ProductPage` for the route
+`/products/{productId}`, composed from three **slots**:
+
+- `product`: the product's `ProductCard` shape. It's `required`, so without
+  it there is no representation.
+- `category`: the category's `CategoryRef` shape. The graph finds it through
+  the product's `categoryId`; the workflow doesn't join anything.
+- `related`: a query on `ProductIndex` for the products in the same
+  category, cheapest first, up to 4.
+
+*Step 5 · Route to read* gives the route, `/products/p-1001`, and *Step 5 ·
+Read the product representation* reads it with **Representation › Get**.
+
+**Expect** one item, the representation as the graph serves it:
+
+```json
+{
+  "product": { "categoryId": "cat-headphones", "id": "productmodel:p-1001", "name": "Aurora H100 Over-Ear Headphones", "price": 2700 },
+  "category": { "id": "categorymodel:cat-headphones", "name": "Headphones" },
+  "related": {
+    "id": "related",
+    "index": "ProductIndex",
+    "items": [
+      { "$id": "ProductIndex:productId:p-1003", "sku": "FJD-HP-050", "name": "Fjord Lite Wireless Earbuds", "price": 1000 },
+      { "$id": "ProductIndex:productId:p-1008", "sku": "AUR-HP-050", "name": "Aurora Commute Headphones", "price": 1300 },
+      { "$id": "ProductIndex:productId:p-1001", "sku": "AUR-HP-100", "name": "Aurora H100 Over-Ear Headphones", "price": 2700 },
+      { "$id": "ProductIndex:productId:p-1002", "sku": "AUR-HP-200", "name": "Aurora H200 Pro Headphones", "price": 4350 }
+    ],
+    "totalCount": 5,
+    "next": null
+  },
+  "$metadata": {
+    "product": { "$state": "fresh" },
+    "category": { "$state": "fresh" },
+    "related": { "$state": "fresh" }
+  }
+}
+```
+
+Each slot sits at its own name, and `$metadata` says how each one resolved.
+
+**Read `$state`, not the status.** A slot that didn't resolve is `null`,
+with `$state: "missing"` (or `"deferred"` when the graph didn't get to it in
+this response), and the representation still comes back: the item succeeds.
+So check `$metadata.<slot>.$state` for the slots you depend on, e.g. in an
+**If** node. The node fails the item only when there is no representation at
+all: a route that matches none, a `required` slot that didn't resolve (try
+`/products/p-1010`, the product deleted in step 3), or no slot resolved.
+
+**One route per item**, one request each: a representation is read on its
+own, the way an application reads it.
 
 ## When your source doesn't send Context Graph records
 

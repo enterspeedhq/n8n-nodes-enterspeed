@@ -81,6 +81,17 @@ This package ships three n8n node types and two credential types:
   paired to its item by `id`. The platform rejects the whole batch when one
   query is invalid (`400`, its own message passed through), so a failed
   request fails every query in it.
+  The **Representation** resource's *Get* takes one route per item and
+  sends `GET {deliveryUrl}/v1/{manifest}{route}`, the data plane
+  (delivery/ADR-030 §3), each route segment percent-encoded. There is no
+  batch: ADR-030 keeps per-item reads as the cacheable serving path and
+  deliberately builds no bulk representation read. The body is output
+  unchanged, each slot at its name plus `$metadata` (*Representation
+  envelope* contract). `200`, `202` and `207` all succeed, because which
+  slots resolved is in `$metadata.<slot>.$state`, not the status; a `404`
+  (no matching route, an unresolved `required` slot, or no slot resolved)
+  fails the item. Resuming a partial answer (`X-Resume`, delivery/ADR-033)
+  is not implemented. It reuses Shape's `deliveryError`.
 - **`EnterspeedContextGraphApi`**
   (`credentials/EnterspeedContextGraphApi.credentials.ts`) — the Context
   Graph's own credential: one API key (sent as `X-Api-Key` via `authenticate`),
