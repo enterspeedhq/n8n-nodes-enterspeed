@@ -21,8 +21,8 @@ node naming convention this package name follows is `@<scope>/n8n-nodes-<name>`)
 - **`EnterspeedApi`** — the credential type both Core nodes share (two API
   keys, three overridable host URLs).
 - **`EnterspeedContextGraph`** — a separate action node ("Enterspeed Context
-  Graph") with three resources so far: Entity › Push / Push Many,
-  Shape › Get / Get Many, and Index › Query.
+  Graph") with four resources so far: Entity › Push / Push Many,
+  Shape › Get / Get Many, Index › Query, and Representation › Get.
 - **`EnterspeedContextGraphApi`** — its own credential (ingest URL and key,
   delivery URL and key, manifest version). Never shared with the Core nodes.
 
@@ -98,6 +98,7 @@ nodes/EnterspeedContextGraph/
   actions/entity/                 Push and Push Many (NDJSON to POST /entities), shared.ts
   actions/shape/                  Get (GET /shapes/v1/…) and Get Many (POST /shapes/v1/…), shared.ts
   actions/index/                  Query (POST /query/v1/…)
+  actions/representation/         Get (GET /v1/{manifest}{route})
   enterspeed.svg                  its own copy of the icon
 credentials/
   EnterspeedApi.credentials.ts    the enterspeedApi credential type
