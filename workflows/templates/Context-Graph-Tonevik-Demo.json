@@ -155,7 +155,7 @@
     },
     {
       "parameters": {
-        "content": "## Context Graph: Tonevik demo\n\nThe **Tonevik** demo shop's PIM sends its records to an Enterspeed Context Graph with the **Enterspeed Context Graph** node's *Entity › Push Many*, one step at a time, and reads back what the graph made of them with *Shape › Get Many*, then reads the way an app would:\n\n1. **Categories**: the record, and why Push sends it as it is\n2. **Products**: records linking up in the graph\n3. **A retired product**: deleting a record\n4. **A query**: finding products with *Index › Query*\n5. **A representation**: reading a product page with *Representation › Get*\n\nEach **Get** node stands in for the PIM. A record, exactly as the PIM delivers it:\n\n```json\n{ \"$id\": \"pim-cat-dd34d4\", \"$type\": \"category\", \"$source\": \"pim\",\n  \"id\": \"cat-speakers\", \"name\": \"Speakers\" }\n```\n\n`$id` is the PIM's own key for the record; `id` is the category's own identity. The graph keeps both.\n\nAn **Aggregate** node collects a step's records into one list, and **Push Many** sends that list in one request.\n\nRun a step: open its **Read back** node and click **Execute step**. The guide, `docs/context-graph-demo/GUIDE.md`, explains each step.",
+        "content": "## Context Graph: Tonevik demo\n\nThe **Tonevik** demo shop's PIM sends its records to an Enterspeed Context Graph with the **Enterspeed Context Graph** node's *Entity › Push Many*, one step at a time, and reads back what the graph made of them with *Shape › Get Many*, then reads the way an app would:\n\n1. **Categories**: the record, and why Push sends it as it is\n2. **Products**: records linking up in the graph\n3. **A retired product**: deleting a record\n4. **A query**: finding products with *Index › Query*\n5. **A representation**: reading a product page with *Representation › Get*\n\nEach **Get** node stands in for the PIM. A record, exactly as the PIM delivers it:\n\n```json\n{ \"$id\": \"pim-cat-dd34d4\", \"$type\": \"category\", \"$source\": \"pim\",\n  \"id\": \"cat-speakers\", \"name\": \"Speakers\" }\n```\n\n`$id` is the PIM's own key for the record; `id` is the category's own identity. The graph keeps both.\n\nAn **Aggregate** node collects a step's records into one list, and **Push Many** sends that list in one request.\n\nRun a step: open its last node (**Read back**, or the Step 4 and 5 nodes) and click **Execute step**. Run the steps in order. Set up first: see **Before you run it**.",
         "height": 480,
         "width": 740
       },
@@ -186,7 +186,7 @@
     },
     {
       "parameters": {
-        "content": "### Step 1 · Categories\nThe PIM's 4 categories become entities, filed under their PIM keys (`pim-cat-…`).\n\n**Push:** 4 results, `accepted: true`.\n\n**Read back** (*Get Many*): each category's `CategoryRef` shape, keyed by its own `id`, not its `$id`. Expect 4 items, `status: 200`, e.g. `data: { \"id\": \"categorymodel:cat-speakers\", \"name\": \"Speakers\" }`.",
+        "content": "### Step 1 · Categories\nThe PIM's 4 categories become entities, filed under their PIM keys (`pim-cat-…`).\n\n**Push:** 4 results, `accepted: true`.\n\n**Read back** (*Get Many*): each category's `CategoryRef` shape, keyed by its own `id`, not its `$id`. Expect 4 items, `status: 200`, e.g. `data: { \"id\": \"categorymodel:cat-speakers\", \"name\": \"Speakers\" }`.\n\nRead back checks what the graph made of the records. An app reads the representation instead (Step 5).\n\nOn a deployed graph, `accepted: true` means the record has landed, not that it is processed yet, so a Read back straight after a push can briefly miss it. Run Read back again. The local dev-server processes at once.",
         "height": 280,
         "width": 480,
         "color": 7
@@ -234,15 +234,15 @@
     },
     {
       "parameters": {
-        "content": "## Before you run it\n\nThis workflow needs an **Enterspeed Context Graph API** credential and the Tonevik dev-server. See the **Context Graph** section of the package README:\nhttps://github.com/enterspeedhq/n8n-nodes-enterspeed#context-graph",
-        "height": 200,
+        "content": "## Before you run it\n\nYou need:\n\n1. **n8n with this package.** In the package repo: `npm run build`, `docker compose up -d`, then `node scripts/setup.mjs`. It creates the credential below and imports this workflow.\n2. **The Tonevik dev-server**, with an empty data folder. From the Context Graph SDK's `packages/dev-server/examples` folder: `npx tsx tonevik/solutions/1-shop.ts` (not `start-demo.ts`, a different schema). It listens on port 5200.\n3. **An Enterspeed Context Graph API credential**: Ingest URL and Delivery URL `http://host.docker.internal:5200`, any text in both keys (the dev-server doesn't check them), Manifest Version `1.0.0`. Imported through n8n's UI instead of `setup.mjs`, select it in every Context Graph node.\n\n**Check:** `http://localhost:5200/schema/docs/v1/1.0.0` shows a `pim` source with `category` and `product`.\n\nMore in the **Enterspeed Context Graph** section of the package README:\nhttps://github.com/enterspeedhq/n8n-nodes-enterspeed#enterspeed-context-graph",
+        "height": 480,
         "width": 740,
         "color": 3
       },
       "type": "n8n-nodes-base.stickyNote",
       "position": [
-        -80,
-        1240
+        -860,
+        -560
       ],
       "typeVersion": 1,
       "id": "a3f9d2c4-6b1e-4f7a-8c5d-2e9b0f4a6d31",
