@@ -276,7 +276,7 @@ in stock, most expensive first. The query is written as JSON, in the node's
       { "field": "inStock", "operator": "equals", "value": true }
     ]
   },
-  "sort": [{ "field": "price", "order": "desc" }]
+  "sort": [{ "field": "price", "direction": "desc" }]
 }
 ```
 

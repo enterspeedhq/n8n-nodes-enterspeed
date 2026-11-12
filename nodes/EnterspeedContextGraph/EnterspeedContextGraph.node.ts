@@ -5,6 +5,8 @@ import * as entity from './actions/entity';
 import * as shape from './actions/shape';
 import * as index from './actions/index/index';
 import * as representation from './actions/representation';
+import * as schema from './actions/schema';
+import * as msd from './actions/schema/msd';
 
 const resourceSelector: INodeProperties = {
 	displayName: 'Resource',
@@ -13,9 +15,10 @@ const resourceSelector: INodeProperties = {
 	noDataExpression: true,
 	options: [
 		{ name: 'Entity', value: 'entity' },
-		{ name: 'Shape', value: 'shape' },
 		{ name: 'Index', value: 'index' },
 		{ name: 'Representation', value: 'representation' },
+		{ name: 'Schema', value: 'schema' },
+		{ name: 'Shape', value: 'shape' },
 	],
 	default: 'entity',
 };
@@ -33,6 +36,7 @@ const resourceSelector: INodeProperties = {
  *  - Index (Delivery) : query an index, one query per item, all in one request
  *  - Representation (Delivery) : read the representation served for a route,
  *                       one request per item
+ *  - Schema (Delivery) : read the manifest's schema document, once per run
  *
  * Each resource's properties and execute logic live under ./actions/<resource>;
  * execute() below just delegates to ./actions/router.
@@ -60,7 +64,23 @@ export class EnterspeedContextGraph implements INodeType {
 				primaryDocumentation: [{ url: 'https://docs.enterspeed.com' }],
 			},
 		},
-		properties: [resourceSelector, ...entity.description, ...shape.description, ...index.description, ...representation.description],
+		properties: [resourceSelector, ...entity.description, ...shape.description, ...index.description, ...representation.description, ...schema.description],
+	};
+
+	methods = {
+		loadOptions: {
+			getRepresentations: msd.getRepresentations,
+			getRepresentationRoutes: msd.getRepresentationRoutes,
+			getIndexes: msd.getIndexes,
+			getFilterFields: msd.getFilterFields,
+			getFilterOperators: msd.getFilterOperators,
+			getSortFields: msd.getSortFields,
+			getSchemaShapes: msd.getSchemaShapes,
+		},
+		resourceMapping: {
+			getRouteValues: msd.getRouteValues,
+			getShapeSegments: msd.getShapeSegments,
+		},
 	};
 
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {

@@ -16,13 +16,13 @@ export const properties: INodeProperties[] = [
 		displayOptions: { show },
 	},
 	{
-		displayName: 'Index Name',
+		displayName: 'Index Name or ID',
 		name: 'indexName',
-		type: 'string',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getIndexes' },
 		default: '',
 		required: true,
-		placeholder: 'e.g. ProductIndex',
-		description: 'The index shape name, as in a query\'s "index"',
+		description: 'The index to read from, from the schema of the manifest. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 		displayOptions: { show },
 	},
 	{

@@ -10,6 +10,7 @@ import { MAX_BODY_BYTES } from '../nodes/EnterspeedContextGraph/actions/shape/ge
 import { EnterspeedContextGraphApi } from '../credentials/EnterspeedContextGraphApi.credentials';
 import { createContextGraphExecuteMock } from './mocks';
 
+
 // Retry waits (ingest/ADR-020 Retry-After) resolve at once, and are recorded.
 const { sleep } = vi.hoisted(() => ({ sleep: vi.fn<(ms: number) => Promise<void>>(async () => {}) }));
 vi.mock('n8n-workflow', async (importOriginal) => ({
@@ -639,7 +640,16 @@ describe('EnterspeedContextGraph — Shape', () => {
 		expect(selector?.options?.map((o) => (o as { name: string }).name)).toEqual(['Get', 'Get Many']);
 		expect(selector?.options?.map((o) => (o as { value: string }).value)).toEqual(['get', 'getMany']);
 		const field = (name: string) => shapeFields.find((p) => p.name === name);
-		expect(shapeFields.filter((p) => p.name !== 'operation').map((p) => p.name)).toEqual(['shapeKey', 'shapeKeys']);
+		expect(shapeFields.filter((p) => p.name !== 'operation').map((p) => p.name)).toEqual([
+			'keyFrom',
+			'shapeName',
+			'idSegments',
+			'shapeKey',
+			'shapeKeys',
+		]);
+		// Existing workflows have no Key From, so they keep the text field.
+		expect(field('keyFrom')?.default).toBe('shapeKey');
+		expect(field('shapeKey')?.displayOptions?.show?.keyFrom).toEqual(['shapeKey']);
 		expect(field('shapeKey')?.displayOptions?.show?.operation).toEqual(['get']);
 		expect(field('shapeKeys')?.displayOptions?.show?.operation).toEqual(['getMany']);
 		expect(field('shapeKeys')?.default).toBe('={{ $json.keys }}');
@@ -1121,9 +1131,13 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 		const shown = node.description.properties.filter(
 			(p) =>
 				(p.displayOptions?.show?.resource as string[] | undefined)?.includes('index') &&
-				!(p.displayOptions?.show?.operation as string[] | undefined)?.includes('get'),
+				!(p.displayOptions?.show?.operation as string[] | undefined)?.includes('get') &&
+				!(p.displayOptions?.show?.queryFrom as string[] | undefined)?.includes('builder'),
 		);
-		expect(shown.map((p) => p.name)).toEqual(['operation', 'queryNotice', 'query']);
+		expect(shown.map((p) => p.name)).toEqual(['operation', 'queryFrom', 'queryNotice', 'query']);
+		// JSON stays the default, so existing workflows are unchanged.
+		expect(shown[1].default).toBe('json');
+		shown.splice(1, 1);
 		const [, notice, query] = shown;
 		expect(notice.displayName).not.toContain('"index"');
 		expect(query.type).toBe('json');
@@ -1140,7 +1154,7 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 					},
 				],
 			},
-			sort: [{ field: 'price', order: 'desc' }],
+			sort: [{ field: 'price', direction: 'desc' }],
 			limit: 20,
 			page: 0,
 		});
@@ -1337,7 +1351,8 @@ describe('EnterspeedContextGraph — Representation › Get', () => {
 	it('shows a Route field defaulting to the item\'s route', () => {
 		const route = node.description.properties.find((p) => p.name === 'route');
 		expect(route?.default).toBe('={{ $json.route }}');
-		expect(route?.displayOptions?.show).toEqual({ resource: ['representation'], operation: ['get'] });
+		expect(route?.displayOptions?.show).toEqual({ resource: ['representation'], operation: ['get'], routeFrom: ['route'] });
+		expect(node.description.properties.find((p) => p.name === 'routeFrom')?.default).toBe('route');
 	});
 
 	it('reads {deliveryUrl}/v1/{manifest}{route} with the API key', async () => {
