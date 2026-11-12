@@ -315,6 +315,7 @@ The Context Graph serves these; the node doesn't use them yet.
 - **A bulk representation read.** Representations are read one route per request, the cacheable path the Context Graph serves.
 - **A delivery policy header** (`X-Delivery-Policy`). The policy it sets is still a proposal. Under the default policy a representation's query slots come back `deferred`, with no items; to get those items, write the query yourself in Index › Query.
 - **Reshaping records.** The node sends records and outputs answers as they are; reshape in a Code or Edit Fields node.
+- **Protected shapes.** The node reads with an API key only and sends no context token, so a shape protected by an access policy always reads as `404`. Read protected content from an app that sends the customer's context token.
 
 ---
 
