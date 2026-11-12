@@ -156,6 +156,17 @@ Both read the graph's **shapes**: the views its schema declares over the data, b
 - A malformed key fails with the Context Graph's own message (e.g. *Shape key is missing the "id" segment …*); with *Get Many* against the local dev-server it comes out as a `400` item instead.
 - A rejected key (401), an API version the Context Graph no longer serves (410) or an unreachable Delivery URL fails the run with a message saying which. With *Continue On Fail*, the affected items come out as `{ key, error, description? }` instead.
 
+### Index — Get
+
+`GET {Delivery URL}/query/v1/{Manifest Version}/{Index Name}/{Document ID}`
+
+Reads one document from an index by its ID, one per input item, and outputs it exactly as the Context Graph returns it.
+
+- *Document ID* is the document's key in the index, its parts joined with colons (e.g. `ProductIndex:productId:p-1001`). Every match a query returns carries it as `$id`, and *Document ID* defaults to `{{ $json.$id }}`, so after *Index — Query* and a **Split Out** on `items`, Get reads each match.
+- A document that doesn't exist fails with *No document … in index …*; the Context Graph answers a document the key may not see the same way. A blank *Index Name* or *Document ID* fails before anything is sent.
+- A rejected key (401) or an unreachable Delivery URL fails the run with a message saying which. With *Continue On Fail*, the failed items come out as `{ indexName, documentId, error, description? }`.
+- The local SDK dev-server doesn't serve this read yet (it answers 404), so the Tonevik demo doesn't use it.
+
 ### Index — Query
 
 `POST {Delivery URL}/query/v1/{Manifest Version}`

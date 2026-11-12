@@ -946,6 +946,137 @@ describe('EnterspeedContextGraph — Shape › Get Many', () => {
 	});
 });
 
+describe('EnterspeedContextGraph — Index › Get', () => {
+	const p1001 = { $id: 'ProductIndex:productId:p-1001', sku: 'AUR-HP-100', name: 'Aurora H100', price: 2700 };
+
+	async function get(opts: {
+		params?: Record<string, unknown>;
+		items?: IDataObject[];
+		httpRequest?: ReturnType<typeof vi.fn>;
+		continueOnFail?: boolean;
+	}) {
+		const httpRequest = opts.httpRequest ?? vi.fn(async () => p1001);
+		const ctx = createContextGraphExecuteMock({
+			params: {
+				resource: 'index',
+				operation: 'get',
+				indexName: 'ProductIndex',
+				documentId: 'ProductIndex:productId:p-1001',
+				...opts.params,
+			},
+			items: opts.items ?? [{}],
+			httpRequest,
+			continueOnFail: opts.continueOnFail,
+		});
+		const [out] = (await node.execute.call(ctx)) as INodeExecutionData[][];
+		return { out, httpRequest };
+	}
+	const failWith = (status: number, data?: unknown) =>
+		vi.fn(async () => {
+			throw Object.assign(new NodeApiError(httpNode, { httpCode: String(status) }), {
+				cause: { response: { status, data } },
+			});
+		});
+
+	it("offers Get on the Index resource, with Index Name and a Document ID that defaults to the item's $id", () => {
+		const shown = node.description.properties.filter(
+			(p) =>
+				(p.displayOptions?.show?.resource as string[] | undefined)?.includes('index') &&
+				(p.displayOptions?.show?.operation as string[] | undefined)?.includes('get'),
+		);
+		expect(shown.map((p) => p.name)).toEqual(['getNotice', 'indexName', 'documentId']);
+		expect(shown[2].default).toBe('={{ $json.$id }}');
+		const operation = node.description.properties.find(
+			(p) => p.name === 'operation' && (p.displayOptions?.show?.resource as string[]).includes('index'),
+		);
+		expect(operation?.options?.map((o) => (o as { value: string }).value)).toEqual(['get', 'query']);
+	});
+
+	it('GETs /query/v1/{manifest}/{indexName}/{documentId} on the Delivery URL (ADR-030 §3), the ID as one segment', async () => {
+		const { httpRequest } = await get({});
+		const req = httpRequest.mock.calls[0][0] as IDataObject;
+		expect(req.method).toBe('GET');
+		expect(req.url).toBe('http://localhost:5200/query/v1/1.0.0/ProductIndex/ProductIndex%3AproductId%3Ap-1001');
+		expect((req.headers as IDataObject)['X-Api-Key']).toBe('cg-key');
+	});
+
+	it('percent-encodes both segments, so values with URL characters reach the service verbatim', async () => {
+		const { httpRequest } = await get({ params: { indexName: 'My Index', documentId: 'I:sku:a/b?c#d%e' } });
+		expect((httpRequest.mock.calls[0][0] as IDataObject).url).toBe(
+			'http://localhost:5200/query/v1/1.0.0/My%20Index/I%3Asku%3Aa%2Fb%3Fc%23d%25e',
+		);
+	});
+
+	it('outputs the document unchanged, one request per item, paired to its item', async () => {
+		const ids = ['ProductIndex:productId:p-1001', 'ProductIndex:productId:p-1002'];
+		const httpRequest = vi.fn(async (req: IDataObject) => ({ url: req.url }));
+		const { out } = await get({ items: [{}, {}], params: { documentId: (i: number) => ids[i] }, httpRequest });
+		expect(httpRequest).toHaveBeenCalledTimes(2);
+		expect(out.map((o) => o.pairedItem)).toEqual([{ item: 0 }, { item: 1 }]);
+		expect(String(out[1].json.url)).toContain('p-1002');
+		const { out: one } = await get({});
+		expect(one).toEqual([{ json: p1001, pairedItem: { item: 0 } }]);
+	});
+
+	it('parses a document that arrives as a string', async () => {
+		const { out } = await get({ httpRequest: vi.fn(async () => JSON.stringify(p1001)) });
+		expect(out[0].json).toEqual(p1001);
+	});
+
+	it('fails a blank or non-text Index Name or Document ID before sending', async () => {
+		const httpRequest = vi.fn();
+		await expect(get({ params: { indexName: ' ' }, httpRequest })).rejects.toThrow('Item 0 has no Index Name.');
+		await expect(get({ params: { documentId: '' }, httpRequest })).rejects.toThrow('Item 0 has no Document ID.');
+		await expect(get({ params: { documentId: 42 }, httpRequest })).rejects.toThrow(
+			'Item 0 has a Document ID that is not text.',
+		);
+		expect(httpRequest).not.toHaveBeenCalled();
+	});
+
+	it('fails a missing document (bodiless 404) with a message naming the index and the ID', async () => {
+		await expect(get({ httpRequest: failWith(404) })).rejects.toThrow(
+			'No document "ProductIndex:productId:p-1001" in index "ProductIndex".',
+		);
+	});
+
+	it("shows the service's message for a 400, and says when the key is rejected or the URL unreachable", async () => {
+		// The point read's one 400, as delivery sends it: a bare JSON string.
+		await expect(get({ httpRequest: failWith(400, '"Invalid environment ID"') })).rejects.toThrow(
+			'Invalid environment ID',
+		);
+		await expect(get({ httpRequest: failWith(401) })).rejects.toThrow('The API key was rejected by the Delivery URL.');
+		const unreachable = vi.fn(async () => {
+			throw new Error('connect ECONNREFUSED');
+		});
+		await expect(get({ httpRequest: unreachable })).rejects.toThrow("Couldn't reach the Delivery URL");
+	});
+
+	it('with Continue On Fail, outputs { indexName, documentId, error } for the failed item and keeps the others', async () => {
+		const ids = ['ProductIndex:productId:gone', 'ProductIndex:productId:p-1001'];
+		const httpRequest = vi.fn(async (req: IDataObject) => {
+			if (String(req.url).includes('gone')) await failWith(404)();
+			return p1001;
+		});
+		const { out } = await get({
+			items: [{}, {}],
+			params: { documentId: (i: number) => ids[i] },
+			httpRequest,
+			continueOnFail: true,
+		});
+		expect(out).toEqual([
+			{
+				json: {
+					indexName: 'ProductIndex',
+					documentId: 'ProductIndex:productId:gone',
+					error: 'No document "ProductIndex:productId:gone" in index "ProductIndex".',
+				},
+				pairedItem: { item: 0 },
+			},
+			{ json: p1001, pairedItem: { item: 1 } },
+		]);
+	});
+});
+
 describe('EnterspeedContextGraph — Index › Query', () => {
 	// The query-envelope contract's result: { id, index, items, totalCount, next }.
 	const envelope = (id: string, items: IDataObject[] = [], next: string | null = null) => ({
@@ -988,8 +1119,10 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 	});
 
 	it('takes the query as one JSON field, pre-filled with a working example, with a reference link in the hint', () => {
-		const shown = node.description.properties.filter((p) =>
-			(p.displayOptions?.show?.resource as string[] | undefined)?.includes('index'),
+		const shown = node.description.properties.filter(
+			(p) =>
+				(p.displayOptions?.show?.resource as string[] | undefined)?.includes('index') &&
+				!(p.displayOptions?.show?.operation as string[] | undefined)?.includes('get'),
 		);
 		expect(shown.map((p) => p.name)).toEqual(['operation', 'queryNotice', 'query']);
 		const [, notice, query] = shown;

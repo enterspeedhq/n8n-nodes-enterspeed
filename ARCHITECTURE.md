@@ -84,6 +84,15 @@ This package ships three n8n node types and two credential types:
   paired to its item by `id`. The platform rejects the whole batch when one
   query is invalid (`400`, its own message passed through), so a failed
   request fails every query in it.
+  The **Index** resource's *Get* reads one document per item from
+  `GET {deliveryUrl}/query/v1/{manifest}/{indexName}/{documentId}`, the
+  point read (delivery/ADR-030 §3), and outputs the body unchanged: the
+  document's displayed fields (delivery/ADR-022). The document id is one
+  percent-encoded path segment, the colon-joined key delivery stores the
+  document under, which is the `$id` each Query match carries. A missing
+  document is a bodiless `404` and fails the item. The SDK dev-server
+  doesn't serve this route yet, so it is unit-tested only and not in the
+  Tonevik template.
   The **Representation** resource's *Get* takes one route per item and
   sends `GET {deliveryUrl}/v1/{manifest}{route}`, the data plane
   (delivery/ADR-030 §3), each route segment percent-encoded. There is no
