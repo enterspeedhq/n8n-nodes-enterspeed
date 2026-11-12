@@ -22,8 +22,8 @@ node naming convention this package name follows is `@<scope>/n8n-nodes-<name>`)
   keys, three overridable host URLs).
 - **`EnterspeedContextGraph`** — a separate action node ("Enterspeed Context
   Graph") with no operations yet; it refuses to run.
-- **`EnterspeedContextGraphApi`** — its own credential (one API key, ingest
-  URL, delivery URL, manifest version). Never shared with the Core nodes.
+- **`EnterspeedContextGraphApi`** — its own credential (ingest URL and key,
+  delivery URL and key, manifest version). Never shared with the Core nodes.
 
 See `ARCHITECTURE.md`'s "System overview" for how these fit together.
 

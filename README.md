@@ -95,14 +95,15 @@ The **Enterspeed Context Graph** node uses its own **Enterspeed Context Graph AP
 
 | Field | Used for |
 |---|---|
-| API Key | Sent as the `X-Api-Key` header on every call |
-| Ingest URL | Uploads (pre-filled with `https://api.enterspeed.com`, as in the Core credential) |
-| Delivery URL | Reads (pre-filled with `https://delivery.enterspeed.com`, as in the Core credential) |
+| Ingest URL | Uploads. No default: the Context Graph's hosts aren't Enterspeed Core's |
+| Ingest API Key | Sent as the `X-Api-Key` header on uploads only |
+| Delivery URL | Reads. No default, as for the Ingest URL |
+| Delivery API Key | Sent as the `X-Api-Key` header on reads and the credential test only |
 | Manifest Version | The `{manifest}` segment of every Delivery route (default `1.0.0`) |
 
-Testing the credential reads `GET {Delivery URL}/schema/msd/v1/{Manifest Version}`. It fails with a clear message if the URL can't be reached, the key is rejected (401) or the manifest version isn't hosted (404).
+Testing the credential reads `GET {Delivery URL}/schema/msd/v1/{Manifest Version}`. It fails with a clear message if the URL can't be reached, the Delivery API Key is rejected (401) or the manifest version isn't hosted (404).
 
-**Against the local dev-server**, set both URLs to the dev-server's address. From the Docker n8n in this repo that is `http://host.docker.internal:5200`, not `localhost`. The dev-server accepts any API key, so the credential test there checks only the URL and manifest version.
+**Against the local dev-server**, set both URLs to the dev-server's address. From the Docker n8n in this repo that is `http://host.docker.internal:5200`, not `localhost`. The dev-server accepts any key, so the credential test there checks only the URL and manifest version.
 
 ## Typical flows
 
