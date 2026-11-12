@@ -1226,28 +1226,6 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 		]);
 	});
 
-	it('fails before sending when two queries would get the same id (query-envelope contract)', async () => {
-		// Item 0 names itself "1", which is also item 1's position: the platform answers such a batch 400.
-		const ids = ['1', undefined];
-		const params = { query: (i: number) => ({ index: 'ProductIndex', id: ids[i] }) };
-		const httpRequest = answerEach();
-		await expect(query({ items: [{}, {}], params, httpRequest })).rejects.toThrow(
-			'Items 0 and 1 both have the query id "1". Each query in a run needs its own id.',
-		);
-		expect(httpRequest).not.toHaveBeenCalled();
-	});
-
-	it('with Continue On Fail, fails every query in a batch with a duplicate id', async () => {
-		const { out, httpRequest } = await query({
-			items: [{}, {}],
-			params: { query: { index: 'ProductIndex', id: 'same' } },
-			continueOnFail: true,
-		});
-		expect(httpRequest).not.toHaveBeenCalled();
-		expect(out.map((o) => o.pairedItem)).toEqual([{ item: 0 }, { item: 1 }]);
-		expect(out[0].json.error).toContain('both have the query id "same"');
-	});
-
 	it('outputs an empty result, not a failure, when nothing matches', async () => {
 		const { out } = await query({ httpRequest: answerEach([]) });
 		expect(out[0].json).toEqual(envelope('0', []));
@@ -1310,6 +1288,15 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 			await expect(query({ httpRequest })).rejects.toThrow(
 				"Couldn't reach the Delivery URL (http://localhost:5200/query/v1/1.0.0).",
 			);
+		});
+
+		it("sends queries that share an id and passes on the platform's 400 (query-envelope contract)", async () => {
+			const message = "Sub-queries at positions 0 and 1 would both be answered with id 'same'.";
+			const httpRequest = failWith(400, message);
+			await expect(
+				query({ items: [{}, {}], params: { query: { index: 'ProductIndex', id: 'same' } }, httpRequest }),
+			).rejects.toThrow(message);
+			expect(httpRequest).toHaveBeenCalledTimes(1);
 		});
 
 		it('with Continue On Fail, fails every query in the rejected batch', async () => {

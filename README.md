@@ -213,7 +213,7 @@ Operators: `equals`, `notEquals`, `greaterThan`, `greaterThanOrEquals`, `lessTha
 ```
 
 - **Output:** each input item is one query. All items' queries are sent in one request, and each item gets back its result exactly as returned: `{ id, index, items, totalCount, next }`. A query that matches nothing returns `items: []`; it doesn't fail.
-- **Ids:** two queries in one run can't share an id; the node fails before sending, as the Context Graph would reject the request.
+- **Ids:** two queries in one run can't share an id; the Context Graph rejects the request with its own message, which fails every query in it.
 - **Paging:** `totalCount` counts all matches. For the next page, raise `page`, or set `cursor` to the previous result's `next`, e.g. `"cursor": "{{ $json.next }}"`. The local dev-server hands out no cursors (`next` is always `null`), so use `page` there.
 - **Errors:** an invalid query, such as a filter on a field the index doesn't allow, fails with the Context Graph's own message. The Context Graph then rejects the whole request, so with *Continue On Fail* every query in it comes out with `error`.
 - **With an AI Agent:** the node can be an agent's tool. Click ✨ on *Query* to let the model write the query; it reads the field's description, which states the format above. Tell the agent which indexes and fields exist, in its prompt or the `$fromAI` description, or give it the output of *Schema › Get*.
