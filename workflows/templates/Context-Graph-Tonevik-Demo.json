@@ -1,0 +1,347 @@
+{
+  "name": "Context Graph: Tonevik demo",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        320
+      ],
+      "id": "dfb5f8ed-1251-4054-bdd0-04b210f2c885",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Stand-in for the PIM: the categories exactly as it delivers them\n// (Tonevik 1-pim/01-categories.ndjson). Replace with the node that reads your source.\nreturn [\n  { json: {\"$id\":\"pim-cat-26474b\",\"$type\":\"category\",\"$source\":\"pim\",\"id\":\"cat-audio\",\"name\":\"Audio\"} },\n  { json: {\"$id\":\"pim-cat-e8da45\",\"$type\":\"category\",\"$source\":\"pim\",\"id\":\"cat-headphones\",\"name\":\"Headphones\"} },\n  { json: {\"$id\":\"pim-cat-dd34d4\",\"$type\":\"category\",\"$source\":\"pim\",\"id\":\"cat-speakers\",\"name\":\"Speakers\"} },\n  { json: {\"$id\":\"pim-cat-3f09ea\",\"$type\":\"category\",\"$source\":\"pim\",\"id\":\"cat-wearables\",\"name\":\"Wearables\"} }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        0
+      ],
+      "id": "2437504f-6640-432a-b6b4-0a0a974ccc0a",
+      "name": "Step 1 · Get PIM categories"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        560,
+        0
+      ],
+      "id": "0b6f3c1e-8a2d-4f5b-9c7e-1d2a3b4c5d01",
+      "name": "Step 1 · Collect categories"
+    },
+    {
+      "parameters": {
+        "operation": "pushMany",
+        "records": "={{ $json.data }}"
+      },
+      "type": "CUSTOM.enterspeedContextGraph",
+      "typeVersion": 1,
+      "position": [
+        840,
+        0
+      ],
+      "id": "964e4874-e0dd-44e2-9aef-f75735bc8e30",
+      "name": "Step 1 · Push categories",
+      "credentials": {
+        "enterspeedContextGraphApi": {
+          "id": "__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__",
+          "name": "Enterspeed Context Graph account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Stand-in for the PIM: the products exactly as it delivers them\n// (Tonevik 1-pim/02-products.ndjson). Each names its category by categoryId.\nreturn [\n  { json: {\"$id\":\"pim-prd-5ce6b5\",\"$type\":\"product\",\"$source\":\"pim\",\"id\":\"p-1001\",\"sku\":\"AUR-HP-100\",\"name\":\"Aurora H100 Over-Ear Headphones\",\"description\":\"Closed-back over-ear headphones for everyday listening.\",\"categoryId\":\"cat-headphones\",\"price\":2700,\"inStock\":true} },\n  { json: {\"$id\":\"pim-prd-bc96ca\",\"$type\":\"product\",\"$source\":\"pim\",\"id\":\"p-1002\",\"sku\":\"AUR-HP-200\",\"name\":\"Aurora H200 Pro Headphones\",\"description\":\"Reference-tuned over-ear headphones with adaptive noise cancelling.\",\"categoryId\":\"cat-headphones\",\"price\":4350,\"inStock\":true} },\n  { json: {\"$id\":\"pim-prd-394016\",\"$type\":\"product\",\"$source\":\"pim\",\"id\":\"p-1003\",\"sku\":\"FJD-HP-050\",\"name\":\"Fjord Lite Wireless Earbuds\",\"description\":\"Lightweight true-wireless earbuds with a pocketable charging case.\",\"categoryId\":\"cat-headphones\",\"price\":1000,\"inStock\":true} },\n  { json: {\"$id\":\"pim-prd-a6219c\",\"$type\":\"product\",\"$source\":\"pim\",\"id\":\"p-1004\",\"sku\":\"FJD-SP-300\",\"name\":\"Fjord Room Speaker 300\",\"description\":\"Shelf speaker with room correction and multiroom support.\",\"categoryId\":\"cat-speakers\",\"price\":3600,\"inStock\":true} },\n  { json: {\"$id\":\"pim-prd-bfab4b\",\"$type\":\"product\",\"$source\":\"pim\",\"id\":\"p-1005\",\"sku\":\"AUR-SP-400\",\"name\":\"Aurora Studio Monitor 400\",\"description\":\"Active nearfield monitor for small studios.\",\"categoryId\":\"cat-speakers\",\"price\":6500,\"inStock\":true} },\n  { json: {\"$id\":\"pim-prd-70ff35\",\"$type\":\"product\",\"$source\":\"pim\",\"id\":\"p-1006\",\"sku\":\"VEG-WA-010\",\"name\":\"Vega Track One\",\"description\":\"Everyday activity tracker with 10-day battery.\",\"categoryId\":\"cat-wearables\",\"price\":1450,\"inStock\":true} },\n  { json: {\"$id\":\"pim-prd-540cb1\",\"$type\":\"product\",\"$source\":\"pim\",\"id\":\"p-1007\",\"sku\":\"VEG-WA-020\",\"name\":\"Vega Track Pro\",\"description\":\"GPS training watch with route mapping and recovery scoring.\",\"categoryId\":\"cat-wearables\",\"price\":2500,\"inStock\":true} },\n  { json: {\"$id\":\"pim-prd-c630be\",\"$type\":\"product\",\"$source\":\"pim\",\"id\":\"p-1008\",\"sku\":\"AUR-HP-050\",\"name\":\"Aurora Commute Headphones\",\"description\":\"On-ear headphones tuned for noisy commutes.\",\"categoryId\":\"cat-headphones\",\"price\":1300,\"inStock\":true} },\n  { json: {\"$id\":\"pim-prd-4834b9\",\"$type\":\"product\",\"$source\":\"pim\",\"id\":\"p-1009\",\"sku\":\"FJD-SP-100\",\"name\":\"Fjord Portable Speaker 100\",\"description\":\"Rugged portable speaker with a 20-hour battery.\",\"categoryId\":\"cat-speakers\",\"price\":1200,\"inStock\":true} },\n  { json: {\"$id\":\"pim-prd-2005f2\",\"$type\":\"product\",\"$source\":\"pim\",\"id\":\"p-1010\",\"sku\":\"VEG-WA-030\",\"name\":\"Vega Band Kids\",\"description\":\"Activity band for children with parental controls.\",\"categoryId\":\"cat-wearables\",\"price\":900,\"inStock\":true} },\n  { json: {\"$id\":\"pim-prd-2c9550\",\"$type\":\"product\",\"$source\":\"pim\",\"id\":\"p-1011\",\"sku\":\"AUR-SP-600\",\"name\":\"Aurora Soundbar 600\",\"description\":\"Three-channel soundbar with a wireless subwoofer.\",\"categoryId\":\"cat-speakers\",\"price\":4900,\"inStock\":true} },\n  { json: {\"$id\":\"pim-prd-c25365\",\"$type\":\"product\",\"$source\":\"pim\",\"id\":\"p-1012\",\"sku\":\"FJD-HP-900\",\"name\":\"Fjord Reference 900\",\"description\":\"Open-back reference headphones. Not yet launched.\",\"categoryId\":\"cat-headphones\",\"price\":8999,\"inStock\":false} }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        320
+      ],
+      "id": "6f1c2b7e-3d4a-4e8b-9c51-0a7e2d9f4b13",
+      "name": "Step 2 · Get PIM products"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        560,
+        320
+      ],
+      "id": "0b6f3c1e-8a2d-4f5b-9c7e-1d2a3b4c5d02",
+      "name": "Step 2 · Collect products"
+    },
+    {
+      "parameters": {
+        "operation": "pushMany",
+        "records": "={{ $json.data }}"
+      },
+      "type": "CUSTOM.enterspeedContextGraph",
+      "typeVersion": 1,
+      "position": [
+        840,
+        320
+      ],
+      "id": "b2e4d6f8-1a3c-4b5d-8e7f-9a0b1c2d3e4f",
+      "name": "Step 2 · Push products",
+      "credentials": {
+        "enterspeedContextGraphApi": {
+          "id": "__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__",
+          "name": "Enterspeed Context Graph account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Stand-in for the PIM: the delete it sends when a product is retired\n// (from Tonevik extras/deletes.ndjson). A delete names the record by its $id.\n// The full pack also deletes NAV records; those arrive in a later step.\nreturn [\n  { json: {\"$id\":\"pim-prd-2005f2\",\"$type\":\"product\",\"$source\":\"pim\",\"$action\":\"delete\"} }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        640
+      ],
+      "id": "c3f5e7a9-2b4d-4c6e-9f8a-1b2c3d4e5f60",
+      "name": "Step 3 · Get PIM deletes"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        560,
+        640
+      ],
+      "id": "0b6f3c1e-8a2d-4f5b-9c7e-1d2a3b4c5d03",
+      "name": "Step 3 · Collect deletes"
+    },
+    {
+      "parameters": {
+        "operation": "pushMany",
+        "records": "={{ $json.data }}"
+      },
+      "type": "CUSTOM.enterspeedContextGraph",
+      "typeVersion": 1,
+      "position": [
+        840,
+        640
+      ],
+      "id": "d4a6b8c0-3e5f-4d7a-8b9c-2c3d4e5f6a71",
+      "name": "Step 3 · Push deletes",
+      "credentials": {
+        "enterspeedContextGraphApi": {
+          "id": "__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__",
+          "name": "Enterspeed Context Graph account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Context Graph: Tonevik demo\n\nThe **Tonevik** demo shop's PIM sends its records to an Enterspeed Context Graph with the **Enterspeed Context Graph** node's *Entity › Push Many*, one step at a time:\n\n1. **Categories**: the record, and why Push sends it as it is\n2. **Products**: records linking up in the graph\n3. **A retired product**: deleting a record\n\nEach **Get** node stands in for the PIM. A record, exactly as the PIM delivers it:\n\n```json\n{ \"$id\": \"pim-cat-dd34d4\", \"$type\": \"category\", \"$source\": \"pim\",\n  \"id\": \"cat-speakers\", \"name\": \"Speakers\" }\n```\n\n`$id` is the PIM's own key for the record; `id` is the category's own identity. The graph keeps both.\n\nAn **Aggregate** node collects a step's records into one list, and **Push Many** sends that list in one request.\n\nRun a step: open its **Push** node and click **Execute step**. The guide, `docs/context-graph-demo/GUIDE.md`, explains each step.",
+        "height": 480,
+        "width": 740
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -80,
+        -560
+      ],
+      "typeVersion": 1,
+      "id": "74bc12a6-0cae-40cb-b433-24d1b5fe7633",
+      "name": "About"
+    },
+    {
+      "parameters": {
+        "content": "## How Push Many sends records\n\n**Aggregate** (*All Item Data*) turns the records into one item:\n\n```json\n{ \"data\": [ { \"$id\": \"pim-cat-26474b\", … }, … ] }\n```\n\n**Push Many** reads that list from *Records* (`{{ $json.data }}`) and sends every record in one request, as it is. Each record carries its own `$id`, `$type` and `$source`, and `$action` for a delete.\n\nIt outputs one result per record.",
+        "height": 480,
+        "width": 540,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        700,
+        -560
+      ],
+      "typeVersion": 1,
+      "id": "5c0e2a51-7a43-4c1e-9f0b-3d8e6a2b7f14",
+      "name": "How Push Many sends records"
+    },
+    {
+      "parameters": {
+        "content": "### Step 1 · Categories\nThe PIM's 4 categories become entities, filed under their PIM keys (`pim-cat-…`).\n\nExpect 4 results, `accepted: true`.",
+        "height": 220,
+        "width": 440,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1080,
+        -60
+      ],
+      "typeVersion": 1,
+      "id": "e5b7c9d1-4f6a-4e8b-9c0d-3d4e5f6a7b82",
+      "name": "Step 1"
+    },
+    {
+      "parameters": {
+        "content": "### Step 2 · Products\nThe 12 products, each naming its category by `categoryId`.\n\nExpect 12 results, `accepted: true`.",
+        "height": 220,
+        "width": 440,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1080,
+        260
+      ],
+      "typeVersion": 1,
+      "id": "f6c8d0e2-5a7b-4f9c-8d1e-4e5f6a7b8c93",
+      "name": "Step 2"
+    },
+    {
+      "parameters": {
+        "content": "### Step 3 · A retired product\nThe PIM retires Vega Band Kids: a delete, named by its `$id`.\n\nExpect 1 result, `action: \"delete\"`, `accepted: true`.",
+        "height": 220,
+        "width": 440,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1080,
+        580
+      ],
+      "typeVersion": 1,
+      "id": "a7d9e1f3-6b8c-4a0d-9e2f-5f6a7b8c9da4",
+      "name": "Step 3"
+    },
+    {
+      "parameters": {
+        "content": "## Before you run it\n\nThis workflow needs an **Enterspeed Context Graph API** credential and the Tonevik dev-server. See the **Context Graph** section of the package README:\nhttps://github.com/enterspeedhq/n8n-nodes-enterspeed#context-graph",
+        "height": 200,
+        "width": 740,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -80,
+        900
+      ],
+      "typeVersion": 1,
+      "id": "a3f9d2c4-6b1e-4f7a-8c5d-2e9b0f4a6d31",
+      "name": "Before you run it"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Step 1 · Get PIM categories",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Step 2 · Get PIM products",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Step 3 · Get PIM deletes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 1 · Get PIM categories": {
+      "main": [
+        [
+          {
+            "node": "Step 1 · Collect categories",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 2 · Get PIM products": {
+      "main": [
+        [
+          {
+            "node": "Step 2 · Collect products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 3 · Get PIM deletes": {
+      "main": [
+        [
+          {
+            "node": "Step 3 · Collect deletes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 1 · Collect categories": {
+      "main": [
+        [
+          {
+            "node": "Step 1 · Push categories",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 2 · Collect products": {
+      "main": [
+        [
+          {
+            "node": "Step 2 · Push products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 3 · Collect deletes": {
+      "main": [
+        [
+          {
+            "node": "Step 3 · Push deletes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}
