@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import type { IExecuteFunctions } from 'n8n-workflow';
+import type { ICredentialDataDecryptedObject, IExecuteFunctions, IHttpRequestOptions } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import { EnterspeedContextGraph } from '../nodes/EnterspeedContextGraph/EnterspeedContextGraph.node';
 import { EnterspeedContextGraphApi } from '../credentials/EnterspeedContextGraphApi.credentials';
 
 /**
  * The Context Graph node ships with no operations yet: it must only accept
- * its own credential and refuse to run. The credential must mask the key,
- * send it only as a header, and test against a read-only Delivery route.
+ * its own credential and refuse to run. The credential must mask both keys,
+ * send each only to its own service as a header, and test against a read-only Delivery route.
  */
 
 const node = new EnterspeedContextGraph();
@@ -30,20 +30,52 @@ describe('EnterspeedContextGraph node', () => {
 describe('EnterspeedContextGraphApi credential', () => {
 	const field = (name: string) => credential.properties.find((p) => p.name === name);
 
-	it('has an ingest URL, a delivery URL, a manifest version and an API key', () => {
+	it('has an ingest URL and key, a delivery URL and key, and a manifest version', () => {
 		expect(credential.properties.map((p) => p.name).sort()).toEqual(
-			['apiKey', 'deliveryUrl', 'ingestUrl', 'manifestVersion'].sort(),
+			['deliveryApiKey', 'deliveryUrl', 'ingestApiKey', 'ingestUrl', 'manifestVersion'].sort(),
 		);
 	});
 
-	it('masks the API key', () => {
-		expect(field('apiKey')?.typeOptions?.password).toBe(true);
+	it('masks both keys', () => {
+		expect(field('ingestApiKey')?.typeOptions?.password).toBe(true);
+		expect(field('deliveryApiKey')?.typeOptions?.password).toBe(true);
 	});
 
-	it('sends the API key only as the X-Api-Key header', () => {
-		expect(credential.authenticate).toEqual({
-			type: 'generic',
-			properties: { headers: { 'X-Api-Key': '={{$credentials.apiKey}}' } },
+	it("doesn't pre-fill either URL with an Enterspeed Core host", () => {
+		expect(field('ingestUrl')?.default).toBe('');
+		expect(field('deliveryUrl')?.default).toBe('');
+		expect(field('ingestUrl')?.required).toBe(true);
+		expect(field('deliveryUrl')?.required).toBe(true);
+	});
+
+	describe('sends each key only to its own service, as the X-Api-Key header', () => {
+		const creds = {
+			ingestUrl: 'https://ingest.example.com/',
+			ingestApiKey: 'ingest-key',
+			deliveryUrl: 'https://delivery.example.com',
+			deliveryApiKey: 'delivery-key',
+			manifestVersion: '1.0.0',
+		};
+		const authenticate = credential.authenticate as (
+			c: ICredentialDataDecryptedObject,
+			r: IHttpRequestOptions,
+		) => Promise<IHttpRequestOptions>;
+		const header = async (url: string) => (await authenticate(creds, { url, headers: { a: 'b' } })).headers;
+
+		it('the Ingest API Key to the Ingest URL and under it', async () => {
+			expect(await header('https://ingest.example.com/entities')).toEqual({ a: 'b', 'X-Api-Key': 'ingest-key' });
+			expect(await header('https://ingest.example.com')).toEqual({ a: 'b', 'X-Api-Key': 'ingest-key' });
+		});
+
+		it('the Delivery API Key everywhere else', async () => {
+			expect(await header('https://delivery.example.com/schema/msd/v1/1.0.0')).toEqual({ a: 'b', 'X-Api-Key': 'delivery-key' });
+			// a host that only starts with the ingest URL isn't under it
+			expect(await header('https://ingest.example.com.evil/entities')).toEqual({ a: 'b', 'X-Api-Key': 'delivery-key' });
+		});
+
+		it('the Delivery API Key to the credential test, which has a baseURL', async () => {
+			const out = await authenticate(creds, { baseURL: 'https://delivery.example.com', url: '/schema/msd/v1/1.0.0' });
+			expect(out.headers).toEqual({ 'X-Api-Key': 'delivery-key' });
 		});
 	});
 

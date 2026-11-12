@@ -35,10 +35,14 @@ This package ships three n8n node types and two credential types:
   `execute()` throws a `NodeOperationError` saying so.
 - **`EnterspeedContextGraphApi`**
   (`credentials/EnterspeedContextGraphApi.credentials.ts`) — the Context
-  Graph's own credential: one API key (sent as `X-Api-Key` via `authenticate`),
-  an ingest URL for uploads, a delivery URL for reads, and the manifest version
-  every Delivery route is scoped to. In the deployed platform ingest and
-  delivery are separate services; the SDK dev-server serves both from one host.
+  Graph's own credential: an ingest URL and Ingest API Key for uploads, a
+  delivery URL and Delivery API Key for reads, and the manifest version every
+  Delivery route is scoped to. Ingest and delivery are separate services that
+  each check their own key, so `authenticate` sets `X-Api-Key` per request:
+  the Ingest API Key when the request URL is the ingest URL or under it, the
+  Delivery API Key otherwise. Neither URL has a default, so a Context Graph
+  key is never sent to an Enterspeed Core host. The SDK dev-server serves both
+  services from one host.
   The credential test reads `GET {deliveryUrl}/schema/msd/v1/{manifestVersion}`,
   which deployed Delivery guards with the key (401) and 404s for an unhosted
   manifest. The dev-server does not enforce keys, so against it the test only

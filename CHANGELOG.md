@@ -8,7 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Added
 
-- **Enterspeed Context Graph** node and **Enterspeed Context Graph API** credential (API key, ingest URL, delivery URL, manifest version). The credential test reads the manifest document from the Delivery URL. The node has no operations yet and refuses to run.
+- **Enterspeed Context Graph** node and **Enterspeed Context Graph API** credential (ingest URL and Ingest API Key, delivery URL and Delivery API Key, manifest version). Each key is sent only to its own service. Neither URL has a default, so a Context Graph key never goes to an Enterspeed Core host. The credential test reads the manifest document from the Delivery URL. The node has no operations yet and refuses to run.
 
 ### Changed
 
