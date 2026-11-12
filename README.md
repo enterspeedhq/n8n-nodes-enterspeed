@@ -239,7 +239,7 @@ Reads the **representation** served for a route: one resource the schema compose
 With **Schema**, *Context* lists each route placeholder first (`productId (path)`), then any other context the schema lists (`locale (query)`, `market (header: X-Market)`). Path values fill the route and are required; the rest go in the query string or a header, as the schema declares, and an empty optional value is left out. A missing required value fails the item before anything is sent.
 
 - **Output:** one route per item, one request per item. The representation comes out exactly as returned: each slot's value at the slot's name, plus `$metadata` with each slot's `$state`.
-- **Check `$state`, not the status.** A representation where only some slots resolved still succeeds: an unresolved slot is `null`, with `$state` `missing` (or `deferred`/`pending` when the graph didn't resolve it in this response). A slot the key may not see has no entry at all.
+- **Check `$state`, not the status.** A representation where only some slots resolved still succeeds: an unresolved slot is `null`, with `$state` `missing` (not there), `pending` (not resolved in time) or `deferred` (held back on purpose, e.g. a `cache: false` slot or the delivery policy). The node sends no claims, so a slot gated by a claim has no entry at all, and a route gated by one answers `404`.
 - **Errors:** a route with no representation fails with *No representation for route …*, or with the Context Graph's own message: a route that matches none, a `required` slot that didn't resolve, or no slot resolved at all. An invalid request value fails with the Context Graph's message too.
 
 ### Schema › Get
@@ -307,7 +307,7 @@ Where the dev-server differs from a deployed Context Graph:
 The Context Graph serves these; the node doesn't use them yet.
 
 - **Upload a source's complete export.** The Context Graph takes a snapshot as an artifact: reserve it, upload the file, commit it, and the graph drains it into the source. Push and Push Many are for records as they change, and Push Many isn't tuned for bulk (no batch-size setting, one request at a time), so use them for a full export only until Upload arrives.
-- **Resuming a partly resolved representation.** A `207` carries `$metadata.$resume`, which a client sends back as `X-Resume` to get the slots still pending. Until the node does that, read the route again later.
+- **Resuming a partly resolved representation.** A `207` carries `$metadata.$resume`, which a client sends back as `X-Resume` to get the slots still open. Until the node does that, it outputs the first answer only. A slot held back on purpose (`deferred`, e.g. a `cache: false` slot) stays `null`, and reading the route again doesn't fill it, because every fresh read holds it back again.
 - **Following `next` automatically** (Return All) on Index › Query. Use `page` or `cursor` yourself.
 - **Retrying a busy Delivery.** Under load, Delivery refuses a read with `503` and says how long to wait. The node doesn't retry it yet, so the item fails; run it again.
 
