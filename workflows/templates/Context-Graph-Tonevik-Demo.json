@@ -155,7 +155,7 @@
     },
     {
       "parameters": {
-        "content": "## Context Graph: Tonevik demo\n\nThe **Tonevik** demo shop's PIM sends its records to an Enterspeed Context Graph with the **Enterspeed Context Graph** node's *Entity › Push Many*, one step at a time:\n\n1. **Categories**: the record, and why Push sends it as it is\n2. **Products**: records linking up in the graph\n3. **A retired product**: deleting a record\n\nEach **Get** node stands in for the PIM. A record, exactly as the PIM delivers it:\n\n```json\n{ \"$id\": \"pim-cat-dd34d4\", \"$type\": \"category\", \"$source\": \"pim\",\n  \"id\": \"cat-speakers\", \"name\": \"Speakers\" }\n```\n\n`$id` is the PIM's own key for the record; `id` is the category's own identity. The graph keeps both.\n\nAn **Aggregate** node collects a step's records into one list, and **Push Many** sends that list in one request.\n\nRun a step: open its **Push** node and click **Execute step**. The guide, `docs/context-graph-demo/GUIDE.md`, explains each step.",
+        "content": "## Context Graph: Tonevik demo\n\nThe **Tonevik** demo shop's PIM sends its records to an Enterspeed Context Graph with the **Enterspeed Context Graph** node's *Entity › Push Many*, one step at a time, and reads back what the graph made of them with *Shape › Get Many*:\n\n1. **Categories**: the record, and why Push sends it as it is\n2. **Products**: records linking up in the graph\n3. **A retired product**: deleting a record\n\nEach **Get** node stands in for the PIM. A record, exactly as the PIM delivers it:\n\n```json\n{ \"$id\": \"pim-cat-dd34d4\", \"$type\": \"category\", \"$source\": \"pim\",\n  \"id\": \"cat-speakers\", \"name\": \"Speakers\" }\n```\n\n`$id` is the PIM's own key for the record; `id` is the category's own identity. The graph keeps both.\n\nAn **Aggregate** node collects a step's records into one list, and **Push Many** sends that list in one request.\n\nRun a step: open its **Read back** node and click **Execute step**. The guide, `docs/context-graph-demo/GUIDE.md`, explains each step.",
         "height": 480,
         "width": 740
       },
@@ -186,15 +186,15 @@
     },
     {
       "parameters": {
-        "content": "### Step 1 · Categories\nThe PIM's 4 categories become entities, filed under their PIM keys (`pim-cat-…`).\n\nExpect 4 results, `accepted: true`.",
-        "height": 220,
-        "width": 440,
+        "content": "### Step 1 · Categories\nThe PIM's 4 categories become entities, filed under their PIM keys (`pim-cat-…`).\n\n**Push:** 4 results, `accepted: true`.\n\n**Read back** (*Get Many*): each category's `CategoryRef` shape, keyed by its own `id`, not its `$id`. Expect 4 items, `status: 200`, e.g. `data: { \"id\": \"categorymodel:cat-speakers\", \"name\": \"Speakers\" }`.",
+        "height": 280,
+        "width": 480,
         "color": 7
       },
       "type": "n8n-nodes-base.stickyNote",
       "position": [
-        1080,
-        -60
+        1640,
+        -100
       ],
       "typeVersion": 1,
       "id": "e5b7c9d1-4f6a-4e8b-9c0d-3d4e5f6a7b82",
@@ -202,15 +202,15 @@
     },
     {
       "parameters": {
-        "content": "### Step 2 · Products\nThe 12 products, each naming its category by `categoryId`.\n\nExpect 12 results, `accepted: true`.",
-        "height": 220,
-        "width": 440,
+        "content": "### Step 2 · Products\nThe 12 products, each naming its category by `categoryId`.\n\n**Push:** 12 results, `accepted: true`.\n\n**Read back** (*Get Many*): all 12 `ProductCard` shapes in one request. Expect 12 items, `status: 200`, e.g. for `p-1001`: `data: { \"categoryId\": \"cat-headphones\", \"id\": \"productmodel:p-1001\", \"name\": \"Aurora H100 Over-Ear Headphones\", \"price\": 2700 }`.",
+        "height": 280,
+        "width": 480,
         "color": 7
       },
       "type": "n8n-nodes-base.stickyNote",
       "position": [
-        1080,
-        260
+        1640,
+        220
       ],
       "typeVersion": 1,
       "id": "f6c8d0e2-5a7b-4f9c-8d1e-4e5f6a7b8c93",
@@ -218,15 +218,15 @@
     },
     {
       "parameters": {
-        "content": "### Step 3 · A retired product\nThe PIM retires Vega Band Kids: a delete, named by its `$id`.\n\nExpect 1 result, `action: \"delete\"`, `accepted: true`.",
-        "height": 220,
-        "width": 440,
+        "content": "### Step 3 · A retired product\nThe PIM retires Vega Band Kids: a delete, named by its `$id`.\n\n**Push:** 1 result, `action: \"delete\"`, `accepted: true`.\n\n**Read back** (*Get Many*): `p-1010` is gone (`status: 404`, `data: null`); `p-1001` is still there (`status: 200`).",
+        "height": 280,
+        "width": 480,
         "color": 7
       },
       "type": "n8n-nodes-base.stickyNote",
       "position": [
-        1080,
-        580
+        1640,
+        540
       ],
       "typeVersion": 1,
       "id": "a7d9e1f3-6b8c-4a0d-9e2f-5f6a7b8c9da4",
@@ -247,6 +247,108 @@
       "typeVersion": 1,
       "id": "a3f9d2c4-6b1e-4f7a-8c5d-2e9b0f4a6d31",
       "name": "Before you run it"
+    },
+    {
+      "parameters": {
+        "jsCode": "// The shape key of each category the step pushed: its CategoryRef shape,\n// keyed by the category's own id (not its $id). One item holding the list.\nconst records = $('Step 1 · Get PIM categories').all();\nreturn [{ json: { keys: records.map(({ json }) => `CategoryRef:categoryId:${json.id}`) } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        0
+      ],
+      "id": "a1c3e5f7-0b2d-4e6f-8a9b-0c1d2e3f4a51",
+      "name": "Step 1 · Shape keys"
+    },
+    {
+      "parameters": {
+        "resource": "shape",
+        "operation": "getMany",
+        "shapeKeys": "={{ $json.keys }}"
+      },
+      "type": "CUSTOM.enterspeedContextGraph",
+      "typeVersion": 1,
+      "position": [
+        1400,
+        0
+      ],
+      "id": "a1c3e5f7-0b2d-4e6f-8a9b-0c1d2e3f4a52",
+      "name": "Step 1 · Read back",
+      "credentials": {
+        "enterspeedContextGraphApi": {
+          "id": "__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__",
+          "name": "Enterspeed Context Graph account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// The shape key of each product the step pushed: its ProductCard shape,\n// keyed by the product's own id (not its $id). One item holding the list.\nconst records = $('Step 2 · Get PIM products').all();\nreturn [{ json: { keys: records.map(({ json }) => `ProductCard:productId:${json.id}`) } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        320
+      ],
+      "id": "a1c3e5f7-0b2d-4e6f-8a9b-0c1d2e3f4a53",
+      "name": "Step 2 · Shape keys"
+    },
+    {
+      "parameters": {
+        "resource": "shape",
+        "operation": "getMany",
+        "shapeKeys": "={{ $json.keys }}"
+      },
+      "type": "CUSTOM.enterspeedContextGraph",
+      "typeVersion": 1,
+      "position": [
+        1400,
+        320
+      ],
+      "id": "a1c3e5f7-0b2d-4e6f-8a9b-0c1d2e3f4a54",
+      "name": "Step 2 · Read back",
+      "credentials": {
+        "enterspeedContextGraphApi": {
+          "id": "__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__",
+          "name": "Enterspeed Context Graph account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// The shapes to check after the delete: the retired product, Vega Band Kids\n// (p-1010), and one the PIM still sells (p-1001). One item holding the list.\nreturn [{ json: { keys: ['ProductCard:productId:p-1010', 'ProductCard:productId:p-1001'] } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        640
+      ],
+      "id": "a1c3e5f7-0b2d-4e6f-8a9b-0c1d2e3f4a55",
+      "name": "Step 3 · Shape keys"
+    },
+    {
+      "parameters": {
+        "resource": "shape",
+        "operation": "getMany",
+        "shapeKeys": "={{ $json.keys }}"
+      },
+      "type": "CUSTOM.enterspeedContextGraph",
+      "typeVersion": 1,
+      "position": [
+        1400,
+        640
+      ],
+      "id": "a1c3e5f7-0b2d-4e6f-8a9b-0c1d2e3f4a56",
+      "name": "Step 3 · Read back",
+      "credentials": {
+        "enterspeedContextGraphApi": {
+          "id": "__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__",
+          "name": "Enterspeed Context Graph account"
+        }
+      }
     }
   ],
   "pinData": {},
@@ -332,6 +434,72 @@
         [
           {
             "node": "Step 3 · Push deletes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 1 · Push categories": {
+      "main": [
+        [
+          {
+            "node": "Step 1 · Shape keys",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 1 · Shape keys": {
+      "main": [
+        [
+          {
+            "node": "Step 1 · Read back",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 2 · Push products": {
+      "main": [
+        [
+          {
+            "node": "Step 2 · Shape keys",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 2 · Shape keys": {
+      "main": [
+        [
+          {
+            "node": "Step 2 · Read back",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 3 · Push deletes": {
+      "main": [
+        [
+          {
+            "node": "Step 3 · Shape keys",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 3 · Shape keys": {
+      "main": [
+        [
+          {
+            "node": "Step 3 · Read back",
             "type": "main",
             "index": 0
           }
