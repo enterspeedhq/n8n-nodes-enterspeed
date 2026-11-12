@@ -179,7 +179,7 @@ Finds documents in an **index** the schema declares, with filters, sorting and p
 | **JSON** (default) | The *Query* field takes the query as a JSON object, sent as written. It starts with a working example to edit. |
 | **Builder** | Pick the *Index* from the schema (see [Fields filled from the schema](#fields-filled-from-the-schema)), then add *Search* text, *Filters* (field, operator, value) and *Sort* (field, Ascending/Descending, sent as `direction` `asc`/`desc`), with *Results Per Page* (1 to 100, the Context Graph's maximum), *Page* and an optional *Query ID*. |
 
-In the Builder, the field lists show only the fields the chosen index can filter on, and the operators the schema lists. *Sort* offers the same fields, but only those the index declares sortable can be sorted on: the schema doesn't say which ones are, and a sort on any other field is refused. Filters are all combined with `and`; for `or` or nesting, use JSON. A value is sent as the field's type: a number for a numeric field, `true`/`false` for a boolean one, text otherwise. For `in`, separate the values with commas. Aggregations, `cursor` and `args` are JSON-only.
+In the Builder, the field lists show only the fields the chosen index can filter on, and the operators the schema lists. *Sort* offers only the fields the schema lists as sortable for the index, as delivery refuses a sort on any other field; when the index lists none, the list says *This index lists no sortable fields*. Filters are all combined with `and`; for `or` or nesting, use JSON. A value is sent as the field's type: a number for a numeric field, `true`/`false` for a boolean one, text otherwise. For `in`, separate the values with commas. Aggregations, `cursor` and `args` are JSON-only.
 
 The query members:
 
@@ -294,6 +294,7 @@ Where the dev-server differs from a deployed Context Graph:
 |---|---|---|
 | Index › Get | Not served (404) | Index › Query |
 | Query paging | No cursors (`next` is always `null`) | `page` |
+| Index › Query's Builder *Sort* list | Empty: the dev-server's schema doesn't list sortable fields yet, though it refuses a sort on a field not declared sortable | Write the sort in JSON mode |
 | Text filtering | Exact and in memory, not like Elasticsearch | Expect some queries to match differently in production |
 | API keys | Not checked | — |
 | Processing | A pushed record is processed at once, so a read straight after a push sees it | On a deployed graph, read again if it isn't there yet |

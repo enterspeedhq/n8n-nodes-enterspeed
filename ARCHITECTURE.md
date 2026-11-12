@@ -190,7 +190,8 @@ Several Context Graph fields can be filled from the manifest's **materialised sc
 | Field | Operation | Filled from |
 |---|---|---|
 | *Index* | Index › Get, Index › Query (Builder) | `indexes` |
-| Filter and sort fields | Index › Query (Builder) | the index's keyword, numeric and boolean fields (the MSD doesn't say which are `sortable`, so the sort list offers all of them) |
+| Filter fields | Index › Query (Builder) | the index's `keywordFields`, `numericFields` and `booleanFields` |
+| Sort fields | Index › Query (Builder) | the index's `sortableFields`, each with the value class its filter list gives it |
 | Operators | Index › Query (Builder) | `filterOperators` |
 | *Representation*, *Route* | Representation › Get (Schema) | `representations[].$name`, `$routes` |
 | *Context* | Representation › Get (Schema) | the route's placeholders, `context.required` / `optional`, binders |
@@ -230,7 +231,7 @@ A saved workflow keeps sending what was saved. A renamed index or field fails at
 
 - **No entry shapes in the MSD.** The *Materialised schema document* contract (like ADR-028 §4) lists indexes and representations, not entry shapes or their ID segments, so `msdShapes()` returns `[]` and Shape's Schema mode shows *This schema lists no shapes*. It is the one place to change when the MSD lists them.
 - **The MSD's form is pinned by the *Materialised schema document* contract** (semantic-graph › contracts › spec, with vectors that delivery and the SDK dev-server both pass). `msd.ts` still ignores members it doesn't know.
-- **No sortable fields in the MSD.** The contract: "`sortable` on an index field reaches no member", while delivery refuses a sort on a field not declared sortable. The sort list therefore offers every keyword, numeric and boolean field, and a wrong pick fails at run time with the platform's message.
+- **Sort fields follow `sortableFields`, which the dev-server doesn't list yet.** The contract lists each index's `sortableFields` ("the fields a query may sort on", sc-14481), and delivery refuses a sort on any other field (sc-14365). A member is present only when non-empty, so a missing `sortableFields` means none, and the sort list shows *This index lists no sortable fields* rather than offering fields delivery would refuse. The SDK dev-server doesn't list the member yet (sc-14753), so against it the list is empty and a sort is written in JSON. A sortable field no filter list classifies is offered and saved by its plain name.
 - **Context values reach the route and shape slots, never a query slot.** The contract defines `context.required` as the route's placeholders and the keys that fill a shape slot's ID segments, `context.optional` as keys only an `enabled` gate reads, and says a query slot's `filters`, `search` or `args` contribute nothing. *Context* therefore shows where each value is sent; there is no per-slot mapping to show.
 - **`context.resolving` isn't used yet.** It says which routes can resolve; the route list could mark one that never does.
 
