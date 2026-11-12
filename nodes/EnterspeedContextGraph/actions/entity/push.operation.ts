@@ -33,7 +33,7 @@ export const properties: INodeProperties[] = [
 		default: '={{ $json.$source }}',
 		displayOptions: { show },
 		description:
-			"The source the record belongs to, sent as $source. When empty, the Context Graph takes the source from the API key (the local dev-server can't, and rejects the record). Defaults to the record's own $source.",
+			"The source the record belongs to, sent as $source. The Context Graph requires it: a record without one is rejected. Defaults to the record's own $source.",
 	},
 	{
 		displayName: 'Action',

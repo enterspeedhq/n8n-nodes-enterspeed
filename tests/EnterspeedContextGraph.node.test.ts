@@ -194,8 +194,8 @@ describe('EnterspeedContextGraph — Entity › Push', () => {
 		});
 	});
 
-	describe('$source (optional: derived from the API key when absent, ADR-005)', () => {
-		it('leaves $source out when the record has none', async () => {
+	describe('$source (required by ingest, cross/ADR-010; the node sends the record as it is)', () => {
+		it('sends a record without $source as it is, leaving the rejection to the service', async () => {
 			const { httpRequest, out } = await push({ items: [{ $id: 'k-1', $type: 'product', name: 'Chair' }] });
 			expect(sent(httpRequest)).toEqual([{ $id: 'k-1', $type: 'product', name: 'Chair' }]);
 			expect(out[0].json).not.toHaveProperty('source');
@@ -309,7 +309,7 @@ describe('EnterspeedContextGraph — Entity › Push', () => {
 			expect(out.map((o) => o.json.id)).toEqual(['pim-cat-dd34d4', 'nav-prc-541690', 'pim-prd-2005f2']);
 		});
 
-		it('reports a record over the 32 MiB request limit (ingest/ADR-020 D5) without sending it, and still pushes the rest', async () => {
+		it('reports a record over the request limit (Kestrel default, 30,000,000 bytes) without sending it, and still pushes the rest', async () => {
 			const { httpRequest, out } = await push({
 				items: [pimCategory, { ...navPricing, huge: 'x'.repeat(MAX_REQUEST_BYTES) }],
 			});
@@ -558,7 +558,7 @@ describe('EnterspeedContextGraph — Entity › Push Many', () => {
 		]);
 	});
 
-	it('splits a list only before the 32 MiB request limit (ingest/ADR-020 D5)', async () => {
+	it('splits a list only before the request limit (Kestrel default, 30,000,000 bytes)', async () => {
 		const { httpRequest, out } = await pushMany({ records: big(3) });
 		expect(perRequest(httpRequest)).toEqual([['big-1', 'big-2'], ['big-3']]);
 		for (const call of httpRequest.mock.calls) {

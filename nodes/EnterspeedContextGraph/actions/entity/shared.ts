@@ -17,12 +17,15 @@ const DEFAULT_RETRY_AFTER_MS = 1000;
 const MAX_RETRY_AFTER_MS = 5 * 60 * 1000;
 
 /**
- * Ingest caps a request body at 32 MiB (provisional, ingest/ADR-020 D5).
- * A request is closed before it would pass this, with headroom. It is the
- * only reason Push Many splits a list into several requests: neither
- * operation is the bulk path (that is an artifact upload, cross/ADR-022).
+ * Ingest sets no body limit of its own, so Kestrel's default of 30,000,000
+ * bytes applies (RFC cross-027, Motivation), and a larger request is refused
+ * whole with a 413. A request is closed before 29,000,000 bytes, with
+ * headroom. Revisit when ingest/ADR-020 D5 (a 32 MiB cap) is implemented.
+ * It is the only reason Push Many splits a list into several requests: both
+ * operations are push, admitted on arrival; bulk is the artifact upload
+ * (cross/ADR-022, ingest/ADR-017).
  */
-export const MAX_REQUEST_BYTES = 30 * 1024 * 1024;
+export const MAX_REQUEST_BYTES = 29_000_000;
 
 /** The five $ fields of one record, as resolved for sending. */
 export interface RecordFields {

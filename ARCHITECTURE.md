@@ -45,12 +45,15 @@ This package ships three n8n node types and two credential types:
   node makes it) and sends the list in one request; each record keeps its
   own `$` fields. Neither reshapes or converts values (a non-string
   `$id`/`$type` is reported as failed, as the contract makes it a parse
-  error). `$source` is optional (derived from the key when absent,
-  ingest/ADR-005). A delete line carries only the `$` fields. Neither is the
-  bulk path — that is an artifact upload (cross/ADR-022, ingest/ADR-017) —
-  so Push Many splits a list only at the request body limit: requests close
-  before 30 MiB (ingest caps a body at 32 MiB, ingest/ADR-020 D5) and are
-  sent one at a time. A `429` is retried
+  error). `$source` is required by ingest (cross/ADR-010 retired the source
+  derived from the key); a record without one is sent as it is and the
+  service's per-record rejection is its result. A delete line carries only the `$` fields. Both are
+  push: records are admitted on arrival. Neither is the bulk path — that is
+  an artifact upload, drained later against a target window (cross/ADR-022,
+  ingest/ADR-017) — so Push Many splits a list only at the request body
+  limit: requests close before 29,000,000 bytes (ingest sets no limit, so
+  Kestrel's default of 30,000,000 applies; ingest/ADR-020 D5's 32 MiB is
+  not implemented yet) and are sent one at a time. A `429` is retried
   after its `Retry-After`, up to 3 times, as ADR-020 requires of
   workflow-tool integrations (the ADRs live in the semantic-graph repository
   › contracts › docs › adr). The service answers a per-line `{ id,

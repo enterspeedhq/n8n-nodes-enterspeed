@@ -96,7 +96,7 @@ record is; everything else is the record's own data:
 |---|---|
 | `$id` | The **source system's own key** for the record. It identifies the entity and stays the same every time the record is sent, so sending it again updates the entity instead of adding a second one. |
 | `$type` | The entity type. |
-| `$source` | The source the record came from. |
+| `$source` | The source the record came from. Required: the graph rejects a record without one. |
 | `$action` | `delete` removes the entity; anything else, or nothing, saves it. |
 | `$modifiedAt` | When the record last changed in the source (not in this data yet). |
 | anything else | The entity's own fields, stored exactly as sent. |
@@ -104,8 +104,10 @@ record is; everything else is the record's own data:
 Note that `$id` (`pim-cat-dd34d4`) and `id` (`cat-speakers`) are **two
 different things**. `$id` is how the PIM files the record; `id` is the
 category's own identity, the one the schema's models and other records use
-to find it. The graph keeps both. Never set `$id` from `id`: that cuts the
-link back to the PIM record the entity came from.
+to find it. The graph keeps both. What matters is that `$id` is the
+source's own key for the record, unique within the source. In Tonevik's PIM
+that key differs from `id`; in a source whose key *is* `id`, the two are the
+same value.
 
 *Step 1 · Collect categories* is an **Aggregate** node (*All Item Data*).
 It turns the four records into one item holding them as a list:
@@ -163,7 +165,7 @@ record the PIM sends for that:
 ```
 
 A delete names the record by its `$id` (`pim-prd-2005f2`), not by its own
-`id` (`p-1010`), which is one more reason `$id` must stay the source's key.
+`id` (`p-1010`): the key the source files it under.
 Push Many sees the record's own `$action: "delete"` and sends a delete. A
 delete carries no other fields.
 

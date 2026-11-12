@@ -116,7 +116,7 @@ A Context Graph record looks like this:
 |---|---|---|
 | `$id` | required, text | The source system's own record key: unique within the source and the same every time the record is sent. It is not a domain field like `id` — the graph keeps both, and `$id` is what links the entity back to the record it came from. |
 | `$type` | required, text | The entity type. |
-| `$source` | optional | The source the record belongs to. When it's left out, the Context Graph takes it from the Ingest API Key; the local dev-server can't, and rejects the record. |
+| `$source` | required | The source the record belongs to. A record without one is rejected by the Context Graph. |
 | `$action` | optional | `delete` (in any letter case) removes the entity; anything else saves the record. |
 | `$modifiedAt` | optional | When the record last changed in the source (ISO 8601 with an offset). Saves and deletes to an entity are applied in this order, so an older write that arrives late doesn't overwrite a newer one. In production, sources are expected to send it: a record without one is applied, but a later upload of the source's export can overwrite it. |
 | anything else | | The entity's properties, stored exactly as sent. A save replaces the whole stored record. |
@@ -142,7 +142,7 @@ return $input.all().map(({ json }) => ({
 ```
 
 - A delete sends only `$id`, `$type`, `$source` and `$modifiedAt`.
-- Neither is for bulk loads; a source's complete export goes in as an upload (coming in a later release). Push Many splits a list into more requests only past the Context Graph's 32 MiB request limit; a single record too large for one request is reported as failed.
+- Both are for records as they change, stored as they arrive. Neither is for bulk loads: a source's complete export goes in as an upload, which the Context Graph processes later (coming in a later release). Push Many splits a list into more requests only to stay under the Context Graph's request limit (30,000,000 bytes); a single record too large for one request is reported as failed.
 - Outputs one result per record — `{ id, type, source, action, accepted, statusCode, error? }`, paired to the item it came from. A rejected record, or one without a valid `$id` or `$type`, comes out with `accepted: false` and the reason; the rest are still stored. Push Many fails an item whose *Records* isn't a list. `accepted: true` also covers a record whose content was unchanged, and one superseded by a newer *Modified At* — both are accepted with nothing written.
 - When the Context Graph is busy it refuses a request with `429` and says how long to wait. The node waits that long and resends the refused request, up to 3 times (nothing was written when it was refused). If it is still refused, or asked to wait more than five minutes, the run fails.
 - A rejected key (401), a key without write access (403), a request that is too large (413), continued throttling (429) or an unreachable Ingest URL fails the run with a message saying which. With *Continue On Fail*, the affected records come out with `error` and `description` instead.
