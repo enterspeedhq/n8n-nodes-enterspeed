@@ -1154,7 +1154,7 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 					},
 				],
 			},
-			sort: [{ field: 'price', order: 'desc' }],
+			sort: [{ field: 'price', direction: 'desc' }],
 			limit: 20,
 			page: 0,
 		});

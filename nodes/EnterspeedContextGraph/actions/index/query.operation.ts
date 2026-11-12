@@ -25,7 +25,7 @@ const EXAMPLE_QUERY = JSON.stringify(
 				},
 			],
 		},
-		sort: [{ field: 'price', order: 'desc' }],
+		sort: [{ field: 'price', direction: 'desc' }],
 		limit: 20,
 		page: 0,
 	},
@@ -131,17 +131,17 @@ export const properties: INodeProperties[] = [
 						type: 'options',
 						typeOptions: { loadOptionsMethod: 'getSortFields', loadOptionsDependsOn: ['builderIndex'] },
 						default: '',
-						description: 'A field the index can sort on. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+						description: 'A field the index declares sortable; a sort on any other field is refused. The schema does not say which fields are sortable, so the list offers every field that could be. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 					},
 					{
 						displayName: 'Order',
 						name: 'order',
 						type: 'options',
 						options: [
-							{ name: 'Ascending', value: 'Ascending' },
-							{ name: 'Descending', value: 'Descending' },
+							{ name: 'Ascending', value: 'asc' },
+							{ name: 'Descending', value: 'desc' },
 						],
-						default: 'Ascending',
+						default: 'asc',
 						description: 'Lowest or highest first',
 					},
 				],
@@ -192,7 +192,7 @@ export const properties: INodeProperties[] = [
 		hint: `Only index is required. Every member (filters, sort, limit, page, cursor, search, aggregations, args), the operators and paging: <a href="${QUERY_REFERENCE_URL}" target="_blank">Query reference</a>. An optional "id" labels the query's result (else its position in the request); two queries in one run can't share one.`,
 		// Also what an AI Agent reads when it fills this field ($fromAI), so it states the whole format.
 		description:
-			'A Context Graph query as a JSON object, sent as written. "index" (required): the index shape name. "filters": { "field", "operator", "value" } or { "and": [...] } / { "or": [...] }, nested freely; operators: equals, notEquals, greaterThan, greaterThanOrEquals, lessThan, lessThanOrEquals, contains, in (value is a list). "sort": [{ "field", "order": "asc" | "desc" }]. "limit": results per page, up to 100 (default 20). "page": from 0. "cursor": the previous result\'s "next". "search": { "query", "literal"?, "fields"?, "language"? }. "aggregations": [{ "type": "values" | "metrics" | "range", "name", "field", "size"?, "ranges"? }]. "args": values for ${token} placeholders. Only fields the index declares as filterable or sortable can be filtered or sorted on.',
+			'A Context Graph query as a JSON object, sent as written. "index" (required): the index shape name. "filters": { "field", "operator", "value" } or { "and": [...] } / { "or": [...] }, nested freely; operators: equals, notEquals, greaterThan, greaterThanOrEquals, lessThan, lessThanOrEquals, contains, in (value is a list). "sort": [{ "field", "direction": "asc" | "desc" }]. "limit": results per page, up to 100 (default 20). "page": from 0. "cursor": the previous result\'s "next". "search": { "query", "literal"?, "fields"?, "language"? }. "aggregations": [{ "type": "values" | "metrics" | "range", "name", "field", "size"?, "ranges"? }]. "args": values for ${token} placeholders. Only fields the index declares as filterable or sortable can be filtered or sorted on.',
 	},
 ];
 
@@ -221,9 +221,17 @@ function filterValue(value: string, valueClass: string | undefined, operator: st
 }
 
 /**
+ * A sort's direction in the contract's own words (*Query sort order*: `asc` or
+ * `desc`). A workflow saved before the field took `asc`/`desc` holds
+ * `Ascending`/`Descending`, read the same.
+ */
+const sortDirection = (order: string | undefined): 'asc' | 'desc' =>
+	order?.toLowerCase().startsWith('desc') ? 'desc' : 'asc';
+
+/**
  * The query the builder's fields describe, in the /query wire form
- * (delivery/ADR-037): filters AND-combined, sort `order` as Ascending or
- * Descending. Empty fields are left out.
+ * (delivery/ADR-037): filters AND-combined, each sort as `direction`
+ * `asc` or `desc` (*Query sort order* contract). Empty fields are left out.
  */
 export function builderQuery(fields: {
 	index: string;
@@ -247,7 +255,7 @@ export function builderQuery(fields: {
 	else if (filters.length) query.filters = { and: filters as IDataObject[] };
 	const sort = (fields.sort ?? [])
 		.filter((s) => s.field)
-		.map((s) => ({ field: parseClassedField(s.field as string).field, order: s.order ?? 'Ascending' }));
+		.map((s) => ({ field: parseClassedField(s.field as string).field, direction: sortDirection(s.order) }));
 	if (sort.length) query.sort = sort;
 	if (fields.limit !== undefined) query.limit = fields.limit;
 	if (fields.page) query.page = fields.page;

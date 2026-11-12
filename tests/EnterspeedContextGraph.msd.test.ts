@@ -231,7 +231,7 @@ describe('Index › Query builder', () => {
 					{ field: 'boolean:inStock', operator: 'equals', value: 'true' },
 					{ field: 'keyword:categoryId', operator: 'in', value: 'cat-a, cat-b' },
 				],
-				sort: [{ field: 'numeric:price', order: 'Descending' }],
+				sort: [{ field: 'numeric:price', order: 'desc' }],
 				limit: 20,
 				page: 0,
 			}),
@@ -245,9 +245,22 @@ describe('Index › Query builder', () => {
 					{ field: 'categoryId', operator: 'in', value: ['cat-a', 'cat-b'] },
 				],
 			},
-			sort: [{ field: 'price', order: 'Descending' }],
+			sort: [{ field: 'price', direction: 'desc' }],
 			limit: 20,
 		});
+	});
+
+	it('sends a sort as direction asc or desc, reading an older saved Ascending/Descending the same (Query sort order contract)', () => {
+		expect(
+			builderQuery({
+				index: 'I',
+				sort: [{ field: 'numeric:price', order: 'Descending' }, { field: 'keyword:sku', order: 'Ascending' }, { field: 'keyword:name' }],
+			}).sort,
+		).toEqual([
+			{ field: 'price', direction: 'desc' },
+			{ field: 'sku', direction: 'asc' },
+			{ field: 'name', direction: 'asc' },
+		]);
 	});
 
 	it('sends one filter as itself, and leaves out what is empty', () => {
