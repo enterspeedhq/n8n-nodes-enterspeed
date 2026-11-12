@@ -1,0 +1,215 @@
+{
+  "name": "Context Graph: resume a partial representation",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Context Graph: resume a partial representation\n\nTests **Representation › Get** with *Resume Partial Answers* against a Context Graph running locally (`./dev.sh` in the semantic-graph repository), using its seeded demo data.\n\nA representation can come back **partial**: some slots are left open (`$state` `deferred` or `pending`) and `$metadata.$resume` carries a checkpoint. With *Resume Partial Answers* on, the node sends that checkpoint back in `X-Resume` and merges each round into the same item, up to *Max Rounds*.\n\nThe same route is read twice:\n\n- **Read without resume**: the answer as it comes.\n- **Read with resume**: the same read, with up to 3 resume rounds.\n\nEach read goes to a **What came back** node that lists each slot's `$state` and whether a checkpoint is left.\n\nClick **Execute workflow**.",
+        "height": 460,
+        "width": 520,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -620,
+        0
+      ],
+      "id": "a0f1c2d3-4e5f-4a6b-8c7d-0e1f2a3b4c01",
+      "name": "About this workflow"
+    },
+    {
+      "parameters": {
+        "content": "## Before you run it\n\nCreate a **new** Enterspeed Context Graph API credential for the local Context Graph. Don't reuse the one `scripts/setup.mjs` makes: it is for the SDK dev-server, which also defaults to port 5200, and its key belongs to no environment here.\n\n- **Ingest URL**: `http://host.docker.internal:5090`\n- **Delivery URL**: `http://host.docker.internal:5200`\n- **Manifest Version**: `1.0.0`\n- **Delivery API Key**: Delivery's seeded demo key (`DemoApiKey` in the semantic-graph repository, `delivery/tests/Platform.Delivery.SeedFixtures/DemoData.cs`). Only the demo environment's product pages come back partial; a key for another environment (e.g. `SampleData.TestApiKey`) finds no such route: *No representation for route …*.\n- **Ingest API Key**: not used here, as this workflow only reads, but the field is required. Ingest checks its own keys (`delivery`'s keys don't work there); its seeded one is `TestApiKey` in `ingest/tests/Platform.Ingest.SeedFixtures/SeedData.cs`.\n\nType keys in; don't paste them into chats or files.\n\n5200 and 5090 are the ports `./dev.sh` gives Delivery and Ingest (the Aspire dashboard at `http://localhost:15178` lists them). From n8n outside Docker, use `localhost` instead of `host.docker.internal`.\n\nSelect the credential in both **Read** nodes.",
+        "height": 460,
+        "width": 520,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -620,
+        500
+      ],
+      "id": "a0f1c2d3-4e5f-4a6b-8c7d-0e1f2a3b4c02",
+      "name": "Before you run it"
+    },
+    {
+      "parameters": {
+        "content": "## What to expect\n\n`/product/wireless-headphones` comes back with two shape slots (`core`, `pricing`) and a query slot (`variants`).\n\n- **Without resume**: `core` and `pricing` are `fresh`, `variants` is `deferred`, and a checkpoint is present.\n- **With resume**: the same. Under Delivery's default policy query slots get no passes, on the first read or on a resume, so `variants` stays `deferred`: the node sends 3 rounds and outputs the item as it stands, with the latest checkpoint.\n\nA slot held back for another reason (`cache: false`, or cut short by the time limit) is filled in by a round. The seeded data has none.\n\n**Seeing the rounds:** the Aspire dashboard's traces for the delivery service show one `GET` for the first read and one `GET` with `X-Resume` per round.\n\nTo read through a different representation, change the route in **Route to read**.",
+        "height": 520,
+        "width": 620,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        520,
+        520
+      ],
+      "id": "a0f1c2d3-4e5f-4a6b-8c7d-0e1f2a3b4c03",
+      "name": "What to expect"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        240
+      ],
+      "id": "a0f1c2d3-4e5f-4a6b-8c7d-0e1f2a3b4c10",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "route",
+              "name": "route",
+              "value": "/product/wireless-headphones",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        240
+      ],
+      "id": "a0f1c2d3-4e5f-4a6b-8c7d-0e1f2a3b4c11",
+      "name": "Route to read"
+    },
+    {
+      "parameters": {
+        "resource": "representation",
+        "operation": "get",
+        "route": "={{ $json.route }}"
+      },
+      "type": "CUSTOM.enterspeedContextGraph",
+      "typeVersion": 1,
+      "position": [
+        460,
+        120
+      ],
+      "id": "a0f1c2d3-4e5f-4a6b-8c7d-0e1f2a3b4c12",
+      "name": "Read without resume",
+      "credentials": {
+        "enterspeedContextGraphApi": {
+          "id": "__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__",
+          "name": "Enterspeed Context Graph account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "representation",
+        "operation": "get",
+        "route": "={{ $json.route }}",
+        "resumePartial": true,
+        "maxResumeRounds": 3,
+        "maxResumeWaitMs": 5000
+      },
+      "type": "CUSTOM.enterspeedContextGraph",
+      "typeVersion": 1,
+      "position": [
+        460,
+        340
+      ],
+      "id": "a0f1c2d3-4e5f-4a6b-8c7d-0e1f2a3b4c13",
+      "name": "Read with resume",
+      "credentials": {
+        "enterspeedContextGraphApi": {
+          "id": "__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__",
+          "name": "Enterspeed Context Graph account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// One line per slot: its $state, so the two reads can be compared at a glance.\nreturn $input.all().map((item) => {\n\tconst metadata = item.json.$metadata ?? {};\n\tconst slots = {};\n\tfor (const [name, entry] of Object.entries(metadata)) {\n\t\tif (!name.startsWith('$')) slots[name] = entry?.$state;\n\t}\n\treturn {\n\t\tjson: {\n\t\t\tslots,\n\t\t\tcheckpoint: typeof metadata.$resume === 'string' ? 'present (more to resume)' : 'none (nothing left open)',\n\t\t\tchangedAt: metadata.$changedAt ?? null,\n\t\t},\n\t};\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        120
+      ],
+      "id": "a0f1c2d3-4e5f-4a6b-8c7d-0e1f2a3b4c14",
+      "name": "What came back without resume"
+    },
+    {
+      "parameters": {
+        "jsCode": "// One line per slot: its $state, so the two reads can be compared at a glance.\nreturn $input.all().map((item) => {\n\tconst metadata = item.json.$metadata ?? {};\n\tconst slots = {};\n\tfor (const [name, entry] of Object.entries(metadata)) {\n\t\tif (!name.startsWith('$')) slots[name] = entry?.$state;\n\t}\n\treturn {\n\t\tjson: {\n\t\t\tslots,\n\t\t\tcheckpoint: typeof metadata.$resume === 'string' ? 'present (more to resume)' : 'none (nothing left open)',\n\t\t\tchangedAt: metadata.$changedAt ?? null,\n\t\t},\n\t};\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        340
+      ],
+      "id": "a0f1c2d3-4e5f-4a6b-8c7d-0e1f2a3b4c15",
+      "name": "What came back with resume"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Route to read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route to read": {
+      "main": [
+        [
+          {
+            "node": "Read without resume",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read with resume",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read without resume": {
+      "main": [
+        [
+          {
+            "node": "What came back without resume",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read with resume": {
+      "main": [
+        [
+          {
+            "node": "What came back with resume",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}
