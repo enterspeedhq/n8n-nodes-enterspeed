@@ -1253,6 +1253,17 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 		expect(out[0].json).toEqual(envelope('0', []));
 	});
 
+	it('outputs the empty result the platform answers for an unknown index, not a failure', async () => {
+		// Delivery drops a query on an unknown index to an empty result, not a 400, so
+		// nobody can probe which indexes exist; its totalCount is null, not 0.
+		const unknown = { id: '0', index: 'Nope', items: [], totalCount: null, next: null };
+		const { out } = await query({
+			params: { query: { index: 'Nope' } },
+			httpRequest: vi.fn(async () => [unknown]),
+		});
+		expect(out).toEqual([{ json: unknown, pairedItem: { item: 0 } }]);
+	});
+
 	it('sends no request when there are no items', async () => {
 		const { out, httpRequest } = await query({ items: [] });
 		expect(httpRequest).not.toHaveBeenCalled();
@@ -1279,9 +1290,11 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 				});
 			});
 
-		it("shows the platform's message for an unknown index or invalid filter (400)", async () => {
-			const data = { error: 'invalid_query', message: 'Unknown index "Nope".' };
-			await expect(query({ httpRequest: failWith(400, data) })).rejects.toThrow('Unknown index "Nope".');
+		it("shows the platform's message for an invalid filter (400)", async () => {
+			const data = "Field 'nope' on index 'ProductIndex' is not filterable.";
+			await expect(query({ httpRequest: failWith(400, data) })).rejects.toThrow(
+				"Field 'nope' on index 'ProductIndex' is not filterable.",
+			);
 		});
 
 		it('says when the API key is rejected (401)', async () => {

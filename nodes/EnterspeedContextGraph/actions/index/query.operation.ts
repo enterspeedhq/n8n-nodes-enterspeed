@@ -352,7 +352,8 @@ function requestError(this: IExecuteFunctions, error: unknown, url: string): Nod
 	const own = platformMessage(data);
 	let message: string;
 	if (status === 401) message = 'The API key was rejected by the Delivery URL.';
-	// An invalid query, unknown index or unknown manifest: the platform says which.
+	// An invalid query or unknown manifest: the platform says which. An unknown
+	// index isn't an error: delivery answers it with an empty result.
 	else if (own) message = own;
 	else message = `The Delivery URL answered with status ${status}.`;
 	const httpCode = String(status);
