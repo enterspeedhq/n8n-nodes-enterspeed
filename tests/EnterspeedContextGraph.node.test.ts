@@ -1478,6 +1478,260 @@ describe('EnterspeedContextGraph — Representation › Get', () => {
 	});
 });
 
+/**
+ * Resume Partial Answers follows `$metadata.$resume` with `X-Resume` on the
+ * same route (delivery/ADR-033) and merges each round by slot name. The
+ * answers below are the Representation envelope's `follows` vector pairs,
+ * with a stand-in token where the vectors expect `$resume` present.
+ */
+describe('EnterspeedContextGraph — Representation › Get, resuming a partial answer', () => {
+	// deferred-slot-carries-resume → resume-round-completes-open-slot
+	const deferredFirst = {
+		product: { sku: 'p1' },
+		price: null,
+		$metadata: { product: { $state: 'fresh' }, price: { $state: 'deferred' }, $resume: 'token-1' },
+	};
+	const deferredRound = { price: { amount: 129, currency: 'DKK' }, $metadata: { price: { $state: 'fresh' } } };
+	// pending-slot-carries-resume → resume-round-still-open-carries-resume
+	const pendingFirst = {
+		product: { sku: 'p1' },
+		reviews: null,
+		$metadata: { product: { $state: 'fresh' }, reviews: { $state: 'pending', $timeoutMs: 250 }, $resume: 'token-1' },
+	};
+	const stillOpen = (token: string) => ({
+		reviews: null,
+		$metadata: { reviews: { $state: 'pending', $timeoutMs: 250 }, $resume: token },
+	});
+
+	const refused = (status: number, wwwAuthenticate?: string, data?: unknown) =>
+		Object.assign(new NodeApiError(httpNode, { httpCode: String(status) }), {
+			cause: {
+				response: { status, data, headers: wwwAuthenticate ? { 'www-authenticate': wwwAuthenticate } : {} },
+			},
+		});
+
+	async function read(opts: {
+		httpRequest: ReturnType<typeof vi.fn>;
+		resume?: boolean;
+		maxRounds?: number;
+		maxWaitMs?: number;
+		continueOnFail?: boolean;
+		params?: Record<string, unknown>;
+	}) {
+		sleep.mockClear();
+		const ctx = createContextGraphExecuteMock({
+			params: {
+				resource: 'representation',
+				operation: 'get',
+				route: '/products/p1',
+				resumePartial: opts.resume ?? true,
+				...(opts.maxRounds !== undefined && { maxResumeRounds: opts.maxRounds }),
+				...(opts.maxWaitMs !== undefined && { maxResumeWaitMs: opts.maxWaitMs }),
+				...opts.params,
+			},
+			items: [{}],
+			httpRequest: opts.httpRequest,
+			continueOnFail: opts.continueOnFail,
+		});
+		const [out] = (await node.execute.call(ctx)) as INodeExecutionData[][];
+		return out;
+	}
+	const resumeHeader = (httpRequest: ReturnType<typeof vi.fn>, call: number) =>
+		((httpRequest.mock.calls[call][0] as IDataObject).headers as IDataObject)['X-Resume'];
+
+	it('is off by default, and off outputs the partial answer as it is with one request', async () => {
+		expect(node.description.properties.find((p) => p.name === 'resumePartial')?.default).toBe(false);
+		const httpRequest = vi.fn(async () => deferredFirst);
+		const out = await read({ httpRequest, resume: false });
+		expect(httpRequest).toHaveBeenCalledTimes(1);
+		expect(out).toEqual([{ json: deferredFirst, pairedItem: { item: 0 } }]);
+	});
+
+	it('sends the checkpoint unchanged in X-Resume to the same route, and merges the round by slot name', async () => {
+		const httpRequest = vi.fn().mockResolvedValueOnce(deferredFirst).mockResolvedValueOnce(deferredRound);
+		const out = await read({ httpRequest });
+		expect(httpRequest).toHaveBeenCalledTimes(2);
+		const [first, second] = httpRequest.mock.calls.map((c) => c[0] as IDataObject);
+		expect(second.url).toBe(first.url);
+		expect(resumeHeader(httpRequest, 0)).toBeUndefined();
+		expect(resumeHeader(httpRequest, 1)).toBe('token-1');
+		expect(out).toEqual([
+			{
+				json: {
+					product: { sku: 'p1' },
+					price: { amount: 129, currency: 'DKK' },
+					$metadata: { product: { $state: 'fresh' }, price: { $state: 'fresh' } },
+				},
+				pairedItem: { item: 0 },
+			},
+		]);
+	});
+
+	it('resumes a deferred slot at once: it carries no $timeoutMs', async () => {
+		const httpRequest = vi.fn().mockResolvedValueOnce(deferredFirst).mockResolvedValueOnce(deferredRound);
+		await read({ httpRequest });
+		expect(sleep).not.toHaveBeenCalled();
+	});
+
+	it("chains with each round's fresh checkpoint, and stops at Max Rounds with the slot still open", async () => {
+		const httpRequest = vi
+			.fn()
+			.mockResolvedValueOnce(pendingFirst)
+			.mockResolvedValueOnce(stillOpen('token-2'))
+			.mockResolvedValueOnce(stillOpen('token-3'));
+		const out = await read({ httpRequest, maxRounds: 2 });
+		expect(httpRequest).toHaveBeenCalledTimes(3);
+		expect([resumeHeader(httpRequest, 1), resumeHeader(httpRequest, 2)]).toEqual(['token-1', 'token-2']);
+		const metadata = out[0].json.$metadata as IDataObject;
+		expect(metadata.reviews).toEqual({ $state: 'pending', $timeoutMs: 250 });
+		// The latest checkpoint stays, so the answer can still be continued.
+		expect(metadata.$resume).toBe('token-3');
+		expect(out[0].json.product).toEqual({ sku: 'p1' });
+	});
+
+	it('defaults Max Rounds to 3', async () => {
+		expect(node.description.properties.find((p) => p.name === 'maxResumeRounds')?.default).toBe(3);
+		const httpRequest = vi.fn().mockResolvedValueOnce(pendingFirst).mockResolvedValue(stillOpen('token-n'));
+		await read({ httpRequest });
+		expect(httpRequest).toHaveBeenCalledTimes(4);
+	});
+
+	it('waits the largest $timeoutMs among the open slots, capped by Max Wait Between Rounds', async () => {
+		const twoPending = {
+			a: null,
+			b: null,
+			$metadata: { a: { $state: 'pending', $timeoutMs: 300 }, b: { $state: 'pending', $timeoutMs: 1200 }, $resume: 't' },
+		};
+		const done = { a: 1, b: 2, $metadata: { a: { $state: 'fresh' }, b: { $state: 'fresh' } } };
+		await read({ httpRequest: vi.fn().mockResolvedValueOnce(twoPending).mockResolvedValueOnce(done) });
+		expect(sleep.mock.calls).toEqual([[1200]]);
+		await read({ httpRequest: vi.fn().mockResolvedValueOnce(twoPending).mockResolvedValueOnce(done), maxWaitMs: 500 });
+		expect(sleep.mock.calls).toEqual([[500]]);
+	});
+
+	it('keeps the newest $changedAt across rounds', async () => {
+		const first = { ...deferredFirst, $metadata: { ...deferredFirst.$metadata, $changedAt: '2026-09-03T09:14:22.123Z' } };
+		const round = { ...deferredRound, $metadata: { ...deferredRound.$metadata, $changedAt: '2026-09-04T10:00:00.000Z' } };
+		const older = { ...deferredRound, $metadata: { ...deferredRound.$metadata, $changedAt: '2026-01-01T00:00:00.000Z' } };
+		const newer = await read({ httpRequest: vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(round) });
+		expect((newer[0].json.$metadata as IDataObject).$changedAt).toBe('2026-09-04T10:00:00.000Z');
+		const kept = await read({ httpRequest: vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(older) });
+		expect((kept[0].json.$metadata as IDataObject).$changedAt).toBe('2026-09-03T09:14:22.123Z');
+	});
+
+	describe('the client resume guard (no context token is sent)', () => {
+		it('sends no round when every open slot names a claim in $requires', async () => {
+			const gated = {
+				offers: null,
+				$metadata: { offers: { $state: 'deferred', $requires: ['segment'] }, $resume: 't' },
+			};
+			const httpRequest = vi.fn(async () => gated);
+			const out = await read({ httpRequest });
+			expect(httpRequest).toHaveBeenCalledTimes(1);
+			expect(out[0].json).toEqual(gated);
+		});
+
+		it('resumes when $requires is empty, and ignores a gated slot beside it', async () => {
+			const mixed = {
+				offers: null,
+				related: null,
+				$metadata: {
+					offers: { $state: 'deferred', $requires: ['segment'] },
+					related: { $state: 'deferred', $requires: [] },
+					$resume: 't',
+				},
+			};
+			const round = {
+				offers: null,
+				related: { items: [] },
+				$metadata: { offers: { $state: 'deferred', $requires: ['segment'] }, related: { $state: 'fresh' }, $resume: 't2' },
+			};
+			const httpRequest = vi.fn().mockResolvedValueOnce(mixed).mockResolvedValueOnce(round);
+			const out = await read({ httpRequest });
+			// After the round only the gated slot is open, so no further round.
+			expect(httpRequest).toHaveBeenCalledTimes(2);
+			expect(out[0].json.related).toEqual({ items: [] });
+		});
+	});
+
+	it('sends no round for an answer without $resume, e.g. a non-resumable representation', async () => {
+		const noCheckpoint = { price: null, $metadata: { price: { $state: 'deferred' } } };
+		const httpRequest = vi.fn(async () => noCheckpoint);
+		await read({ httpRequest });
+		expect(httpRequest).toHaveBeenCalledTimes(1);
+	});
+
+	it('repeats the query string and headers on a resume round (Route From › Schema)', async () => {
+		const httpRequest = vi.fn().mockResolvedValueOnce(deferredFirst).mockResolvedValueOnce(deferredRound);
+		await read({
+			httpRequest,
+			params: {
+				routeFrom: 'schema',
+				representationRoute: '/products/{productId}',
+				'context.value': { 'path:productId': 'p1', 'query:locale': 'da', 'header:X-Market': 'dk' },
+				'context.schema': [{ id: 'path:productId' }, { id: 'query:locale' }, { id: 'header:X-Market' }],
+			},
+		});
+		const [first, second] = httpRequest.mock.calls.map((c) => c[0] as IDataObject);
+		expect(second.url).toBe(first.url);
+		expect(second.qs).toEqual({ locale: 'da' });
+		expect(second.headers).toMatchObject({ 'X-Market': 'dk', 'X-Resume': 'token-1' });
+	});
+
+	describe('a refused checkpoint (delivery/ADR-033 §3)', () => {
+		it.each([
+			['401 invalid_checkpoint', refused(401, 'X-Resume error="invalid_checkpoint"')],
+			['410 checkpoint_expired', refused(410, 'X-Resume error="checkpoint_expired"')],
+			['409 another manifest or resource', refused(409, undefined, 'Checkpoint does not match the requested resource.')],
+		])('%s reads the route again without the checkpoint, once', async (_name, error) => {
+			const httpRequest = vi
+				.fn()
+				.mockResolvedValueOnce(deferredFirst)
+				.mockRejectedValueOnce(error)
+				.mockResolvedValueOnce({ product: { sku: 'p1' }, price: { amount: 1 }, $metadata: { product: { $state: 'fresh' }, price: { $state: 'fresh' } } });
+			const out = await read({ httpRequest });
+			expect(httpRequest).toHaveBeenCalledTimes(3);
+			expect(resumeHeader(httpRequest, 2)).toBeUndefined();
+			expect(out[0].json.price).toEqual({ amount: 1 });
+		});
+
+		it('fails the item when the checkpoint is refused again after the fallback', async () => {
+			const httpRequest = vi
+				.fn()
+				.mockResolvedValueOnce(deferredFirst)
+				.mockRejectedValueOnce(refused(409, undefined, 'Checkpoint manifest does not match.'))
+				.mockResolvedValueOnce(deferredFirst)
+				.mockRejectedValueOnce(refused(409, undefined, 'Checkpoint manifest does not match.'));
+			await expect(read({ httpRequest })).rejects.toThrow('Checkpoint manifest does not match.');
+		});
+
+		it('treats a 401 without the checkpoint hint as a rejected key', async () => {
+			const httpRequest = vi.fn().mockResolvedValueOnce(deferredFirst).mockRejectedValueOnce(refused(401));
+			await expect(read({ httpRequest })).rejects.toThrow('The API key was rejected by the Delivery URL.');
+			expect(httpRequest).toHaveBeenCalledTimes(2);
+		});
+
+		it('treats a 410 without the checkpoint hint as a retired API version', async () => {
+			const httpRequest = vi.fn().mockResolvedValueOnce(deferredFirst).mockRejectedValueOnce(refused(410));
+			await expect(read({ httpRequest })).rejects.toThrow('no longer serves API version');
+		});
+	});
+
+	it('fails the item on a 404 in a resume round, and with Continue On Fail outputs the error', async () => {
+		const httpRequest = vi
+			.fn()
+			.mockResolvedValueOnce(deferredFirst)
+			.mockRejectedValueOnce(refused(404, undefined, { message: 'Required slot "product" could not be resolved.' }));
+		const out = await read({ httpRequest, continueOnFail: true });
+		expect(out).toEqual([
+			{
+				json: { route: '/products/p1', error: 'Required slot "product" could not be resolved.' },
+				pairedItem: { item: 0 },
+			},
+		]);
+	});
+});
+
 describe('EnterspeedContextGraphApi credential', () => {
 	const field = (name: string) => credential.properties.find((p) => p.name === name);
 

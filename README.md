@@ -243,6 +243,18 @@ With **Schema**, *Context* lists each route placeholder first (`productId (path)
 - **One read resolves everything it can.** The node sends no delivery policy header, so the Context Graph resolves the whole representation in the one read, query slots included, within a time limit and a limit on query passes. An answer cut short by either is partial: the slots it didn't finish are left open and `$metadata.$resume` carries a checkpoint.
 - **Errors:** a route with no representation fails with *No representation for route …*, or with the Context Graph's own message: a route that matches none, a `required` slot that didn't resolve, or no slot resolved at all. An invalid request value fails with the Context Graph's message too.
 
+**Resume Partial Answers** (off by default) completes a partial answer in the same run. When an answer carries `$metadata.$resume`, the node reads the same route again with that checkpoint in `X-Resume`, repeating the query string and headers, and merges what comes back into the answer by slot name. Each item still gives one output item.
+
+| Field | What it does |
+|---|---|
+| *Max Rounds* | How many resume requests to send at most per item (default 3). At the limit the item is output as it is: each still-open slot's `$state` says so, and `$metadata.$resume` holds the latest checkpoint. |
+| *Max Wait Between Rounds (Ms)* | Before a round the node waits for the largest `$timeoutMs` among the open slots, up to this (default 5000). A `deferred` slot carries no `$timeoutMs`, so it's resumed at once. |
+
+- **What resumes:** slots whose `$state` is `pending` or `deferred`. The node sends no context token, so a slot whose `$requires` names a claim is left as it is; if no other slot is open, no round is sent.
+- **What doesn't:** under the Context Graph's default delivery policy a query slot comes back `deferred` on every round, so resuming never fills it: the node spends *Max Rounds* on it and outputs it still `deferred`. Write that query yourself in Index › Query.
+- **The merge:** a resume round answers only the slots that were open; each replaces its slot and its `$metadata` entry. `$metadata.$changedAt` is the newest across rounds.
+- **A refused checkpoint** (`401` *invalid_checkpoint*, `410` *checkpoint_expired*, or `409` for another manifest or route) is answered once by reading the route again without it; that fresh answer replaces the rounds so far. Refused a second time, the item fails. A `404` on a resume round fails the item, as on the first read.
+
 ### Schema › Get
 
 Reads the manifest's schema and outputs it as one item, exactly as returned. Use it to see what the graph serves (indexes, representations, their routes and slots), or to hand the schema to an AI Agent or a Code node.
@@ -298,7 +310,7 @@ Where the dev-server differs from a deployed Context Graph:
 | Text filtering | Exact and in memory, not like Elasticsearch | Expect some queries to match differently in production |
 | API keys | Not checked | — |
 | Processing | A pushed record is processed at once, so a read straight after a push sees it | On a deployed graph, read again if it isn't there yet |
-| Partial representations | Only for a slot the server's `budgetCut` option names. Tonevik's representations are never partial | Start a dev-server with `budgetCut` to see one |
+| Partial representations | Only for a slot the server's `budgetCut` option names. Tonevik's representations are never partial | Start a dev-server with `budgetCut` to try Resume Partial Answers |
 
 ---
 
@@ -307,7 +319,6 @@ Where the dev-server differs from a deployed Context Graph:
 The Context Graph serves these; the node doesn't use them yet.
 
 - **Upload a source's complete export.** The Context Graph takes a snapshot as an artifact: reserve it, upload the file, commit it, and the graph drains it into the source. Push and Push Many are for records as they change, and Push Many isn't tuned for bulk (no batch-size setting, one request at a time), so use them for a full export only until Upload arrives.
-- **Resuming a partly resolved representation.** A `207` carries `$metadata.$resume`, which a client sends back as `X-Resume` to get the slots still open. Until the node does that, it outputs the first answer only.
 - **Following `next` automatically** (Return All) on Index › Query. Use `page` or `cursor` yourself.
 - **Retrying a busy Delivery.** Under load, Delivery refuses a read with `503` and says how long to wait. The node doesn't retry it yet, so the item fails; run it again.
 
