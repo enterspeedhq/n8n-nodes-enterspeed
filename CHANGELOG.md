@@ -19,7 +19,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Changed
 
-- **Enterspeed Context Graph — Index — Query** sends a sort as `direction` `asc`/`desc`, the form the Context Graph's query contract names, in the Builder, the JSON example and the Tonevik demo. A Builder sort saved as Ascending/Descending is sent the same way. The Sort field now says only fields the index declares sortable can be sorted on.
+- **Enterspeed Context Graph — Index — Query** sends a sort as `direction` `asc`/`desc`, the form the Context Graph's query contract names, in the Builder, the JSON example and the Tonevik demo. A Builder sort saved as Ascending/Descending is sent the same way. The Builder's *Sort* list offers only the fields the schema lists as sortable (`sortableFields`), and says so when the index lists none; a sort saved earlier is read as before.
 - The action node, trigger and credential are now labelled **Enterspeed Core**, **Enterspeed Core Webhook Trigger** and **Enterspeed Core API** (previously **Enterspeed**, **Enterspeed Webhook Trigger** and **Enterspeed API**), to tell them apart from the upcoming Enterspeed Context Graph node. Newly added nodes get the default name "Enterspeed Core". Only display names changed — the internal names `enterspeed`, `enterspeedTrigger` and `enterspeedApi` are unchanged, so existing workflows and credentials need no action and existing nodes keep their names.
 
 ## [0.1.1] — 2026-08-17

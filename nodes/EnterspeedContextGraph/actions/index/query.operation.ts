@@ -138,7 +138,7 @@ export const properties: INodeProperties[] = [
 						type: 'options',
 						typeOptions: { loadOptionsMethod: 'getSortFields', loadOptionsDependsOn: ['builderIndex'] },
 						default: '',
-						description: 'A field the index declares sortable; a sort on any other field is refused. The schema does not say which fields are sortable, so the list offers every field that could be. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+						description: 'A field the index declares sortable, as the schema lists them; a sort on any other field is refused. If the list is empty, the schema lists no sortable fields for this index. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 					},
 					{
 						displayName: 'Order',

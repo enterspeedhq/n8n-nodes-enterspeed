@@ -6,11 +6,13 @@ import {
 	getRepresentations,
 	getRouteValues,
 	getSchemaShapes,
+	getSortFields,
 	msdFilterOperators,
 	msdIndexes,
 	msdQueryLimits,
 	msdRepresentations,
 	NO_SHAPES,
+	NO_SORTABLE_FIELDS,
 	representationFields,
 } from '../nodes/EnterspeedContextGraph/actions/schema/msd';
 import {
@@ -57,6 +59,7 @@ const msd = {
 			keywordFields: ['sku', 'categoryId'],
 			numericFields: ['price'],
 			booleanFields: ['inStock'],
+			sortableFields: ['price', 'sku'],
 		},
 	},
 };
@@ -149,6 +152,34 @@ describe('MSD loadOptions', () => {
 		expect((await getIndexes.call(loadOptions(async () => msd).context)).map((o) => o.value)).toEqual(['ProductIndex']);
 		const fields = await getFilterFields.call(loadOptions(async () => msd, { builderIndex: 'ProductIndex' }).context);
 		expect(fields.map((o) => o.value)).toEqual(['keyword:sku', 'keyword:categoryId', 'numeric:price', 'boolean:inStock']);
+	});
+
+	describe('sort fields', () => {
+		const sortFields = (index: IDataObject | undefined, builderIndex = 'ProductIndex') =>
+			getSortFields.call(
+				loadOptions(async () => ({ ...msd, indexes: index ? { ProductIndex: index } : {} }), { builderIndex }).context,
+			);
+
+		it("lists only the index's sortableFields, in the schema's order, with their value class", async () => {
+			const fields = await sortFields(msd.indexes.ProductIndex);
+			// categoryId and inStock can be filtered on but aren't sortable, so they aren't offered.
+			expect(fields.map((o) => o.value)).toEqual(['numeric:price', 'keyword:sku']);
+		});
+
+		it('says the index lists no sortable fields when sortableFields is missing (present only when non-empty)', async () => {
+			const unsortable: IDataObject = { ...msd.indexes.ProductIndex };
+			delete unsortable.sortableFields;
+			await expect(sortFields(unsortable)).rejects.toThrow(NO_SORTABLE_FIELDS);
+		});
+
+		it('offers a sortable field no filter list classifies by its plain name', async () => {
+			const fields = await sortFields({ ...msd.indexes.ProductIndex, sortableFields: ['name'] });
+			expect(fields).toEqual([{ name: 'name', value: 'name' }]);
+		});
+
+		it('offers nothing before an index is chosen', async () => {
+			expect(await sortFields(msd.indexes.ProductIndex, '')).toEqual([]);
+		});
 	});
 
 	it('gives the chosen route\'s values to the Context mapper', async () => {

@@ -55,6 +55,8 @@ export interface MsdIndex {
 	keywordFields: string[];
 	numericFields: string[];
 	booleanFields: string[];
+	/** The fields a query may sort on, in declaration order (empty when the index lists none). */
+	sortableFields: string[];
 }
 
 export interface MsdQueryLimits {
@@ -121,6 +123,7 @@ export function msdIndexes(msd: unknown): MsdIndex[] {
 						keywordFields: strings(i.keywordFields),
 						numericFields: strings(i.numericFields),
 						booleanFields: strings(i.booleanFields),
+						sortableFields: strings(i.sortableFields),
 					},
 				]
 			: [],
@@ -349,13 +352,23 @@ export async function getFilterFields(this: ILoadOptionsFunctions): Promise<INod
 	return classedOptions(await builderIndex(this));
 }
 
+export const NO_SORTABLE_FIELDS = 'This index lists no sortable fields';
+
 /**
- * The fields a sort can use. A sort follows the field's mapping and a
- * searchable-only field has none to sort on (delivery/ADR-037, sc-13438), so
- * these are the same keyword, numeric and boolean fields.
+ * The fields a sort can use: the index's `sortableFields`, in the schema's
+ * order ("the fields a query may sort on", materialised-schema spec, Index;
+ * delivery refuses a sort on any other field, sc-14365). A member is present
+ * only when non-empty, so a missing `sortableFields` means none: the list says
+ * so rather than offering fields delivery would refuse. Each field keeps the
+ * value class its filter list gives it, so a saved value has the same
+ * `{class}:{field}` form as before.
  */
 export async function getSortFields(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
-	return classedOptions(await builderIndex(this));
+	const index = await builderIndex(this);
+	if (!index) return [];
+	if (!index.sortableFields.length) throw new NodeOperationError(this.getNode(), NO_SORTABLE_FIELDS);
+	const classed = new Map(classedOptions(index).map((o) => [parseClassedField(String(o.value)).field, o]));
+	return index.sortableFields.map((f) => classed.get(f) ?? { name: f, value: f });
 }
 
 /** The text fields a search can be narrowed to. */
