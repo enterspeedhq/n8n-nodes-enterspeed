@@ -1,208 +1,190 @@
-# AGENTS.md
+# AGENTS.md — n8n-nodes-enterspeed
 
-Universal instructions for any coding agent (Claude Code, Cursor, Copilot,
-Gemini CLI, ...) working in this repository. Tool-specific shortcuts live in
-[CLAUDE.md](CLAUDE.md); technical component detail lives in
-[ARCHITECTURE.md](ARCHITECTURE.md).
+Operating guide for AI coding agents (Claude Code, Cursor, Copilot, Gemini CLI, …) working in this
+repository. This is the canonical agent context; Claude Code reads it via the `@AGENTS.md` import in
+[`CLAUDE.md`](CLAUDE.md), which adds only Claude-specific shortcuts. How the package is built is in
+[`ARCHITECTURE.md`](ARCHITECTURE.md); what each operation does for a user is in
+[`README.md`](README.md).
 
-## Overview
+## What this repo is
 
-`@enterspeed/n8n-nodes-enterspeed` is the n8n community node package for
-[Enterspeed](https://www.enterspeed.com), a headless data delivery platform.
-It ships three n8n node types and two credential types (the community
-node naming convention this package name follows is `@<scope>/n8n-nodes-<name>`):
+`@enterspeed/n8n-nodes-enterspeed`, the n8n community node package for Enterspeed (the
+`@<scope>/n8n-nodes-<name>` naming convention). TypeScript in `strict` mode, built with
+`@n8n/node-cli` (`n8n-node build`), tested with Vitest, peer-dependent only on `n8n-workflow`.
 
-- **`Enterspeed`** — an action node covering four resources (`entity`,
-  `delivery`, `query`, `route`), letting workflows ingest, deliver, and query
-  Enterspeed data.
-- **`EnterspeedTrigger`** — a push trigger ("Enterspeed Core Webhook Trigger")
-  that reacts to Enterspeed view deploy/remove events, optionally fetching
-  the full view from the Delivery API.
-- **`EnterspeedApi`** — the credential type both Core nodes share (two API
-  keys, three overridable host URLs).
-- **`EnterspeedContextGraph`** — a separate action node ("Enterspeed Context
-  Graph") with four resources so far: Entity › Push / Push Many,
-  Shape › Get / Get Many, Index › Get / Query, and Representation › Get.
-- **`EnterspeedContextGraphApi`** — its own credential (ingest URL and key,
-  delivery URL and key, manifest version). Never shared with the Core nodes.
+| Path | Role |
+|---|---|
+| `nodes/Enterspeed/Enterspeed.node.ts` | **Enterspeed Core** action node — resources `entity`, `delivery`, `query`, `route`. Released. |
+| `nodes/Enterspeed/EnterspeedTrigger.node.ts` | **Enterspeed Core Webhook Trigger** — reacts to view deploy/remove webhooks, optionally fetching the full view. Released. |
+| `credentials/EnterspeedApi.credentials.ts` | **Enterspeed Core API** — two keys, three overridable hosts; shared by both Core nodes. |
+| `nodes/EnterspeedContextGraph/EnterspeedContextGraph.node.ts` | **Enterspeed Context Graph** action node — Entity › Push / Push Many, Shape › Get / Get Many, Index › Get / Query, Representation › Get, Schema › Get. Several read fields are filled from the manifest's schema while editing (`actions/schema/msd.ts`). Unreleased (epic sc-13858). |
+| `credentials/EnterspeedContextGraphApi.credentials.ts` | **Enterspeed Context Graph API** — ingest URL + Ingest API Key, delivery URL + Delivery API Key, manifest version. Never shared with Core. |
+| `workflows/templates/` | Example workflows, including the Tonevik demo (`Context-Graph-Tonevik-Demo.json`) |
+| `docs/context-graph-demo/GUIDE.md` | The step-by-step guide that goes with the Tonevik template |
+| `scripts/` | `setup.mjs` (credentials + template import into Docker n8n), `execute-workflow.mjs` (run one by name) |
+| `tests/` | One test file per node, `EnterspeedContextGraph.msd.test.ts`, `mocks.ts`, `workflow-templates.test.ts` |
 
-See `ARCHITECTURE.md`'s "System overview" for how these fit together.
+The Context Graph's behaviour is defined in the **semantic-graph** repository: wire contracts in
+`contracts/spec/` (with vectors in `contracts/vectors/`) and decisions in `contracts/docs/adr/`.
+This repo implements a client of those contracts; it doesn't own them.
 
-- Language: TypeScript (`strict` mode)
-- Runtime target: n8n community node API (peer dependency `n8n-workflow`)
-- Build: `@n8n/node-cli` (`n8n-node build`)
-- Tests: Vitest
+## Ubiquitous language
 
-## Important notes
+**Core and the Context Graph are two products with two vocabularies. Don't mix them.**
 
-- Follow the rules in this document, `CLAUDE.md`, and `ARCHITECTURE.md` over
-  any example code you find in n8n's own docs (linked under **Additional
-  resources** below) if they conflict — those examples are generic
-  single-resource tutorials, not this package's entity/delivery/query/route
-  resource-and-operation pattern.
-- New nodes, credentials, or operations must match the existing patterns in
-  `nodes/Enterspeed/actions/<resource>/` and `credentials/` (see "Key
-  guidelines" below) — don't introduce a different shape modeled on a
-  generic scaffold.
-- This codebase intentionally has **no fixed schema** for Enterspeed
-  request/response payloads (`ARCHITECTURE.md`, "Core data models & state").
-  Index and entity shapes are defined per Enterspeed customer/schema, so
-  don't assume an `"id"` field, a `"data"` wrapper, or any other fixed key
-  exists in an entity/query response — everything is opaque `IDataObject`.
+| Context Graph | Means | Not |
+|---|---|---|
+| **record** | One source system record as the node sends it: its own fields plus `$id`, `$type`, `$source`, `$action`, `$modifiedAt` (*Ingest NDJSON*) | "entity" for output |
+| **`$id`** | The source system's own record key, e.g. `pim-cat-dd34d4` | the domain `id` field |
+| **shape** | A view the schema declares over graphed data, read by **shape key** `{shapeName}:{segKey}:{value}:…` | a Core "view" |
+| **index** / **document** | What Index › Query searches and Index › Get reads by its `$id` | a Core "index alias" |
+| **representation** | What delivery composes from **slots** (shapes, queries) and serves for a **route** | a "page" (routes are API resources, sdk/ADR-003) |
+| **manifest** | The published schema every Delivery route is scoped to; its **MSD** is delivery's materialised schema document | a Core "environment" |
 
-## Project structure
+"Entity" is ingest-side vocabulary: the node pushes records that become **source entities**; what
+comes back out is shapes, documents and representations. Core's views, origin IDs and index aliases
+belong to the Core node only.
 
-Two folders drive what n8n actually loads: `nodes/` (one subfolder per node)
-and `credentials/` (one file per credential type). `package.json`'s `n8n`
-field points at the *compiled* output of both:
+## The rule that matters: n8n is only the integration
 
-```json
-"n8n": {
-  "n8nNodesApiVersion": 1,
-  "credentials": [
-    "dist/credentials/EnterspeedApi.credentials.js",
-    "dist/credentials/EnterspeedContextGraphApi.credentials.js"
-  ],
-  "nodes": [
-    "dist/nodes/Enterspeed/Enterspeed.node.js",
-    "dist/nodes/Enterspeed/EnterspeedTrigger.node.js",
-    "dist/nodes/EnterspeedContextGraph/EnterspeedContextGraph.node.js"
-  ]
-}
+The Context Graph node moves data; it doesn't model it.
+
+- **Records go in as they are.** Never reshape, rename, trim or convert a record's fields. `$id` is
+  the source system's key, never derived from the domain `id`. Reshaping belongs in the workflow (a
+  Code or Edit Fields node) where the user can see it.
+- **Answers come out as they are.** Every read outputs the service's body unchanged.
+- **Every behaviour names its contract.** Each field, default, limit, retry and error follows a
+  sentence in a semantic-graph spec or ADR (the table in ARCHITECTURE.md §3.1). IMPORTANT: if no
+  spec or ADR defines a behaviour, don't fill the gap from Enterspeed Core or another system; raise
+  it as a gap and ask.
+- **No fixed payload schema.** Every Enterspeed request and response, Core or Context Graph, is an
+  opaque `IDataObject`. Don't assume an `id` field, a `data` wrapper or any other key
+  (ARCHITECTURE.md §8.1).
+- **Demo data is Tonevik's, copied verbatim** from the SDK dev-server's example.
+- **The template never depends on tools outside n8n.** Postman and local harnesses are for testing
+  only.
+
+## Build & test
+
+```bash
+npm run build        # n8n-node build → dist/ (also copies **/*.{png,svg})
+npm run lint         # n8n-node lint: eslint.config.mjs, the rules n8n's verification scanner runs
+npm test             # vitest run
+npm run dev          # n8n-node dev
 ```
 
-Adding, removing, or renaming a node/credential file means updating this
-`n8n.nodes`/`n8n.credentials` array to match — n8n resolves these paths
-literally against `dist/`, so a stale entry loads nothing (or throws) at
-runtime. The full layout beyond those two top-level folders:
+Use the `n8n-node` CLI, not `tsc`/`eslint` directly. Run `npm run lint` and `npm test` before
+pushing; CI runs lint, test and build on every push and PR to `main` only, so a stacked PR gets no
+CI run and must be checked locally.
 
-```
-nodes/Enterspeed/
-  Enterspeed.node.ts              action node — delegates to actions/router.ts
-  EnterspeedTrigger.node.ts       push trigger — delegates to webhookTrigger/handler.ts
-  transport.ts                    thin httpRequest wrapper, no auth/base-url injection
-  actions/
-    router.ts                     resource/operation dispatch + credential mapping
-    types.ts                      EnterspeedCredentials shape
-    entity/ delivery/ query/ route/
-      index.ts                    operation selector + properties for this resource
-      shared.ts                   field builders reused across the resource's operations
-      *.operation.ts              one file per operation (properties + execute())
-  webhookTrigger/
-    properties.ts                 Actions / Fetch Full View / Access Key parameters
-    handler.ts                    webhook() logic: auth check, payload build, view fetch
-nodes/EnterspeedContextGraph/
-  EnterspeedContextGraph.node.ts  Context Graph action node — delegates to actions/router.ts
-  transport.ts                    httpRequestWithAuthentication wrapper (key via the credential)
-  actions/router.ts, types.ts     dispatch; handlers get all items at once (the Many operations output per record/key)
-  actions/entity/                 Push and Push Many (NDJSON to POST /entities), shared.ts
-  actions/shape/                  Get (GET /shapes/v1/…) and Get Many (POST /shapes/v1/…), shared.ts
-  actions/index/                  Get (GET /query/v1/…/{index}/{id}) and Query (POST /query/v1/…)
-  actions/representation/         Get (GET /v1/{manifest}{route})
-  enterspeed.svg                  its own copy of the icon
-credentials/
-  EnterspeedApi.credentials.ts    the enterspeedApi credential type
-  EnterspeedContextGraphApi.credentials.ts  the enterspeedContextGraphApi credential type
-  enterspeed.svg                  copy of the node's icon (see ARCHITECTURE.md)
-tests/
-  Enterspeed.node.test.ts
-  EnterspeedTrigger.node.test.ts
-  EnterspeedContextGraph.node.test.ts  node, operations + credential shape
-  mocks.ts                        minimal IExecuteFunctions/IWebhookFunctions stand-ins
-  workflow-templates.test.ts      validates every JSON file under workflows/templates/
-workflows/templates/*.json        example workflows (see "Example workflows" below)
-scripts/
-  setup.mjs                       creates credential + imports all templates into local Docker n8n
-  execute-workflow.mjs            triggers a named workflow, polls its execution
-dist/                             build output — gitignored, never hand-edited
-```
+**End to end** (manual, Docker): `docker compose up -d`, then `node scripts/setup.mjs` (creates both
+credentials and imports every template) and `node scripts/execute-workflow.mjs` (runs the workflow
+named in `N8N_WORKFLOW_NAME`). Unit tests don't prove n8n's run behaviour: the mocks throw plain
+errors, not n8n's wrapped `NodeApiError`, so anything that depends on real error wrapping, item
+pairing or expression evaluation is proven in Docker n8n.
 
-## Key guidelines
+**The Context Graph locally** runs against the SDK dev-server (semantic-graph-sdk,
+`packages/dev-server`). Start Tonevik stage 1 with its own empty data folder. The dev-server differs
+from deployed Delivery in places (no index point read, a different `/schema/msd` document, no cursor
+paging, keys not enforced); README "Against the local dev-server" lists them.
 
-- Use the `n8n-node` CLI (`npm run build`/`dev`/`lint`) wherever possible
-  instead of reaching for `tsc`/`eslint` directly — see `CLAUDE.md` for the
-  full command list.
-- Always address lint and typecheck errors/warnings rather than suppressing
-  them, unless there's a specific, documented reason not to (see
-  `ARCHITECTURE.md`'s "Known lint inconsistency" note for the one existing
-  exception and why it's justified).
-- Use proper types wherever possible — this repo compiles with
-  `strict: true` and `noUnusedLocals: true`; don't reach for `any` or `as`
-  casts to route around a type error.
-- **Never commit a real Enterspeed credential ID.** Every credential
-  reference inside `workflows/templates/*.json` must use a literal
-  placeholder — `__ENTERSPEED_CREDENTIAL_ID__` for Core,
-  `__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__` for Context Graph — enforced by
-  `tests/workflow-templates.test.ts`, which also scans for any stray
-  16-character alphanumeric string in a credential `"id"` field.
-- **Workflow templates must use node types `CUSTOM.enterspeed` /
-  `CUSTOM.enterspeedContextGraph`**, the types n8n assigns when loading via
-  Docker's `N8N_CUSTOM_EXTENSIONS`. Templates
-  built against an `npm link`-loaded instance register as
-  `@enterspeed/n8n-nodes-enterspeed.enterspeed` instead and will show "unknown node" for
-  anyone importing them — always author/export templates from the Docker
-  setup (see `CONTRIBUTING.md`).
-- **Never hand-edit `dist/`.** It's regenerated by `npm run build`
-  (`n8n-node build` — see `ARCHITECTURE.md`) and is gitignored.
-- **New operations belong under `actions/<resource>/`** as their own
-  `*.operation.ts` file, wired into that resource's `index.ts`. Don't inline
-  new logic into `router.ts` or the node classes themselves.
-- **Every node parameter needs a `description`** — enforced by
-  `@n8n/eslint-plugin-community-nodes` + `eslint-plugin-n8n-nodes-base`
-  (`eslint.config.mjs`); `npm run lint` will fail otherwise.
-- **No customer personal data or credentials in chat/tooling context** —
-  this repo is governed by Enterspeed's ISO 27001 / GDPR data-handling
-  policy regardless of which agent is operating on it.
+## Conventions
 
-## Workflow and PR rules
+- **Code style:** tabs, single quotes. Type-only imports use `import type { … } from 'n8n-workflow'`,
+  kept separate from value imports.
+- **One operation, one file.** `actions/<resource>/<op>.operation.ts` exports `properties:
+  INodeProperties[]` and `execute()`, wired in the resource's `index.ts`. IMPORTANT: never inline
+  logic in `router.ts` or a node class. Field builders and payload assembly shared by a resource's
+  operations live in its `shared.ts`.
+- **Match the existing patterns** in `nodes/*/actions/<resource>/` and `credentials/`, not n8n's
+  generic single-resource tutorials. This repo's docs win where n8n's docs disagree.
+- **Names:** node and credential classes are PascalCase and match their file's base name
+  (`EnterspeedTrigger` in `EnterspeedTrigger.node.ts`).
+- **Types:** `strict: true`, `noUnusedLocals: true`. Don't reach for `any` or an `as` cast to route
+  around a type error.
+- **Every node parameter has a `description`**; lint fails otherwise.
+- **Fix lint and type errors; don't suppress them.** The exceptions are documented where they are
+  suppressed: `usableAsTool` on the trigger (ARCHITECTURE.md §8.7) and the `$id` wording in Push's
+  and Push Many's descriptions (`node-param-description-miscased-id`).
+- **Never hand-edit `dist/`.** It is build output and gitignored.
+- **Branches:** `feature|fix|chore/sc-XXXX/description`, from `main` or, for a stacked PR, from the
+  previous story's branch.
+- **Commits:** one logical change each; a sentence-case summary naming the story, e.g.
+  `Add Index › Get to the Context Graph node (sc-14301)`, and a body saying what changed and which
+  contract or ADR it follows.
+- **Versioning (semver):** patch = bug fix or doc update; minor = new operation or node,
+  backwards-compatible; major = a breaking change to a **released** credential or output shape.
+  Unreleased work (everything under `[Unreleased]` in `CHANGELOG.md`) can change freely.
 
-- Branch from `main`: `feat/<short-description>`, `fix/<short-description>`,
-  `chore/<short-description>`.
-- Keep commits focused — one logical change per commit.
-- Run `npm run lint` and `npm test` before pushing.
-- Fill in the PR template; state which operations were tested and against
-  which n8n version.
-- **Adding a new operation**: add its value to the resource's `operation`
-  options array → add gated input fields (`displayOptions.show.operation`)
-  → handle it in that resource's `execute()` → add at least one unit test in
-  `tests/` → update `README.md` under **Operations**.
-- **Versioning** (semver): patch = bug fix or doc update; minor = new
-  operation or node, backwards-compatible; major = breaking credential or
-  API shape change.
+## Adding an operation
 
-## Example workflows
+1. Add its value to the resource's `operation` options in `index.ts`.
+2. Add its fields in a new `*.operation.ts`, each gated with `displayOptions.show`.
+3. Implement `execute()` there and register it in the resource's `operations` map.
+4. Add unit tests in `tests/`.
+5. Document it in `README.md` under its node, add a `CHANGELOG.md` entry, and update
+   `ARCHITECTURE.md` (for the Context Graph: its row in §3.1 and its own subsection).
+6. For a Context Graph operation, name the spec or ADR behind each behaviour in the PR description
+   (a table: behaviour | contract or ADR | why).
 
-`workflows/templates/` holds example n8n workflows, each an exported JSON
-array with the credential placeholder substituted in-memory (never on disk)
-by `scripts/setup.mjs`. To add one: build/test it in a local Docker n8n
-instance, export it, strip `id`/`versionId`/`shared`/`creatorId`/
-`projectId`/`workflowId` and any real credential ID, replace the credential
-ID with `__ENTERSPEED_CREDENTIAL_ID__`, then commit it under
-`workflows/templates/`.
+A new node or credential file also needs its compiled path in `package.json`'s `n8n.nodes` /
+`n8n.credentials`.
 
-## Context-specific docs
+## Workflow templates
 
-This repo doesn't split per-topic guidance into a `.agents/` folder; it's
-concentrated in the three root docs instead. Read the relevant one(s) before
-working in an area:
+`workflows/templates/*.json` holds exported workflows, each a JSON array with one workflow.
 
-| Working on...                          | Read first                                     |
-|-----------------------------------------|-------------------------------------------------|
-| Any file under `nodes/` or `credentials/` | `ARCHITECTURE.md` (Directory breakdown + Core data models) |
-| Adding a new operation or resource      | "Key guidelines" above + `ARCHITECTURE.md`'s router/operation-module description |
-| Build, lint, test, or icon-copy issues   | `CLAUDE.md` (Commands) + `ARCHITECTURE.md` (Dependencies & constraints) |
-| Workflow templates under `workflows/templates/` | "Example workflows" above + `tests/workflow-templates.test.ts` |
-| The Context Graph node, its template, or the Tonevik demo | `docs/context-graph-demo/GUIDE.md` (the template and the guide change together, one step per PR) |
-| Versioning / release / CI               | "Workflow and PR rules" above + `ARCHITECTURE.md` (CI section) |
-| Starting a new task or planning         | `CLAUDE.md` (Claude tool preferences) |
+- IMPORTANT: **node types are `CUSTOM.enterspeed` / `CUSTOM.enterspeedContextGraph`**, the types n8n
+  assigns when loading from Docker's custom extensions. A template exported from an `npm link`
+  instance (`@enterspeed/n8n-nodes-enterspeed.enterspeed`) shows "unknown node" for everyone else.
+  Author and export templates from the Docker setup.
+- IMPORTANT: **never commit a real credential ID.** Use the placeholders
+  `__ENTERSPEED_CREDENTIAL_ID__` (Core) and `__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__` (Context
+  Graph); `setup.mjs` substitutes them in memory, never on disk.
+- **To add one:** build and test it in Docker n8n, export it, strip `id`, `versionId`, `shared`,
+  `creatorId`, `projectId`, `workflowId` and any real credential ID, put in the placeholder, then
+  commit it.
+- **The Tonevik template and `GUIDE.md` change together**, one step per PR.
 
-## Additional resources
+`tests/workflow-templates.test.ts` enforces the node types and placeholders, and scans for any
+16-character credential ID.
 
-n8n's official docs for building community nodes, for anything not covered
-above (treat this repo's own docs as authoritative where they disagree —
-see "Important notes"):
+## Load-bearing facts
 
-- https://docs.n8n.io/integrations/community-nodes/build-community-nodes/
-- https://docs.n8n.io/integrations/creating-nodes/overview/
-- https://docs.n8n.io/integrations/creating-nodes/build/reference/
-- https://docs.n8n.io/integrations/creating-nodes/build/reference/ux-guidelines/
+Things that break silently, at runtime or in someone else's workflow, when changed:
+
+- **`package.json` `n8n` paths** point at compiled files in `dist/`, resolved literally. A stale
+  entry loads nothing.
+- **Icons:** `icon: 'file:…'` resolves relative to the compiled file that declares it, so each node
+  folder and `credentials/` keep their own copy of the SVG. Keep the copies identical.
+- **Internal names are saved in users' workflows.** `enterspeed`, `enterspeedTrigger`,
+  `enterspeedApi`, `enterspeedContextGraph`, `enterspeedContextGraphApi`, every parameter `name` and
+  every option `value`. Change a display name freely; changing one of these breaks saved workflows.
+- **Saved schema-driven values have a format.** Filter and sort fields are saved as
+  `{valueClass}:{field}` and representation context fields as `path:…`, `query:…` or `header:…`
+  (ARCHITECTURE.md §4.2). Runs read these back without the schema, so changing the format breaks
+  saved workflows.
+- **`new NodeApiError(node, existingNodeApiError, …)` returns the existing error unchanged** and
+  drops your message. Build it from a plain object; read status and body with `httpFailure`.
+
+## Data handling
+
+This repo is governed by Enterspeed's ISO 27001 and GDPR data-handling policy, whichever agent
+works on it. IMPORTANT: no credentials, API keys or customer personal data in chat, tooling context,
+tests or templates. Use the placeholders above, and keys from environment variables or 1Password.
+
+## Where the deeper docs are
+
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — how the nodes are built, the Context Graph's contracts per
+  operation, schema-driven fields and their state, decisions and trade-offs.
+- [`README.md`](README.md) — user-facing: install, credentials, every operation.
+- [`CLAUDE.md`](CLAUDE.md) — Claude Code commands and tool preferences.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — the Docker setup and authoring templates.
+- [`docs/context-graph-demo/GUIDE.md`](docs/context-graph-demo/GUIDE.md) — the Tonevik demo.
+- semantic-graph `contracts/spec/` and `contracts/docs/adr/` — the Context Graph's contracts and
+  decisions.
+- n8n's docs, for anything not covered here:
+  [building community nodes](https://docs.n8n.io/integrations/community-nodes/build-community-nodes/),
+  [creating nodes](https://docs.n8n.io/integrations/creating-nodes/overview/),
+  [reference](https://docs.n8n.io/integrations/creating-nodes/build/reference/),
+  [UX guidelines](https://docs.n8n.io/integrations/creating-nodes/build/reference/ux-guidelines/).
