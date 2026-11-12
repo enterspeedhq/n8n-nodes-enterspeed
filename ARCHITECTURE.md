@@ -9,7 +9,7 @@
 - [AGENTS.md](AGENTS.md): conventions, rules and the PR workflow
 - [CLAUDE.md](CLAUDE.md): commands and Claude-specific shortcuts
 - [README.md](README.md): what each operation does, from the user's side
-- [docs/context-graph-demo/GUIDE.md](docs/context-graph-demo/GUIDE.md): the Tonevik demo, step by step
+- [docs/context-graph-demo/GUIDE.md](docs/context-graph-demo/GUIDE.md): internal notes on how the Tonevik demo is built (what a user needs to run it is in the template's notes)
 - The semantic-graph repository: the Context Graph's wire contracts (`contracts/spec`) and ADRs (`contracts/docs/adr`), which every Context Graph behaviour below follows
 
 ---
@@ -135,10 +135,13 @@ Records follow the *Ingest NDJSON* contract and are sent unchanged as NDJSON lin
 
 ### 3.3 Shape: Get and Get Many
 
-Shapes are read by the canonical shape key, `{shapeName}:{segKey}:{value}:…` (*Shape key* contract).
+Shapes are read by the canonical shape key, `{shapeName}:{segKey}:{value}:…` (*Shape key* contract). The shapes route is the narrow read: one shape by key, without representation resolution (delivery's `ShapesEndpoints`; processing/ADR-012). An app reads representations (3.5); the demo uses shapes to check what the graph made of the pushed records.
 
 - **Get** sends the key's colon-joined parts as percent-encoded path segments (delivery/ADR-030 §3). A segment value can't hold `:` or `/`, so the split is exact. The shape is output unchanged; a `404` fails the item.
 - **Get Many** sends the list as `{ keys }`, closing a request before 30 KiB (delivery caps the body at 32 KiB), and outputs each `{ key, status, data }` of the always-`207` answer unchanged, paired to the item the list came from (*Shapes batch envelope*).
+- **Visibility.** Delivery takes claims from a context token, not the API key, and the node sends none, so a shape gated by its access policy always reads as `404`. Delivery answers a denied shape and a missing one with the same bodiless `404` (sc-10848), so the node never says "denied". Keys carrying claims configured in Management are planned but in no ADR yet.
+- **Malformed keys.** No contract defines an error for a malformed key. Deployed delivery rejects only an empty key (`400`) and answers anything else that names no shape `404`; the dev-server answers `400 invalid_key` with a message. The node passes either through and doesn't validate the key itself.
+- **No `503` retry yet.** delivery/ADR-025 answers a shed read `503` + `Retry-After`; retrying it once is sc-14796.
 - **Key From › Schema** builds the key from a shape and its ID segments chosen in the editor (section 4); it waits on the schema listing entry shapes.
 
 ### 3.4 Index: Query and Get
@@ -282,7 +285,7 @@ Writes only, `POST {ingestUrl}/entities` with the Ingest API Key. Ingest is the 
 
 ### 6.3 Context Graph Node → Delivery
 
-Every read and the schema, with the Delivery API Key, scoped to the credential's manifest version. In the editor the node also reads the MSD to fill lists (section 4). Against the SDK dev-server (the Tonevik demo), Ingest and Delivery share one host and some routes are missing or differ: the index point read, the MSD's form, cursor paging.
+Every read and the schema, with the Delivery API Key, scoped to the credential's manifest version. In the editor the node also reads the MSD to fill lists (section 4). Against the SDK dev-server (the Tonevik demo), Ingest and Delivery share one host and some routes are missing or differ: the index point read, the MSD's form, cursor paging, a malformed shape key (`400`, not `404`). The dev-server also processes a pushed record at once, where a deployed graph processes it after accepting it (ingest/ADR-013: `accepted: true` is "landed and not yet judged"), so a read straight after a push can miss it there.
 
 ### 6.4 n8n → the Package
 

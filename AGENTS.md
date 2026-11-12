@@ -20,7 +20,7 @@ repository. This is the canonical agent context; Claude Code reads it via the `@
 | `nodes/EnterspeedContextGraph/EnterspeedContextGraph.node.ts` | **Enterspeed Context Graph** action node — Entity › Push / Push Many, Shape › Get / Get Many, Index › Get / Query, Representation › Get, Schema › Get. Several read fields are filled from the manifest's schema while editing (`actions/schema/msd.ts`). Unreleased (epic sc-13858). |
 | `credentials/EnterspeedContextGraphApi.credentials.ts` | **Enterspeed Context Graph API** — ingest URL + Ingest API Key, delivery URL + Delivery API Key, manifest version. Never shared with Core. |
 | `workflows/templates/` | Example workflows, including the Tonevik demo (`Context-Graph-Tonevik-Demo.json`) |
-| `docs/context-graph-demo/GUIDE.md` | The step-by-step guide that goes with the Tonevik template |
+| `docs/context-graph-demo/GUIDE.md` | Internal notes on how the Tonevik demo is built; what a user needs to run it is in the template's sticky notes |
 | `scripts/` | `setup.mjs` (credentials + template import into Docker n8n), `execute-workflow.mjs` (run one by name) |
 | `tests/` | One test file per node, `EnterspeedContextGraph.msd.test.ts`, `mocks.ts`, `workflow-templates.test.ts` |
 
@@ -144,7 +144,7 @@ A new node or credential file also needs its compiled path in `package.json`'s `
 - **To add one:** build and test it in Docker n8n, export it, strip `id`, `versionId`, `shared`,
   `creatorId`, `projectId`, `workflowId` and any real credential ID, put in the placeholder, then
   commit it.
-- **The Tonevik template and `GUIDE.md` change together**, one step per PR.
+- **The Tonevik template and `GUIDE.md` change together**, one step per PR. The template's sticky notes are for the user (what to set up, what each step returns); `GUIDE.md` is for us (how the demo is built).
 
 `tests/workflow-templates.test.ts` enforces the node types and placeholders, and scans for any
 16-character credential ID.
@@ -180,7 +180,7 @@ tests or templates. Use the placeholders above, and keys from environment variab
 - [`README.md`](README.md) — user-facing: install, credentials, every operation.
 - [`CLAUDE.md`](CLAUDE.md) — Claude Code commands and tool preferences.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — the Docker setup and authoring templates.
-- [`docs/context-graph-demo/GUIDE.md`](docs/context-graph-demo/GUIDE.md) — the Tonevik demo.
+- [`docs/context-graph-demo/GUIDE.md`](docs/context-graph-demo/GUIDE.md) — internal notes on how the Tonevik demo is built.
 - semantic-graph `contracts/spec/` and `contracts/docs/adr/` — the Context Graph's contracts and
   decisions.
 - n8n's docs, for anything not covered here:

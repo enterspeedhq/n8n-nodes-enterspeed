@@ -82,7 +82,7 @@ Routes and indexes don't emit webhooks, and there is no polling node. Watch an i
 
 ## Enterspeed Context Graph
 
-**New to the Context Graph?** Follow the step-by-step guide, [docs/context-graph-demo/GUIDE.md](docs/context-graph-demo/GUIDE.md). It builds the Tonevik demo shop with the workflow `workflows/templates/Context-Graph-Tonevik-Demo.json` against the local dev-server.
+**New to the Context Graph?** Import the workflow `workflows/templates/Context-Graph-Tonevik-Demo.json`. It builds the Tonevik demo shop against the local dev-server one step at a time, and its notes say what it needs and what each step should return.
 
 ### Credentials
 
@@ -153,7 +153,7 @@ return $input.all().map(({ json }) => ({
 }));
 ```
 
-- **Output:** one result per record, `{ id, type, source, action, accepted, statusCode, error? }`, paired to the item it came from. A rejected record, or one without a valid `$id` or `$type`, comes out with `accepted: false` and the reason; the rest are still stored. `accepted: true` also covers a record whose content was unchanged, and one superseded by a newer *Modified At*: both are accepted with nothing written.
+- **Output:** one result per record, `{ id, type, source, action, accepted, statusCode, error? }`, paired to the item it came from. A rejected record, or one without a valid `$id` or `$type`, comes out with `accepted: false` and the reason; the rest are still stored. `accepted: true` also covers a record whose content was unchanged, and one superseded by a newer *Modified At*: both are accepted with nothing written. `accepted: true` means the record has landed, not that the graph has processed it: on a deployed graph a read straight after a push can briefly miss it, so read again. The local dev-server processes at once.
 - **Deletes** send only `$id`, `$type`, `$source` and `$modifiedAt`.
 - **Not for a complete export.** A source's full export goes in as an upload (see [Not built yet](#not-built-yet)).
 - **Request size:** Push Many splits a list into more requests only to stay under the Context Graph's request limit (30,000,000 bytes); a single record too large for one request is reported as failed. Push Many fails an item whose *Records* isn't a list.
@@ -165,8 +165,9 @@ return $input.all().map(({ json }) => ({
 Both read the graph's **shapes**, the views its schema declares over the data, by **shape key**: the shape's name, then each ID segment's name and value, joined with colons: `productPage:id:42`, or with two segments `productVariant:productId:42:sku:SKU-9`. The values are the record's own data (its `id`, say), not its `$id`.
 
 - **Get Many** is the one to use for a list of keys. It takes one item holding the list in *Shape Keys* (default `{{ $json.keys }}`, e.g. built in a Code node: `return [{ json: { keys: [...] } }]`), sends the whole list in one request (several only past the 32 KiB request limit) and outputs one item per key, in list order: `{ key, status, data }` exactly as returned. A key with no shape comes out as `status: 404` with `data: null`, and the other keys still return. The request succeeds even when no key is found, so check each item's `status`. With no keys, nothing is sent; an item whose *Shape Keys* isn't a list fails.
-- **Get** is for a workflow that handles one key at a time, such as a lookup triggered by a webhook. It takes one *Shape Key* per item and outputs the shape exactly as returned. A key with no shape fails with *No shape for key …*; the Context Graph answers a shape the key may not see the same way.
-- **Errors:** a malformed key fails with the Context Graph's own message (e.g. *Shape key is missing the "id" segment …*); with *Get Many* against the local dev-server it comes out as a `400` item instead. A rejected key (401), an API version the Context Graph no longer serves (410) or an unreachable Delivery URL fails the run with a message saying which.
+- **Get** is for a workflow that handles one key at a time, such as a lookup triggered by a webhook. It takes one *Shape Key* per item and outputs the shape exactly as returned. A key with no shape fails with *No shape for key …*.
+- **Who can see a shape:** a shape whose access policy needs a claim always comes back as `404`, the same as a shape that doesn't exist. The node sends no claims, and the Context Graph deliberately doesn't tell "missing" from "not allowed".
+- **Errors:** a key that names no shape, malformed or not, is a `404` like any missing shape (the local dev-server differs, see [Against the local dev-server](#against-the-local-dev-server)). A rejected key (401), an API version the Context Graph no longer serves (410) or an unreachable Delivery URL fails the run with a message saying which.
 - **Key From › Schema** (*Get* only) will let you pick the shape and fill in each ID segment instead of typing the key. The schema doesn't list entry shapes yet, so the list says *This schema lists no shapes*; use *Shape Key* until it does.
 
 ### Index › Query
@@ -295,6 +296,8 @@ Where the dev-server differs from a deployed Context Graph:
 | Query paging | No cursors (`next` is always `null`) | `page` |
 | Text filtering | Exact and in memory, not like Elasticsearch | Expect some queries to match differently in production |
 | API keys | Not checked | — |
+| Processing | A pushed record is processed at once, so a read straight after a push sees it | On a deployed graph, read again if it isn't there yet |
+| A malformed shape key | `400` with a message (with Get Many, a `400` item) | A deployed graph answers `404`, as for any missing shape |
 
 ---
 
@@ -305,6 +308,7 @@ The Context Graph serves these; the node doesn't use them yet.
 - **Upload a source's complete export.** The Context Graph takes a snapshot as an artifact: reserve it, upload the file, commit it, and the graph drains it into the source. Push and Push Many are for records as they change, and Push Many isn't tuned for bulk (no batch-size setting, one request at a time), so use them for a full export only until Upload arrives.
 - **Resuming a partly resolved representation.** A `207` carries `$metadata.$resume`, which a client sends back as `X-Resume` to get the slots still pending. Until the node does that, read the route again later.
 - **Following `next` automatically** (Return All) on Index › Query. Use `page` or `cursor` yourself.
+- **Retrying a busy Delivery.** Under load, Delivery refuses a read with `503` and says how long to wait. The node doesn't retry it yet, so the item fails; run it again.
 
 ## Not included (deliberately)
 

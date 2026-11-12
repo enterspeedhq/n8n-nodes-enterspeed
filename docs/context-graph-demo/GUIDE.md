@@ -1,5 +1,7 @@
 # Context Graph demo: from a PIM to the graph with n8n
 
+> **Internal.** These are our notes on how the Tonevik demo is built and why each step is the way it is. A user runs the demo from the workflow itself: its sticky notes say what to set up and what each step returns, and the README covers the node.
+
 This guide builds the **Tonevik** demo shop in an Enterspeed Context Graph,
 one step at a time, with the **Enterspeed Context Graph** n8n node. Each step
 adds one thing, teaches one idea, and ends with a check that it worked.
