@@ -8,7 +8,14 @@ const show = { resource: ['index'], operation: ['query'] };
 const fromBuilder = { ...show, queryFrom: ['builder'] };
 const fromJson = { ...show, queryFrom: ['json'] };
 
-const QUERY_REFERENCE_URL = 'https://github.com/enterspeedhq/n8n-nodes-enterspeed#index--query';
+/**
+ * The largest page a query may ask for. A platform-wide constant (delivery/ADR-037,
+ * sc-12248 amendment: default 20, maximum 100; a direct `/query` asking for more is a
+ * `400`), published in every MSD as `queryLimits.max` (delivery/ADR-036, same amendment).
+ */
+export const QUERY_LIMIT_MAX = 100;
+
+const QUERY_REFERENCE_URL ='https://github.com/enterspeedhq/n8n-nodes-enterspeed#index--query';
 
 // What the Query field starts with: a working query to edit, not an empty field.
 const EXAMPLE_QUERY = JSON.stringify(
@@ -152,9 +159,9 @@ export const properties: INodeProperties[] = [
 		displayName: 'Results Per Page',
 		name: 'queryLimit',
 		type: 'number',
-		typeOptions: { minValue: 1 },
+		typeOptions: { minValue: 1, maxValue: QUERY_LIMIT_MAX },
 		default: 20,
-		description: "How many matches per page. The schema's query limit is the most it takes.",
+		description: `How many matches per page, at most ${QUERY_LIMIT_MAX}: the Context Graph refuses a larger page for the whole request`,
 		displayOptions: { show: fromBuilder },
 	},
 	{
@@ -265,6 +272,15 @@ export function builderQuery(fields: {
 function fromBuilderFields(this: IExecuteFunctions, itemIndex: number): IDataObject {
 	const index = this.getNodeParameter('builderIndex', itemIndex, '');
 	if (typeof index !== 'string' || !index.trim()) throw new NodeOperationError(this.getNode(), 'Query has no index.');
+	// The editor stops a larger number, but an expression can still give one. Failing this
+	// item here keeps the platform from refusing the whole request with a 400.
+	const limit = this.getNodeParameter('queryLimit', itemIndex, 20);
+	if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > QUERY_LIMIT_MAX) {
+		throw new NodeOperationError(
+			this.getNode(),
+			`Results Per Page must be a whole number from 1 to ${QUERY_LIMIT_MAX} (got ${JSON.stringify(limit)}).`,
+		);
+	}
 	const filters = this.getNodeParameter('filters.filter', itemIndex, []) as Array<{ field?: string; operator?: string; value?: string }>;
 	const sort = this.getNodeParameter('sort.sortBy', itemIndex, []) as Array<{ field?: string; order?: string }>;
 	return builderQuery({
@@ -272,7 +288,7 @@ function fromBuilderFields(this: IExecuteFunctions, itemIndex: number): IDataObj
 		search: this.getNodeParameter('search', itemIndex, '') as string,
 		filters,
 		sort,
-		limit: this.getNodeParameter('queryLimit', itemIndex, 20) as number,
+		limit,
 		page: this.getNodeParameter('page', itemIndex, 0) as number,
 		id: this.getNodeParameter('queryId', itemIndex, '') as string,
 	});

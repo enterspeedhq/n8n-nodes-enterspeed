@@ -290,6 +290,37 @@ describe('Index › Query builder', () => {
 	});
 });
 
+describe('Index › Query builder: Results Per Page', () => {
+	it('fails an item whose limit is over the platform maximum of 100, and still sends the others (delivery/ADR-037)', async () => {
+		const httpRequest = vi.fn(async (req: IDataObject) =>
+			(req.body as IDataObject[]).map((_q, i) => ({ id: String(i), items: [], totalCount: 0, next: null })),
+		);
+		const mock = createContextGraphExecuteMock({
+			params: { queryFrom: 'builder', builderIndex: 'ProductIndex', queryLimit: (i: number) => (i === 0 ? 101 : 100) },
+			items: [{}, {}],
+			httpRequest,
+			continueOnFail: true,
+		});
+		const out = await runQuery.call(mock, ctxCreds);
+		expect(httpRequest).toHaveBeenCalledTimes(1);
+		expect((httpRequest.mock.calls[0][0] as IDataObject).body).toEqual([{ index: 'ProductIndex', limit: 100 }]);
+		expect(out[0].json.error).toBe('Item 0: Results Per Page must be a whole number from 1 to 100 (got 101).');
+		expect(out[0].pairedItem).toEqual({ item: 0 });
+	});
+
+	it('refuses a limit that is not a whole number from 1, before sending anything', async () => {
+		for (const queryLimit of [0, 2.5, '20']) {
+			const httpRequest = vi.fn();
+			const mock = createContextGraphExecuteMock({
+				params: { queryFrom: 'builder', builderIndex: 'ProductIndex', queryLimit },
+				httpRequest,
+			});
+			await expect(runQuery.call(mock, ctxCreds)).rejects.toThrow('Results Per Page must be a whole number from 1 to 100');
+			expect(httpRequest).not.toHaveBeenCalled();
+		}
+	});
+});
+
 describe('Shape › Get Many from the schema', () => {
 	it('builds one key per item and reads them all in one request, each result paired to its item', async () => {
 		const httpRequest = vi.fn(async (req: IDataObject) =>
