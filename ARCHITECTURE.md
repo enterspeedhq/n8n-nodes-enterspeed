@@ -5,7 +5,7 @@ Technical blueprint for `@enterspeed/n8n-nodes-enterspeed`. For conventions and 
 
 ## System overview
 
-This package ships two n8n node types plus one shared credential type:
+This package ships three n8n node types and two credential types:
 
 - **`Enterspeed`** (`nodes/Enterspeed/Enterspeed.node.ts`) — an action node.
   A single `resource` selector (`entity` / `delivery` / `query` / `route`)
@@ -27,8 +27,26 @@ This package ships two n8n node types plus one shared credential type:
   built as an n8n **workflow template** — Schedule Trigger + the `Enterspeed`
   node's Query operation + a Code node — rather than a custom node).
 - **`EnterspeedApi`** (`credentials/EnterspeedApi.credentials.ts`) — one
-  credential type shared by both nodes, holding two API keys and three host
+  credential type shared by both Core nodes, holding two API keys and three host
   URLs (see Core Data Models below).
+- **`EnterspeedContextGraph`**
+  (`nodes/EnterspeedContextGraph/EnterspeedContextGraph.node.ts`) — a sibling
+  action node for Enterspeed Context Graph. It has no operations yet;
+  `execute()` throws a `NodeOperationError` saying so.
+- **`EnterspeedContextGraphApi`**
+  (`credentials/EnterspeedContextGraphApi.credentials.ts`) — the Context
+  Graph's own credential: an ingest URL and Ingest API Key for uploads, a
+  delivery URL and Delivery API Key for reads, and the manifest version every
+  Delivery route is scoped to. Ingest and delivery are separate services that
+  each check their own key, so `authenticate` sets `X-Api-Key` per request:
+  the Ingest API Key when the request URL is the ingest URL or under it, the
+  Delivery API Key otherwise. Neither URL has a default, so a Context Graph
+  key is never sent to an Enterspeed Core host. The SDK dev-server serves both
+  services from one host.
+  The credential test reads `GET {deliveryUrl}/schema/msd/v1/{manifestVersion}`,
+  which deployed Delivery guards with the key (401) and 404s for an unhosted
+  manifest. The dev-server does not enforce keys, so against it the test only
+  proves reachability and the manifest version.
 
 ## Directory breakdown
 
