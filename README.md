@@ -198,6 +198,18 @@ Operators: `equals`, `notEquals`, `greaterThan`, `greaterThanOrEquals`, `lessTha
 
 **With an AI Agent.** The node can be an agent's tool. Click ✨ on *Query* to let the model write the query; it reads the field's description, which states the format above. Tell the agent which indexes and fields exist, in its prompt or in the `$fromAI` description, because it can't see the schema.
 
+### Representation — Get
+
+`GET {Delivery URL}/v1/{Manifest Version}{Route}`
+
+Reads the **representation** served for a route: one resource the schema composes from **slots** (shapes and queries), e.g. a product with its category and related products. The *Route* field takes the route path, starting with `/`, e.g. `/products/42` (default `{{ $json.route }}`).
+
+- One route per item, one request per item. The representation comes out exactly as the Context Graph returns it: each slot's value at the slot's name, plus `$metadata` with each slot's `$state`.
+- **Check `$state`, not the status.** A representation where only some slots resolved still succeeds: an unresolved slot is `null`, with `$state` `missing` (or `deferred`/`pending` when the graph didn't resolve it in this response). A slot the key may not see has no entry at all.
+- A route with no representation fails with *No representation for route …*, or with the Context Graph's own message: a route that matches none, a `required` slot that didn't resolve, or no slot resolved at all. An invalid request value fails with the Context Graph's message too.
+- A rejected key (401), an API version the Context Graph no longer serves (410) or an unreachable Delivery URL fails the run with a message saying which. With *Continue On Fail*, the affected items come out as `{ route, error, description? }` instead.
+- Not supported yet: resuming a partly resolved representation (`$metadata.$resume`, sent back as `X-Resume`). Read the route again later to get the slots that were still pending.
+
 **New to the Context Graph?** Follow the step-by-step guide, [docs/context-graph-demo/GUIDE.md](docs/context-graph-demo/GUIDE.md): it builds the Tonevik demo shop with the workflow `workflows/templates/Context-Graph-Tonevik-Demo.json` against the local dev-server.
 
 **Against the local dev-server**, set both URLs to the dev-server's address. From the Docker n8n in this repo that is `http://host.docker.internal:5200`, not `localhost`. The dev-server accepts any key, so the credential test there checks only the URL and manifest version.

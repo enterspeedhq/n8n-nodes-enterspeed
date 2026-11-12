@@ -155,7 +155,7 @@
     },
     {
       "parameters": {
-        "content": "## Context Graph: Tonevik demo\n\nThe **Tonevik** demo shop's PIM sends its records to an Enterspeed Context Graph with the **Enterspeed Context Graph** node's *Entity › Push Many*, one step at a time, and reads back what the graph made of them with *Shape › Get Many*:\n\n1. **Categories**: the record, and why Push sends it as it is\n2. **Products**: records linking up in the graph\n3. **A retired product**: deleting a record\n\nEach **Get** node stands in for the PIM. A record, exactly as the PIM delivers it:\n\n```json\n{ \"$id\": \"pim-cat-dd34d4\", \"$type\": \"category\", \"$source\": \"pim\",\n  \"id\": \"cat-speakers\", \"name\": \"Speakers\" }\n```\n\n`$id` is the PIM's own key for the record; `id` is the category's own identity. The graph keeps both.\n\nAn **Aggregate** node collects a step's records into one list, and **Push Many** sends that list in one request.\n\nRun a step: open its **Read back** node and click **Execute step**. The guide, `docs/context-graph-demo/GUIDE.md`, explains each step.",
+        "content": "## Context Graph: Tonevik demo\n\nThe **Tonevik** demo shop's PIM sends its records to an Enterspeed Context Graph with the **Enterspeed Context Graph** node's *Entity › Push Many*, one step at a time, and reads back what the graph made of them with *Shape › Get Many*, then reads the way an app would:\n\n1. **Categories**: the record, and why Push sends it as it is\n2. **Products**: records linking up in the graph\n3. **A retired product**: deleting a record\n4. **A query**: finding products with *Index › Query*\n5. **A representation**: reading a product page with *Representation › Get*\n\nEach **Get** node stands in for the PIM. A record, exactly as the PIM delivers it:\n\n```json\n{ \"$id\": \"pim-cat-dd34d4\", \"$type\": \"category\", \"$source\": \"pim\",\n  \"id\": \"cat-speakers\", \"name\": \"Speakers\" }\n```\n\n`$id` is the PIM's own key for the record; `id` is the category's own identity. The graph keeps both.\n\nAn **Aggregate** node collects a step's records into one list, and **Push Many** sends that list in one request.\n\nRun a step: open its **Read back** node and click **Execute step**. The guide, `docs/context-graph-demo/GUIDE.md`, explains each step.",
         "height": 480,
         "width": 740
       },
@@ -386,6 +386,56 @@
       "typeVersion": 1,
       "id": "c4f18960-4bab-4593-9ed7-fcc658dfd625",
       "name": "Step 4"
+    },
+    {
+      "parameters": {
+        "jsCode": "// The route to read: Tonevik's ProductPage for Aurora H100 (p-1001), a product\n// step 2 pushed and step 3 kept. One item per route.\nreturn [{ json: { route: '/products/p-1001' } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        1600
+      ],
+      "id": "5b0e7c1a-3d2f-4a6b-9c8d-1e2f3a4b5c61",
+      "name": "Step 5 · Route to read"
+    },
+    {
+      "parameters": {
+        "resource": "representation",
+        "operation": "get",
+        "route": "={{ $json.route }}"
+      },
+      "type": "CUSTOM.enterspeedContextGraph",
+      "typeVersion": 1,
+      "position": [
+        560,
+        1600
+      ],
+      "id": "5b0e7c1a-3d2f-4a6b-9c8d-1e2f3a4b5c62",
+      "name": "Step 5 · Read the product representation",
+      "credentials": {
+        "enterspeedContextGraphApi": {
+          "id": "__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__",
+          "name": "Enterspeed Context Graph account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "### Step 5 · Read the product representation\nReads `/products/p-1001` with *Representation › Get*: Tonevik's **ProductPage**, one resource composed from three slots. `product` and `category` are shapes, joined by the graph through the product's `categoryId`; `related` is a query on `ProductIndex` (same category, cheapest first, up to 4).\n\n**Expect** one item with `product` (Aurora H100, 2700), `category` (Headphones), `related` (4 items, `totalCount: 5`), and `$metadata` giving each slot's `$state`: all three `fresh`. A slot that didn't resolve is `null` with `$state: missing`, and the item still succeeds.\n\nRun steps 1–3 first.",
+        "height": 320,
+        "width": 480,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1640,
+        1500
+      ],
+      "typeVersion": 1,
+      "id": "5b0e7c1a-3d2f-4a6b-9c8d-1e2f3a4b5c63",
+      "name": "Step 5"
     }
   ],
   "pinData": {},
@@ -410,6 +460,11 @@
           },
           {
             "node": "Step 4 · Query headphones",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Step 5 · Route to read",
             "type": "main",
             "index": 0
           }
@@ -542,6 +597,17 @@
         [
           {
             "node": "Step 3 · Read back",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 5 · Route to read": {
+      "main": [
+        [
+          {
+            "node": "Step 5 · Read the product representation",
             "type": "main",
             "index": 0
           }
