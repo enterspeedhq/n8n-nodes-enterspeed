@@ -3,6 +3,7 @@ import * as entity from './entity';
 import * as shape from './shape';
 import * as index from './index/index';
 import * as representation from './representation';
+import * as schema from './schema';
 import type { ContextGraphCredentials } from './types';
 
 /**
@@ -19,6 +20,7 @@ const resources: Record<string, { operations: Record<string, OperationHandler> }
 	shape,
 	index,
 	representation,
+	schema,
 };
 
 const trimSlash = (url: string) => url.replace(/\/+$/, '');

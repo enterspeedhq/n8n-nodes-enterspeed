@@ -3,6 +3,7 @@ import { NodeOperationError } from 'n8n-workflow';
 import { contextGraphApiRequest } from '../../transport';
 import type { ContextGraphCredentials } from '../types';
 import { deliveryError, failedItem, invalidKey, shapesUrl } from './shared';
+import { schemaKey } from './get.operation';
 
 export const properties: INodeProperties[] = [
 	{
@@ -11,7 +12,7 @@ export const properties: INodeProperties[] = [
 		type: 'json',
 		default: '={{ $json.keys }}',
 		required: true,
-		displayOptions: { show: { resource: ['shape'], operation: ['getMany'] } },
+		displayOptions: { show: { resource: ['shape'], operation: ['getMany'], keyFrom: ['shapeKey'] } },
 		description:
 			'The list of shape keys to read, e.g. built in a Code node. Each key is the shape name, then each ID segment\'s name and value, joined with colons.',
 	},
@@ -78,6 +79,8 @@ export async function execute(
 	const items = this.getInputData();
 	const results: INodeExecutionData[] = [];
 
+	if (this.getNodeParameter('keyFrom', 0, 'shapeKey') === 'schema') return fromSchema.call(this, creds);
+
 	for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 		const fail = (key: unknown, error: NodeApiError | NodeOperationError) => {
 			if (!this.continueOnFail()) throw error;
@@ -142,4 +145,59 @@ export async function execute(
 	}
 
 	return results;
+}
+
+/**
+ * Schema mode: each item gives one key, built from its segment values, and
+ * every item's key goes in one request (split only at the body limit). Each
+ * `{ key, status, data }` is output paired to the item its key came from.
+ */
+async function fromSchema(this: IExecuteFunctions, creds: ContextGraphCredentials): Promise<INodeExecutionData[]> {
+	const items = this.getInputData();
+	const slots: Array<INodeExecutionData | undefined> = new Array(items.length);
+	const keys: Key[] = [];
+	const fail = (key: unknown, itemIndex: number, error: NodeApiError | NodeOperationError) => {
+		if (!this.continueOnFail()) throw error;
+		return failedItem(key, itemIndex, error);
+	};
+
+	for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+		const key = schemaKey.call(this, itemIndex);
+		const problem = invalidKey(key);
+		if (problem) {
+			slots[itemIndex] = fail(key, itemIndex, new NodeOperationError(this.getNode(), `Item ${itemIndex} ${problem}.`, { itemIndex }));
+			continue;
+		}
+		const bytes = byteLength(JSON.stringify(key)) + 1;
+		if (BODY_OVERHEAD_BYTES + bytes > MAX_BODY_BYTES) {
+			const message = `Item ${itemIndex} has a key longer than the Delivery URL accepts.`;
+			slots[itemIndex] = fail(key, itemIndex, new NodeOperationError(this.getNode(), message, { itemIndex }));
+			continue;
+		}
+		keys.push({ itemIndex, key: key as string, bytes });
+	}
+
+	for (const request of toRequests(keys)) {
+		let response: unknown;
+		try {
+			response = await contextGraphApiRequest.call(this, {
+				method: 'POST',
+				url: shapesUrl(creds),
+				body: { keys: request.map((k) => k.key) },
+				json: true,
+			});
+		} catch (error) {
+			for (const k of request) slots[k.itemIndex] = fail(k.key, k.itemIndex, deliveryError.call(this, error, creds, { itemIndex: k.itemIndex }));
+			continue;
+		}
+		const answered = parseJson(response);
+		if (!Array.isArray(answered) || answered.length !== request.length) {
+			const message = `Expected ${request.length} shapes from the Delivery URL but got ${Array.isArray(answered) ? answered.length : 'none'}`;
+			for (const k of request) slots[k.itemIndex] = fail(k.key, k.itemIndex, new NodeOperationError(this.getNode(), message, { itemIndex: k.itemIndex }));
+			continue;
+		}
+		request.forEach((k, i) => (slots[k.itemIndex] = { json: answered[i] as IDataObject, pairedItem: { item: k.itemIndex } }));
+	}
+
+	return slots.filter((s): s is INodeExecutionData => s !== undefined);
 }
