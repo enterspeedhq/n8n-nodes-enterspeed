@@ -233,10 +233,10 @@ Reads the **representation** served for a route: one resource the schema compose
 
 | Route From | How |
 |---|---|
-| **Route** (default) | The *Route* field takes the route path, starting with `/`, e.g. `/products/42` (default `{{ $json.route }}`). |
+| **Route** (default) | The *Route* field takes the route path, starting with `/`, e.g. `/products/42` (default `{{ $json.route }}`). Only the path: a route with `?` or `#` fails before anything is sent. To send query or header values, use **Schema**. |
 | **Schema** | Pick the *Representation* and one of its *Routes* (e.g. `/products/{productId}`) from the schema. *Context* then lists the values that route takes, each marked with where it's sent. Map each to an expression, e.g. `{{ $json.productId }}`. |
 
-With **Schema**, *Context* lists each route placeholder first (`productId (path)`), then any other context the schema lists (`locale (query)`, `market (header: X-Market)`). Path values fill the route and are required; the rest go in the query string or a header, as the schema declares, and an empty optional value is left out. A missing required value fails the item before anything is sent.
+With **Schema**, *Context* lists each route placeholder first (`productId (path)`), then any other context the schema lists (`locale (query)`, `market (header: X-Delivery-market)`). Path values fill the route and are required; the rest go in the query string or a header, as the schema declares (a header value is sent as `X-Delivery-<name>`, the header the Context Graph reads), and an empty optional value is left out. A missing required value fails the item before anything is sent.
 
 - **Output:** one route per item, one request per item. The representation comes out exactly as returned: each slot's value at the slot's name, plus `$metadata` with each slot's `$state`.
 - **Check `$state`, not the status.** A representation where only some slots resolved still succeeds: an unresolved slot is `null`, with `$state` `missing` (not there), `pending` (not resolved in time) or `deferred` (held back on purpose, e.g. a slot that needs a claim). The node sends no claims, so a slot gated by a claim has no entry at all, and a route gated by one answers `404`.
@@ -286,7 +286,7 @@ Several Context Graph fields can be filled from the manifest's schema instead of
 
 **When the schema is read.** Only while you edit the node: n8n reads `GET {Delivery URL}/schema/msd/v1/{Manifest Version}` with the node's credential each time it fills one of these lists, e.g. when you open it, or when a field it depends on changes (picking another index reloads the filter fields). Nothing is cached between reads, so a list always shows the schema as it is now. A workflow **run never reads the schema** for these fields.
 
-**What is saved.** Your choices are saved in the workflow like any other parameter, as plain text: the index, representation and route names, each filter and sort field with its type (`numeric:price`), and for *Context* both the values you mapped and the field list itself, with where each value goes (`path:productId`, `query:locale`, `header:X-Market`) and whether it's required. A run builds the request from what was saved, so it doesn't depend on the schema being reachable, and a workflow imported elsewhere runs as it was built.
+**What is saved.** Your choices are saved in the workflow like any other parameter, as plain text: the index, representation and route names, each filter and sort field with its type (`numeric:price`), and for *Context* both the values you mapped and the field list itself, with where each value goes (`path:productId`, `query:locale`, `header:market`) and whether it's required. A run builds the request from what was saved, so it doesn't depend on the schema being reachable, and a workflow imported elsewhere runs as it was built.
 
 **When the schema changes.** A saved workflow keeps sending what was saved. A renamed index or field then fails at run time with the Context Graph's own message, and a new required context value isn't sent until you add it. Open the node and pick again; for *Context*, refresh its field list, so the saved list matches the schema again.
 

@@ -3,7 +3,7 @@ import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
 import { contextGraphApiRequest, httpFailure } from '../../transport';
 import type { ContextGraphCredentials } from '../types';
 import { API_VERSION, deliveryError } from '../shape/shared';
-import { parseContextFieldId, routeSegments } from '../schema/msd';
+import { deliveryHeader, parseContextFieldId, routeSegments } from '../schema/msd';
 
 const show = { resource: ['representation'], operation: ['get'] };
 const fromSchema = { ...show, routeFrom: ['schema'] };
@@ -148,7 +148,9 @@ export function buildSchemaRequest(
 			if (field.required) return `has no value for "${target.name}"`;
 			continue;
 		}
-		(target.target === 'header' ? request.headers : request.qs)[target.name] = value as IDataObject[string];
+		// A header binder reads X-Delivery-<key or context key> (binder-constraint).
+		if (target.target === 'header') request.headers[deliveryHeader(target.name)] = value as IDataObject[string];
+		else request.qs[target.name] = value as IDataObject[string];
 	}
 	return request;
 }
@@ -174,6 +176,10 @@ export function invalidRoute(route: unknown): string | undefined {
 	if (route === undefined || route === null || (typeof route === 'string' && !route.trim())) return 'has no Route';
 	if (typeof route !== 'string') return 'has a Route that is not text';
 	if (!route.startsWith('/')) return `has a Route that doesn't start with "/" ("${route}")`;
+	// A query string would be encoded into the path and match no route. Query
+	// and header values are the schema's binders, sent by Route From › Schema.
+	if (/[?#]/.test(route))
+		return `has a Route with "?" or "#" ("${route}"). Give only the path; to send query or header values, set Route From to Schema`;
 	return undefined;
 }
 

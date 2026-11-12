@@ -1384,9 +1384,9 @@ describe('EnterspeedContextGraph — Representation › Get', () => {
 
 	it('percent-encodes each segment and keeps the slashes', async () => {
 		const httpRequest = vi.fn(async () => ({ $metadata: {} }));
-		await readRepresentations({ routes: ['/da/søg/a b?c#d'], httpRequest });
+		await readRepresentations({ routes: ['/da/søg/a b%c'], httpRequest });
 		expect((httpRequest.mock.calls[0][0] as IDataObject).url).toBe(
-			'http://localhost:5200/v1/1.0.0/da/s%C3%B8g/a%20b%3Fc%23d',
+			'http://localhost:5200/v1/1.0.0/da/s%C3%B8g/a%20b%25c',
 		);
 	});
 
@@ -1404,6 +1404,9 @@ describe('EnterspeedContextGraph — Representation › Get', () => {
 			[undefined, 'Item 0 has no Route.'],
 			[42, 'Item 0 has a Route that is not text.'],
 			['products/p-1001', 'Item 0 has a Route that doesn\'t start with "/" ("products/p-1001").'],
+			// A query string would be encoded into the path; query values go through Route From › Schema.
+			['/categories/c-1?brandId=b-1', 'Item 0 has a Route with "?" or "#" ("/categories/c-1?brandId=b-1"). Give only the path; to send query or header values, set Route From to Schema.'],
+			['/products/p-1001#top', 'Item 0 has a Route with "?" or "#"'],
 		])('%j fails before anything is sent', async (route, message) => {
 			const httpRequest = vi.fn();
 			await expect(readRepresentations({ routes: [route], httpRequest })).rejects.toThrow(message);
@@ -1668,14 +1671,14 @@ describe('EnterspeedContextGraph — Representation › Get, resuming a partial 
 			params: {
 				routeFrom: 'schema',
 				representationRoute: '/products/{productId}',
-				'context.value': { 'path:productId': 'p1', 'query:locale': 'da', 'header:X-Market': 'dk' },
-				'context.schema': [{ id: 'path:productId' }, { id: 'query:locale' }, { id: 'header:X-Market' }],
+				'context.value': { 'path:productId': 'p1', 'query:locale': 'da', 'header:market': 'dk' },
+				'context.schema': [{ id: 'path:productId' }, { id: 'query:locale' }, { id: 'header:market' }],
 			},
 		});
 		const [first, second] = httpRequest.mock.calls.map((c) => c[0] as IDataObject);
 		expect(second.url).toBe(first.url);
 		expect(second.qs).toEqual({ locale: 'da' });
-		expect(second.headers).toMatchObject({ 'X-Market': 'dk', 'X-Resume': 'token-1' });
+		expect(second.headers).toMatchObject({ 'X-Delivery-market': 'dk', 'X-Resume': 'token-1' });
 	});
 
 	describe('a refused checkpoint (delivery/ADR-033 §3)', () => {

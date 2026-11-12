@@ -42,7 +42,7 @@ const msd = {
 				required: ['locale', 'productId', 'sku'],
 				optional: ['preview'],
 				binders: {
-					locale: { source: 'header', key: 'X-Locale', type: 'string' },
+					locale: { source: 'header', key: 'lang', type: 'string' },
 					q: { source: 'query', key: 'search', type: 'string' },
 					preview: { source: 'query', type: 'boolean' },
 				},
@@ -82,7 +82,7 @@ describe('MSD reader', () => {
 		const [page] = msdRepresentations(msd);
 		expect(page.name).toBe('ProductPage');
 		expect(page.routes).toEqual(['/products/{productId}', '/sku/{sku:alpha}']);
-		expect(page.binders.locale).toMatchObject({ source: 'header', key: 'X-Locale' });
+		expect(page.binders.locale).toMatchObject({ source: 'header', key: 'lang' });
 		expect(page.slots).toEqual([
 			{ name: 'product', type: 'shape', index: undefined },
 			{ name: 'related', type: 'query', index: 'ProductIndex' },
@@ -101,12 +101,14 @@ describe('MSD reader', () => {
 		const fields = representationFields(msdRepresentations(msd)[0], '/products/{productId}');
 		expect(fields.map((f) => [f.id, f.required, f.type])).toEqual([
 			['path:productId', true, 'string'],
-			['header:X-Locale', true, 'string'],
+			['header:lang', true, 'string'],
 			// Another route's placeholder is still read by a slot key, so it comes from the query string.
 			['query:sku', true, 'string'],
 			['query:preview', false, 'boolean'],
 			['query:search', false, 'string'],
 		]);
+		// A header binder is read from X-Delivery-<key or context key> (binder-constraint).
+		expect(fields.find((f) => f.id === 'header:lang')?.displayName).toBe('locale (header: X-Delivery-lang)');
 	});
 
 	it('gives a route without placeholders every required key as a query value', () => {
@@ -206,14 +208,14 @@ describe('MSD loadOptions', () => {
 describe('Representation › Get from the schema', () => {
 	const fields = [
 		{ id: 'path:productId', required: true },
-		{ id: 'header:X-Locale', required: true },
+		{ id: 'header:lang', required: true },
 		{ id: 'query:search', required: false },
 	];
 
 	it('fills the route and puts the other values in the query string and headers', () => {
 		expect(
-			buildSchemaRequest('/products/{productId}', { 'path:productId': 'p/1 001', 'header:X-Locale': 'da', 'query:search': '' }, fields),
-		).toEqual({ segments: ['products', 'p/1 001'], qs: {}, headers: { 'X-Locale': 'da' } });
+			buildSchemaRequest('/products/{productId}', { 'path:productId': 'p/1 001', 'header:lang': 'da', 'query:search': '' }, fields),
+		).toEqual({ segments: ['products', 'p/1 001'], qs: {}, headers: { 'X-Delivery-lang': 'da' } });
 	});
 
 	it('sends each path value as one percent-encoded segment', async () => {
@@ -222,7 +224,7 @@ describe('Representation › Get from the schema', () => {
 			params: {
 				routeFrom: 'schema',
 				representationRoute: '/products/{productId}',
-				'context.value': { 'path:productId': 'p/1001', 'header:X-Locale': 'da', 'query:search': 'red' },
+				'context.value': { 'path:productId': 'p/1001', 'header:lang': 'da', 'query:search': 'red' },
 				'context.schema': fields,
 			},
 			httpRequest,
@@ -231,7 +233,7 @@ describe('Representation › Get from the schema', () => {
 		expect(httpRequest.mock.calls[0][0]).toMatchObject({
 			url: 'http://localhost:5200/v1/1.0.0/products/p%2F1001',
 			qs: { search: 'red' },
-			headers: { 'X-Locale': 'da' },
+			headers: { 'X-Delivery-lang': 'da' },
 		});
 	});
 
@@ -246,7 +248,7 @@ describe('Representation › Get from the schema', () => {
 			},
 			httpRequest,
 		});
-		await expect(getRepresentation.call(mock, ctxCreds)).rejects.toThrow('has no value for "X-Locale"');
+		await expect(getRepresentation.call(mock, ctxCreds)).rejects.toThrow('has no value for "lang"');
 		expect(httpRequest).not.toHaveBeenCalled();
 	});
 });
