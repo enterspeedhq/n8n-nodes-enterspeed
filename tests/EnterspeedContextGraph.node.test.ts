@@ -1040,8 +1040,9 @@ describe('EnterspeedContextGraph — Index › Get', () => {
 	});
 
 	it("shows the service's message for a 400, and says when the key is rejected or the URL unreachable", async () => {
-		await expect(get({ httpRequest: failWith(400, { message: 'Unknown index "Nope".' }) })).rejects.toThrow(
-			'Unknown index "Nope".',
+		// The point read's one 400, as delivery sends it: a bare JSON string.
+		await expect(get({ httpRequest: failWith(400, '"Invalid environment ID"') })).rejects.toThrow(
+			'Invalid environment ID',
 		);
 		await expect(get({ httpRequest: failWith(401) })).rejects.toThrow('The API key was rejected by the Delivery URL.');
 		const unreachable = vi.fn(async () => {
