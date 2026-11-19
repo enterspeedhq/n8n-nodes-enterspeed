@@ -104,6 +104,7 @@ Testing the credential reads `GET {Delivery URL}/schema/msd/v1/{Manifest Version
 
 | Resource › Operation | Request | Input → requests |
 |---|---|---|
+| [Artifact › Upload](#artifact--upload) | `POST {Ingest URL}/sources/{Source}/artifacts`, the file to its signed URL, then `…/{id}/commit` | One export file per item |
 | [Entity › Push](#entity--push-and-push-many) | `POST {Ingest URL}/entities` | One record per item, one request per item |
 | [Entity › Push Many](#entity--push-and-push-many) | `POST {Ingest URL}/entities` | One item holding a list, one request |
 | [Shape › Get](#shape--get-and-get-many) | `GET {Delivery URL}/shapes/v1/{Manifest Version}/{key}` | One key per item |
@@ -114,6 +115,30 @@ Testing the credential reads `GET {Delivery URL}/schema/msd/v1/{Manifest Version
 | [Schema › Get](#schema--get) | `GET {Delivery URL}/schema/{Kind}/v1/{Manifest Version}[/{Prefix}]` | Once per run |
 
 Every operation outputs the Context Graph's answer exactly as it was returned; the node never reshapes records on the way in or answers on the way out. With *Continue On Fail*, a failed item comes out with `error` and, when there is one, `description`, next to what identifies it (its key, route, query or record).
+
+### Artifact › Upload
+
+Uploads a source's **complete export**, the file its system already produces, as it is. Use it on a schedule for the whole source; use Entity › Push for records as they change. The source must be a **snapshot** source: a push source refuses an upload.
+
+| Field | What it is |
+|---|---|
+| *Source* | The source's alias, e.g. `pim` |
+| *Input Binary Field* | The input item's binary field holding the file (default `data`), e.g. from an HTTP Request, Read Files or Convert to File node. The file is sent as it is: never parsed, mapped or converted. |
+| *Content Type* | **NDJSON** (one record per line, keyed by its own `$id` and `$type` unless the source has a field map) or **CSV** (read through the source's field map; every value arrives as text). Set it here: n8n often labels `.ndjson` files `application/octet-stream`. |
+| *As Of* | When the export **started** in the source, as ISO 8601 with an offset, e.g. `2026-11-19T02:00:00Z`. Not when the file was fetched or uploaded: every row is ordered at this time against pushes, so a push made after the export started still wins. Each upload must be later than the last one committed, and no more than five minutes ahead. |
+| *Row Count* | How many records the source exported: CSV rows after the header, or NDJSON lines that aren't blank. Take it from the source system, not from counting the file. A count that differs from the file is how a cut-off file is caught: its content still lands, but it deletes nothing. |
+
+What the node does, per item:
+
+1. Computes the file's SHA-256.
+2. **Reserves** the upload with *As Of*, *Row Count*, the content type and the hash, using the Ingest API Key.
+3. **Uploads** the file to the signed storage URL the reservation answers, with exactly the headers it names. This request carries **no API key**: the URL itself grants access to that one file.
+4. **Commits** it, and outputs the artifact exactly as returned (`id`, `state`, …), paired to the item.
+
+- **Running it again is safe.** The same file with the same *As Of* is recognised as a retry: an export already committed comes back as it is, with nothing sent again. Different bytes with the same *As Of* are refused; a corrected file is a new export with a later *As Of*.
+- **What happens next.** The Context Graph drains the file into the source after the commit; on a deployed graph that can take a while (a 4-hour target), and the output's `state` is `committed` until then. The first complete upload is the source's **seed** and deletes nothing. A later one deletes the records it leaves out only if the source declares a cycle, and a large set of deletions waits for a person to release it. The local dev-server drains at once, so `state` is already `drained`.
+- **Size limit: under 2 GB.** The file is held in memory while it is sent, so it must be under 2 GB, which is also the Context Graph's limit, and n8n needs that much memory free. A file of 2 GiB or more fails the item before anything is sent. In queue mode n8n keeps binary data in its database, which caps a file at 512 MiB by default (`N8N_BINARY_DATA_DATABASE_MAX_FILE_SIZE`, at most 1 GiB). The node shows the limit in its notice.
+- **Errors:** a refusal fails the item with the Context Graph's own title and reason, e.g. *A push source takes no artifacts. (push-source)*, *asOf is not later than the source's latest artifact. (as-of-not-later)* or *A CSV artifact needs a field map. (field-map-required)*, with the explanation as its description. An item with no file, *Source*, *As Of* or *Row Count* fails before anything is sent. A failed upload names the storage host only, never the signed URL. With *Continue On Fail* it comes out as `{ source, asOf, error, description? }`.
 
 ### Entity › Push and Push Many
 
@@ -155,7 +180,7 @@ return $input.all().map(({ json }) => ({
 
 - **Output:** one result per record, `{ id, type, source, action, accepted, statusCode, error? }`, paired to the item it came from. A rejected record, or one without a valid `$id` or `$type`, comes out with `accepted: false` and the reason; the rest are still stored. `accepted: true` also covers a record whose content was unchanged, and one superseded by a newer *Modified At*: both are accepted with nothing written. `accepted: true` means the record has landed, not that the graph has processed it: on a deployed graph a read straight after a push can briefly miss it, so read again. The local dev-server processes at once.
 - **Deletes** send only `$id`, `$type`, `$source` and `$modifiedAt`.
-- **Not for a complete export.** A source's full export goes in as an upload (see [Not built yet](#not-built-yet)).
+- **Not for a complete export.** A source's full export goes in with [Artifact › Upload](#artifact--upload).
 - **Request size:** Push Many splits a list into more requests only to stay under the Context Graph's request limit (30,000,000 bytes); a single record too large for one request is reported as failed. Push Many fails an item whose *Records* isn't a list.
 - **Throttling:** when the Context Graph is busy it refuses a request with `429` and says how long to wait. The node waits that long and resends the refused request, up to 3 times (nothing was written when it was refused). If it's still refused, or asked to wait more than five minutes, the run fails.
 - **Errors:** a rejected key (401), a key without write access (403), a request that's too large (413), continued throttling (429) or an unreachable Ingest URL fails the run with a message saying which.
@@ -311,6 +336,7 @@ Where the dev-server differs from a deployed Context Graph:
 | API keys | Not checked | — |
 | Processing | A pushed record is processed at once, so a read straight after a push sees it | On a deployed graph, read again if it isn't there yet |
 | Partial representations | Only for a slot the server's `budgetCut` option names. Tonevik's representations are never partial | Start a dev-server with `budgetCut` to try Resume Partial Answers |
+| Artifact › Upload | Needs `@enterspeed/dev-server@alpha` (0.2.0-alpha.2 or later; `latest` has no upload). A source takes uploads only when the server declares it a snapshot source (`createDevServer(schema, { sources: { pim: { mode: "snapshot" } } })`); Tonevik declares none. The file drains at commit, so `state` is `drained` at once. No size limit, URL expiry or key check, and the upload URL names no headers | — |
 
 ---
 
@@ -318,7 +344,9 @@ Where the dev-server differs from a deployed Context Graph:
 
 The Context Graph serves these; the node doesn't use them yet.
 
-- **Upload a source's complete export.** The Context Graph takes a snapshot as an artifact: reserve it, upload the file, commit it, and the graph drains it into the source. Push and Push Many are for records as they change, and Push Many isn't tuned for bulk (no batch-size setting, one request at a time), so use them for a full export only until Upload arrives.
+- **Reading an upload later**: its status and drain result, a source's uploads, and the records that didn't land. Until then, Artifact › Upload's output is the artifact as committed.
+- **Releasing or discarding held deletions**, and reading a source's mirror status.
+- **Uploading in blocks.** Artifact › Upload sends the file in one request, so a failed transfer starts again.
 - **Following `next` automatically** (Return All) on Index › Query. Use `page` or `cursor` yourself.
 - **Retrying a busy Delivery.** Under load, Delivery refuses a read with `503` and says how long to wait. The node doesn't retry it yet, so the item fails; run it again.
 
