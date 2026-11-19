@@ -1,0 +1,292 @@
+{
+  "name": "Context Graph: resume a partial representation",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Context Graph: resume a partial representation\n\nTests **Representation › Get** with *Resume Partial Answers* against the local dev-server running the Tonevik shop (stage 1).\n\nA representation can come back **partial**: some slots are left open (`$state` `pending` or `deferred`) and `$metadata.$resume` carries a checkpoint. With *Resume Partial Answers* on, the node sends that checkpoint back in `X-Resume` and merges each round into the same item, up to *Max Rounds*.\n\nThe workflow takes everything it reads from the graph itself:\n\n1. **Read the schema**: the MSD lists the representations, their routes, which model fills each route and which index holds that model.\n2. **Pick a representation**: the first one and its first route, here `ProductPage` at `/products/{productId}`.\n3. **Find a product**: one document from that index. Its `$rawId` is the product's id.\n4. **Read the representation** twice, without and with resume. Each read goes to a **What came back** node that lists each slot's `$state` and whether a checkpoint is left.\n\nClick **Execute workflow**.",
+        "width": 520,
+        "height": 600
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -620,
+        -80
+      ],
+      "id": "203d8bb4-6602-4a6d-8a44-4fbf9cb6bd5d",
+      "name": "About this workflow"
+    },
+    {
+      "parameters": {
+        "content": "## Before you run it\n\nA dev-server answers a whole representation in one read, so it is never partial on its own. Start Tonevik stage 1 with two slots cut short, by adding `budgetCut` to `createDevServer` in `tonevik/solutions/1-shop.ts`:\n\n```ts\nbudgetCut: { category: \"pending\", related: \"deferred\" }\n```\n\nStart it with its own empty data folder, then seed stage 1 (`node seed.mjs 1`).\n\nSelect the **Enterspeed Context Graph** credential in every Context Graph node. Its URLs must point at that dev-server (from this repo's Docker n8n: `http://host.docker.internal:<port>`), with *Manifest Version* `1.0.0`.",
+        "width": 520,
+        "height": 400,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -620,
+        540
+      ],
+      "id": "0ebe14fd-27fe-4911-9d98-43b8be4d9240",
+      "name": "Before you run it"
+    },
+    {
+      "parameters": {
+        "content": "## What to expect\n\n- **Read the schema**: one item, the MSD.\n- **Pick a representation**: `ProductPage`, `/products/{productId}`, model `ProductModel`, index `ProductIndex`.\n- **Find a product**: one document; **Route to read** fills the route from its `$rawId`, e.g. `/products/p-1010`.\n- **Without resume**: `product` is `fresh`, `category` is `pending`, `related` is `deferred`, and a checkpoint is present.\n- **With resume**: all three are `fresh` and no checkpoint is left. The node sent one round, which filled both open slots.\n\nWithout `budgetCut` both reads are already complete: all `fresh`, no checkpoint, and no round is sent.\n\n**Seeing the rounds:** the dev-server lists recent requests at `/__dev/requests`: one `GET` for each read, and one more with `X-Resume` for the round.",
+        "width": 480,
+        "height": 600,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1520,
+        -80
+      ],
+      "id": "6a264132-0c55-4634-a4a3-5759e891511a",
+      "name": "What to expect"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        220
+      ],
+      "id": "92704c88-abab-4d5b-9037-7a93d3b16bef",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "resource": "schema",
+        "operation": "get",
+        "kind": "msd"
+      },
+      "type": "CUSTOM.enterspeedContextGraph",
+      "typeVersion": 1,
+      "position": [
+        180,
+        220
+      ],
+      "id": "f2daa52d-6168-4809-9392-7650ae59cdfb",
+      "name": "Read the schema",
+      "credentials": {
+        "enterspeedContextGraphApi": {
+          "id": "__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__",
+          "name": "Enterspeed Context Graph account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Reads the schema (the MSD) and picks what to read: the first representation,\n// its first route, and for each {param} in that route the model id segment\n// behind it (models[].routes[].params). The index over that model is where a\n// real value for the route comes from.\nconst msd = $input.first().json;\nconst representation = (msd.representations ?? [])[0];\nif (!representation) throw new Error('The schema lists no representations.');\nconst route = (representation.$routes ?? [])[0];\nif (!route) throw new Error(`Representation ${representation.$name} lists no routes.`);\n\nconst [model, entry] = Object.entries(msd.models ?? {})\n\t.map(([name, m]) => [name, (m.routes ?? []).find((r) => r.route === route && r.representation === representation.$name)])\n\t.find(([, r]) => r) ?? [];\nif (!model) throw new Error(`The schema's models list no model behind ${route}.`);\n\nconst index = Object.entries(msd.indexes ?? {}).find(([, i]) => i.model === model)?.[0];\nif (!index) throw new Error(`The schema lists no index over ${model}.`);\n\nreturn [{\n\tjson: {\n\t\trepresentation: representation.$name,\n\t\troute,\n\t\tmodel,\n\t\tidSegments: msd.models[model].idSegments,\n\t\tparams: entry.params,\n\t\tindex,\n\t},\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        220
+      ],
+      "id": "4660b527-b59b-4c3a-8bf5-13a03d50a15e",
+      "name": "Pick a representation from the schema"
+    },
+    {
+      "parameters": {
+        "resource": "index",
+        "operation": "query",
+        "query": "={{ { \"index\": $json.index, \"limit\": 1 } }}"
+      },
+      "type": "CUSTOM.enterspeedContextGraph",
+      "typeVersion": 1,
+      "position": [
+        620,
+        220
+      ],
+      "id": "30851977-ffca-4b1d-be4e-94a0b9934d7d",
+      "name": "Find a product",
+      "credentials": {
+        "enterspeedContextGraphApi": {
+          "id": "__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__",
+          "name": "Enterspeed Context Graph account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fills the route's {params} from the first match: a query item carries its\n// record's raw id ($rawId for one id segment, $rawIds for several, in segment\n// order), and params says which id segment each {param} takes.\nconst picked = $('Pick a representation from the schema').first().json;\nconst match = ($input.first().json.items ?? [])[0];\nif (!match) throw new Error(`${picked.index} returned no documents to read.`);\n\nconst raw = match.$rawIds ?? [match.$rawId];\nconst value = (segment) => raw[picked.idSegments.indexOf(segment)];\nconst route = picked.route.replace(/\\{([^}]+)\\}/g, (_, param) =>\n\tencodeURIComponent(value(picked.params[param])),\n);\n\nreturn [{ json: { representation: picked.representation, route } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        220
+      ],
+      "id": "e5359f1b-7467-4796-84bc-2ec9901a2c4c",
+      "name": "Route to read"
+    },
+    {
+      "parameters": {
+        "resource": "representation",
+        "operation": "get",
+        "route": "={{ $json.route }}"
+      },
+      "type": "CUSTOM.enterspeedContextGraph",
+      "typeVersion": 1,
+      "position": [
+        1060,
+        100
+      ],
+      "id": "cf53819e-7818-4cde-b91b-26492c828617",
+      "name": "Read without resume",
+      "credentials": {
+        "enterspeedContextGraphApi": {
+          "id": "__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__",
+          "name": "Enterspeed Context Graph account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "representation",
+        "operation": "get",
+        "route": "={{ $json.route }}",
+        "resumePartial": true,
+        "maxResumeRounds": 3,
+        "maxResumeWaitMs": 5000
+      },
+      "type": "CUSTOM.enterspeedContextGraph",
+      "typeVersion": 1,
+      "position": [
+        1060,
+        340
+      ],
+      "id": "53df4234-21d6-487e-9b65-b8edca33315b",
+      "name": "Read with resume",
+      "credentials": {
+        "enterspeedContextGraphApi": {
+          "id": "__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__",
+          "name": "Enterspeed Context Graph account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// One line per slot: its $state, so the two reads can be compared at a glance.\nreturn $input.all().map((item) => {\n\tconst metadata = item.json.$metadata ?? {};\n\tconst slots = {};\n\tfor (const [name, entry] of Object.entries(metadata)) {\n\t\tif (!name.startsWith('$')) slots[name] = entry?.$state;\n\t}\n\treturn {\n\t\tjson: {\n\t\t\tslots,\n\t\t\tcheckpoint: typeof metadata.$resume === 'string' ? 'present (more to resume)' : 'none (nothing left open)',\n\t\t\tchangedAt: metadata.$changedAt ?? null,\n\t\t},\n\t};\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        100
+      ],
+      "id": "9323ebfa-807f-493e-aa86-c86bc083b0d6",
+      "name": "What came back without resume"
+    },
+    {
+      "parameters": {
+        "jsCode": "// One line per slot: its $state, so the two reads can be compared at a glance.\nreturn $input.all().map((item) => {\n\tconst metadata = item.json.$metadata ?? {};\n\tconst slots = {};\n\tfor (const [name, entry] of Object.entries(metadata)) {\n\t\tif (!name.startsWith('$')) slots[name] = entry?.$state;\n\t}\n\treturn {\n\t\tjson: {\n\t\t\tslots,\n\t\t\tcheckpoint: typeof metadata.$resume === 'string' ? 'present (more to resume)' : 'none (nothing left open)',\n\t\t\tchangedAt: metadata.$changedAt ?? null,\n\t\t},\n\t};\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        340
+      ],
+      "id": "73fbb255-4fb3-4a36-8d2d-67923882e7f0",
+      "name": "What came back with resume"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Read the schema",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read the schema": {
+      "main": [
+        [
+          {
+            "node": "Pick a representation from the schema",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick a representation from the schema": {
+      "main": [
+        [
+          {
+            "node": "Find a product",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find a product": {
+      "main": [
+        [
+          {
+            "node": "Route to read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route to read": {
+      "main": [
+        [
+          {
+            "node": "Read without resume",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read with resume",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read without resume": {
+      "main": [
+        [
+          {
+            "node": "What came back without resume",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read with resume": {
+      "main": [
+        [
+          {
+            "node": "What came back with resume",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

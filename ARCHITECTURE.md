@@ -119,7 +119,7 @@ Every resource follows one rule: **output the service's answer unchanged**. The 
 | Shape › Get Many | `POST {deliveryUrl}/shapes/v1/{manifest}` | One item holding a list, split at 30 KiB | *Shapes batch envelope* |
 | Index › Query | `POST {deliveryUrl}/query/v1/{manifest}` | One query per item, all in one request | *Query envelope*; delivery/ADR-030 §3, ADR-037 |
 | Index › Get | `GET {deliveryUrl}/query/v1/{manifest}/{index}/{id}` | One document per item | delivery/ADR-030 §3, ADR-022 |
-| Representation › Get | `GET {deliveryUrl}/v1/{manifest}{route}` | One route per item | *Representation envelope*, *Representation slot*; delivery/ADR-030 §3, ADR-050 |
+| Representation › Get | `GET {deliveryUrl}/v1/{manifest}{route}`, then the same with `X-Resume` per resume round | One route per item | *Representation envelope*, *Representation slot*; delivery/ADR-030 §3, ADR-033, ADR-050 |
 | Schema › Get | `GET {deliveryUrl}/schema/{kind}/v1/{manifest}[/{prefix}]` | Once per run, first item | delivery/ADR-030 §3, ADR-036 |
 
 ### 3.2 Entity: Push and Push Many
@@ -158,7 +158,13 @@ Shapes are read by the canonical shape key, `{shapeName}:{segKey}:{value}:…` (
 - The body is output unchanged: each slot at its name plus `$metadata` (*Representation envelope*).
 - `200`, `202` and `207` all succeed, because which slots resolved is in `$metadata.<slot>.$state`, not the status. A `404` (no matching route, an unresolved `required` slot, or no slot resolved) fails the item.
 - **No `X-Delivery-Policy`.** With no header, delivery gives one complete resolution, entry and query slots together, bounded by a 5-second budget and 3 query passes. A read cut short by either bound is a `207` with the open slots in `$metadata` (*Representation slot*, *Resolution policy*; delivery/ADR-050). That default is ADR-050's answer for a machine caller, so the node sends no header. The one opt-in, `progressive`, defers every query slot for a client that paints first, which a workflow doesn't do. Any other value is a `400` `invalid_policy`.
-- Resuming a partial answer is not implemented in the node yet (sc-14303). Delivery and the SDK dev-server serve it: a `207` carries `$metadata.$resume`, sent back as `X-Resume` (delivery/ADR-033, still marked Proposed; the *Representation envelope* vectors pin `$resume`).
+- **Resume Partial Answers** (off by default) follows `$metadata.$resume` (delivery/ADR-033, still Proposed; the *Representation envelope* vectors pin `$resume`, chained rounds included, through `follows`):
+  - A round repeats the request exactly, query string and headers included (delivery reads them again on a resume), and adds the checkpoint verbatim as `X-Resume`. The token is never parsed or logged.
+  - Delivery and the SDK dev-server answer a round with one JSON body holding only the slots that were open, not the stream ADR-033 §2b describes. Each slot and its `$metadata` entry replace the earlier ones by name; `$changedAt` is the newest across rounds (*Representation envelope*); `$resume` is the latest round's, so it is gone once nothing is open.
+  - Rounds go on while the answer carries `$resume` and a slot that may be resumed, up to *Max Rounds*. Open means `pending` or `deferred` (the pending status class). The node sends no context token, so a slot whose `$requires` names a claim is skipped (*Representation slot*, client resume guard, rule 1).
+  - Before a round the node waits for the largest `$timeoutMs` among those slots, capped by *Max Wait Between Rounds*, with `sleep` from `n8n-workflow`. `deferred` withholds `$timeoutMs`, so such a round goes at once.
+  - A refused checkpoint is answered once by a plain `GET` that replaces the rounds so far: `410` with `checkpoint_expired` and `409` (ADR-033 §3: "the client re-GETs"), and `401` with `invalid_checkpoint` (the ADR names no client action; the dev-server's message asks for this). Delivery's `WWW-Authenticate` hint tells these from a rejected key or a retired API version. A second refusal or a `404` fails the item.
+  - A resume round re-applies the policy its own request carries (*Resolution policy*). The node's rounds carry no header, so each round may resolve query slots too. A slot that still doesn't resolve comes back open with a fresh `$resume`, and *Max Rounds* is what stops it.
 
 ### 3.6 Schema: Get
 
