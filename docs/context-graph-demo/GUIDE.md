@@ -1,5 +1,7 @@
 # Context Graph demo: from a PIM to the graph with n8n
 
+> **Internal.** These are our notes on how the Tonevik demo is built and why each step is the way it is. A user runs the demo from the workflow itself: its sticky notes say what to set up and what each step returns, and the README covers the node.
+
 This guide builds the **Tonevik** demo shop in an Enterspeed Context Graph,
 one step at a time, with the **Enterspeed Context Graph** n8n node. Each step
 adds one thing, teaches one idea, and ends with a check that it worked.
@@ -373,8 +375,9 @@ Read the product representation* reads it with **Representation › Get**.
 Each slot sits at its own name, and `$metadata` says how each one resolved.
 
 **Read `$state`, not the status.** A slot that didn't resolve is `null`,
-with `$state: "missing"` (or `"deferred"` when the graph didn't get to it in
-this response), and the representation still comes back: the item succeeds.
+with `$state: "missing"` (not there), `"pending"` (not resolved in time) or
+`"deferred"` (held back on purpose), and the representation still comes back:
+the item succeeds.
 So check `$metadata.<slot>.$state` for the slots you depend on, e.g. in an
 **If** node. The node fails the item only when there is no representation at
 all: a route that matches none, a `required` slot that didn't resolve (try
