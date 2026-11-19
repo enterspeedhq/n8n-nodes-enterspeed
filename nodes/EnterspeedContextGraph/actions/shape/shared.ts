@@ -17,7 +17,7 @@ export const shapeKeyProperty: INodeProperties = {
 	default: '',
 	required: true,
 	placeholder: 'e.g. productVariant:productId:42:sku:SKU-9',
-	displayOptions: { show: { resource: ['shape'], operation: ['get'] } },
+	displayOptions: { show: { resource: ['shape'], operation: ['get'], keyFrom: ['shapeKey'] } },
 	description:
 		"The shape's key: the shape name, then each ID segment's name and value, joined with colons. The values are the record's own data (e.g. its ID), not its $-prefixed ID.",
 };

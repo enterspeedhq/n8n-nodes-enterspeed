@@ -3,8 +3,73 @@ import { NodeOperationError } from 'n8n-workflow';
 import { contextGraphApiRequest } from '../../transport';
 import type { ContextGraphCredentials } from '../types';
 import { API_VERSION, deliveryError } from '../shape/shared';
+import { parseContextFieldId, routeSegments } from '../schema/msd';
+
+const show = { resource: ['representation'], operation: ['get'] };
+const fromSchema = { ...show, routeFrom: ['schema'] };
 
 export const properties: INodeProperties[] = [
+	{
+		displayName: 'Route From',
+		name: 'routeFrom',
+		type: 'options',
+		noDataExpression: true,
+		options: [
+			{
+				name: 'Schema',
+				value: 'schema',
+				description: "Choose a representation and route from the manifest's schema, and give its values",
+			},
+			{ name: 'Route', value: 'route', description: 'Give the whole route path as text' },
+		],
+		default: 'route',
+		description: 'How the route is given',
+		displayOptions: { show },
+	},
+	{
+		displayName: 'Representation Name or ID',
+		name: 'representation',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getRepresentations' },
+		default: '',
+		required: true,
+		description:
+			'The representation to read, from the schema of the manifest. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+		displayOptions: { show: fromSchema },
+	},
+	{
+		displayName: 'Route Name or ID',
+		name: 'representationRoute',
+		type: 'options',
+		typeOptions: { loadOptionsMethod: 'getRepresentationRoutes', loadOptionsDependsOn: ['representation'] },
+		default: '',
+		required: true,
+		description:
+			'Which of the routes of the representation to read. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
+		displayOptions: { show: fromSchema },
+	},
+	{
+		displayName: 'Context',
+		name: 'context',
+		type: 'resourceMapper',
+		noDataExpression: true,
+		default: { mappingMode: 'defineBelow', value: null },
+		required: true,
+		typeOptions: {
+			loadOptionsDependsOn: ['representation', 'representationRoute'],
+			resourceMapper: {
+				resourceMapperMethod: 'getRouteValues',
+				mode: 'add',
+				fieldWords: { singular: 'value', plural: 'values' },
+				addAllFields: true,
+				multiKeyMatch: false,
+				supportAutoMap: false,
+			},
+		},
+		description:
+			"The values the representation's slots read: each route placeholder, then the other context the schema lists. Path values fill the route; the rest go in the query string or a header, as the schema declares.",
+		displayOptions: { show: fromSchema },
+	},
 	{
 		displayName: 'Route',
 		name: 'route',
@@ -12,10 +77,64 @@ export const properties: INodeProperties[] = [
 		default: '={{ $json.route }}',
 		required: true,
 		placeholder: 'e.g. /products/42',
-		displayOptions: { show: { resource: ['representation'], operation: ['get'] } },
+		displayOptions: { show: { ...show, routeFrom: ['route'] } },
 		description: "The representation's route path, starting with a slash, as the schema declares it",
 	},
 ];
+
+/** A request built from the schema: the route's segments, unencoded, plus query string and headers. */
+export interface SchemaRequest {
+	segments: string[];
+	qs: IDataObject;
+	headers: IDataObject;
+}
+
+const isEmpty = (value: unknown) => value === undefined || value === null || value === '';
+
+/**
+ * Fills a route template from the context values (field id `path:`, `query:`
+ * or `header:` plus the name). Returns why it can't when a path value or a
+ * required value is missing. Empty optional values are left out.
+ */
+export function buildSchemaRequest(
+	template: string,
+	values: IDataObject,
+	fields: Array<{ id: string; required?: boolean }>,
+): SchemaRequest | string {
+	const request: SchemaRequest = { segments: [], qs: {}, headers: {} };
+	for (const segment of routeSegments(template)) {
+		if ('literal' in segment) {
+			request.segments.push(segment.literal);
+			continue;
+		}
+		const value = values[`path:${segment.placeholder}`];
+		if (isEmpty(value)) return `has no value for "${segment.placeholder}"`;
+		request.segments.push(String(value));
+	}
+	for (const field of fields) {
+		const target = parseContextFieldId(field.id);
+		if (!target || target.target === 'path') continue;
+		const value = values[field.id];
+		if (isEmpty(value)) {
+			if (field.required) return `has no value for "${target.name}"`;
+			continue;
+		}
+		(target.target === 'header' ? request.headers : request.qs)[target.name] = value as IDataObject[string];
+	}
+	return request;
+}
+
+/** The item's route, as given, or the request filled from the schema's route template. */
+function itemRequest(this: IExecuteFunctions, itemIndex: number): { route: unknown; request?: SchemaRequest | string } {
+	if (this.getNodeParameter('routeFrom', itemIndex, 'route') !== 'schema') {
+		return { route: this.getNodeParameter('route', itemIndex, undefined) };
+	}
+	const template = this.getNodeParameter('representationRoute', itemIndex, '') as string;
+	if (!template) return { route: template, request: 'has no Route' };
+	const values = (this.getNodeParameter('context.value', itemIndex, {}) ?? {}) as IDataObject;
+	const fields = (this.getNodeParameter('context.schema', itemIndex, []) ?? []) as Array<{ id: string; required?: boolean }>;
+	return { route: template, request: buildSchemaRequest(template, values, fields) };
+}
 
 /**
  * Why a route can't be sent, or undefined if it can. Only a missing, blank,
@@ -58,9 +177,11 @@ async function readRepresentation(
 	route: unknown,
 	itemIndex: number,
 	creds: ContextGraphCredentials,
+	request?: SchemaRequest | string,
 ): Promise<IDataObject | NodeApiError | NodeOperationError> {
-	const problem = invalidRoute(route);
+	const problem = typeof request === 'string' ? request : request ? undefined : invalidRoute(route);
 	if (problem) return new NodeOperationError(this.getNode(), `Item ${itemIndex} ${problem}.`, { itemIndex });
+	const fromSchema = typeof request === 'object' ? request : undefined;
 
 	let response: unknown;
 	try {
@@ -68,7 +189,11 @@ async function readRepresentation(
 		// $metadata.<slot>.$state, not the status (Representation envelope).
 		response = await contextGraphApiRequest.call(this, {
 			method: 'GET',
-			url: representationUrl(creds, route as string),
+			url: fromSchema
+				? `${creds.deliveryUrl}/${API_VERSION}/${encodeURIComponent(creds.manifestVersion)}/${fromSchema.segments.map(encodeURIComponent).join('/')}`
+				: representationUrl(creds, route as string),
+			...(fromSchema && Object.keys(fromSchema.qs).length && { qs: fromSchema.qs }),
+			...(fromSchema && Object.keys(fromSchema.headers).length && { headers: fromSchema.headers }),
 			json: true,
 		});
 	} catch (error) {
@@ -98,8 +223,8 @@ export async function execute(
 	const results: INodeExecutionData[] = [];
 
 	for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
-		const route = this.getNodeParameter('route', itemIndex, undefined);
-		const representation = await readRepresentation.call(this, route, itemIndex, creds);
+		const { route, request } = itemRequest.call(this, itemIndex);
+		const representation = await readRepresentation.call(this, route, itemIndex, creds, request);
 		if (representation instanceof Error) {
 			if (!this.continueOnFail()) throw representation;
 			results.push({
