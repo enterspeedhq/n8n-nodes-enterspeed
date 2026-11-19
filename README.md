@@ -167,7 +167,7 @@ Both read the graph's **shapes**, the views its schema declares over the data, b
 - **Get Many** is the one to use for a list of keys. It takes one item holding the list in *Shape Keys* (default `{{ $json.keys }}`, e.g. built in a Code node: `return [{ json: { keys: [...] } }]`), sends the whole list in one request (several only past the 32 KiB request limit) and outputs one item per key, in list order: `{ key, status, data }` exactly as returned. A key with no shape comes out as `status: 404` with `data: null`, and the other keys still return. The request succeeds even when no key is found, so check each item's `status`. With no keys, nothing is sent; an item whose *Shape Keys* isn't a list fails.
 - **Get** is for a workflow that handles one key at a time, such as a lookup triggered by a webhook. It takes one *Shape Key* per item and outputs the shape exactly as returned. A key with no shape fails with *No shape for key …*.
 - **Who can see a shape:** a shape whose access policy needs a claim always comes back as `404`, the same as a shape that doesn't exist. The node sends no claims, and the Context Graph deliberately doesn't tell "missing" from "not allowed".
-- **Errors:** a key that names no shape, malformed or not, is a `404` like any missing shape (the local dev-server differs, see [Against the local dev-server](#against-the-local-dev-server)). A rejected key (401), an API version the Context Graph no longer serves (410) or an unreachable Delivery URL fails the run with a message saying which.
+- **Errors:** a key that names no shape, malformed or not, is a `404` like any missing shape, and so is a key whose shape the schema doesn't declare. A rejected key (401), an API version the Context Graph no longer serves (410) or an unreachable Delivery URL fails the run with a message saying which.
 - **Key From › Schema** (*Get* only) will let you pick the shape and fill in each ID segment instead of typing the key. The schema doesn't list entry shapes yet, so the list says *This schema lists no shapes*; use *Shape Key* until it does.
 
 ### Index › Query
@@ -239,7 +239,8 @@ Reads the **representation** served for a route: one resource the schema compose
 With **Schema**, *Context* lists each route placeholder first (`productId (path)`), then any other context the schema lists (`locale (query)`, `market (header: X-Market)`). Path values fill the route and are required; the rest go in the query string or a header, as the schema declares, and an empty optional value is left out. A missing required value fails the item before anything is sent.
 
 - **Output:** one route per item, one request per item. The representation comes out exactly as returned: each slot's value at the slot's name, plus `$metadata` with each slot's `$state`.
-- **Check `$state`, not the status.** A representation where only some slots resolved still succeeds: an unresolved slot is `null`, with `$state` `missing` (not there), `pending` (not resolved in time) or `deferred` (held back on purpose, e.g. a `cache: false` slot or the delivery policy). The node sends no claims, so a slot gated by a claim has no entry at all, and a route gated by one answers `404`.
+- **Check `$state`, not the status.** A representation where only some slots resolved still succeeds: an unresolved slot is `null`, with `$state` `missing` (not there), `pending` (not resolved in time) or `deferred` (held back on purpose, e.g. a slot that needs a claim). The node sends no claims, so a slot gated by a claim has no entry at all, and a route gated by one answers `404`.
+- **One read resolves everything it can.** The node sends no delivery policy header, so the Context Graph resolves the whole representation in the one read, query slots included, within a time limit and a limit on query passes. An answer cut short by either is partial: the slots it didn't finish are left open and `$metadata.$resume` carries a checkpoint.
 - **Errors:** a route with no representation fails with *No representation for route …*, or with the Context Graph's own message: a route that matches none, a `required` slot that didn't resolve, or no slot resolved at all. An invalid request value fails with the Context Graph's message too.
 
 ### Schema › Get
@@ -294,11 +295,10 @@ Where the dev-server differs from a deployed Context Graph:
 |---|---|---|
 | Index › Get | Not served (404) | Index › Query |
 | Query paging | No cursors (`next` is always `null`) | `page` |
-| Index › Query's Builder *Sort* list | Empty: the dev-server's schema doesn't list sortable fields yet, though it refuses a sort on a field not declared sortable | Write the sort in JSON mode |
 | Text filtering | Exact and in memory, not like Elasticsearch | Expect some queries to match differently in production |
 | API keys | Not checked | — |
 | Processing | A pushed record is processed at once, so a read straight after a push sees it | On a deployed graph, read again if it isn't there yet |
-| A malformed shape key | `400` with a message (with Get Many, a `400` item) | A deployed graph answers `404`, as for any missing shape |
+| Partial representations | Only for a slot the server's `budgetCut` option names. Tonevik's representations are never partial | Start a dev-server with `budgetCut` to see one |
 
 ---
 
@@ -307,14 +307,14 @@ Where the dev-server differs from a deployed Context Graph:
 The Context Graph serves these; the node doesn't use them yet.
 
 - **Upload a source's complete export.** The Context Graph takes a snapshot as an artifact: reserve it, upload the file, commit it, and the graph drains it into the source. Push and Push Many are for records as they change, and Push Many isn't tuned for bulk (no batch-size setting, one request at a time), so use them for a full export only until Upload arrives.
-- **Resuming a partly resolved representation.** A `207` carries `$metadata.$resume`, which a client sends back as `X-Resume` to get the slots still open. Until the node does that, it outputs the first answer only. A slot held back on purpose (`deferred`, e.g. a `cache: false` slot) stays `null`, and reading the route again doesn't fill it, because every fresh read holds it back again.
+- **Resuming a partly resolved representation.** A `207` carries `$metadata.$resume`, which a client sends back as `X-Resume` to get the slots still open. Until the node does that, it outputs the first answer only.
 - **Following `next` automatically** (Return All) on Index › Query. Use `page` or `cursor` yourself.
 - **Retrying a busy Delivery.** Under load, Delivery refuses a read with `503` and says how long to wait. The node doesn't retry it yet, so the item fails; run it again.
 
 ## Not included (deliberately)
 
 - **A bulk representation read.** Representations are read one route per request, the cacheable path the Context Graph serves.
-- **A delivery policy header** (`X-Delivery-Policy`). The policy it sets is still a proposal. Under the default policy a representation's query slots come back `deferred`, with no items; to get those items, write the query yourself in Index › Query.
+- **A delivery policy header** (`X-Delivery-Policy`). Without it the Context Graph resolves the whole representation in one read, which is what a workflow needs. Its one other policy, `progressive`, is for a website that shows the page first and fills in the rest: query slots come back `deferred` for the client to resume.
 - **Reshaping records.** The node sends records and outputs answers as they are; reshape in a Code or Edit Fields node.
 - **Protected shapes.** The node reads with an API key only and sends no context token, so a shape protected by an access policy always reads as `404`. Read protected content from an app that sends the customer's context token.
 

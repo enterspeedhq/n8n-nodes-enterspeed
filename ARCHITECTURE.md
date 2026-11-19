@@ -119,7 +119,7 @@ Every resource follows one rule: **output the service's answer unchanged**. The 
 | Shape › Get Many | `POST {deliveryUrl}/shapes/v1/{manifest}` | One item holding a list, split at 30 KiB | *Shapes batch envelope* |
 | Index › Query | `POST {deliveryUrl}/query/v1/{manifest}` | One query per item, all in one request | *Query envelope*; delivery/ADR-030 §3, ADR-037 |
 | Index › Get | `GET {deliveryUrl}/query/v1/{manifest}/{index}/{id}` | One document per item | delivery/ADR-030 §3, ADR-022 |
-| Representation › Get | `GET {deliveryUrl}/v1/{manifest}{route}` | One route per item | *Representation envelope*; delivery/ADR-030 §3 |
+| Representation › Get | `GET {deliveryUrl}/v1/{manifest}{route}` | One route per item | *Representation envelope*, *Representation slot*; delivery/ADR-030 §3, ADR-050 |
 | Schema › Get | `GET {deliveryUrl}/schema/{kind}/v1/{manifest}[/{prefix}]` | Once per run, first item | delivery/ADR-030 §3, ADR-036 |
 
 ### 3.2 Entity: Push and Push Many
@@ -140,7 +140,7 @@ Shapes are read by the canonical shape key, `{shapeName}:{segKey}:{value}:…` (
 - **Get** sends the key's colon-joined parts as percent-encoded path segments (delivery/ADR-030 §3). A segment value can't hold `:` or `/`, so the split is exact. The shape is output unchanged; a `404` fails the item.
 - **Get Many** sends the list as `{ keys }`, closing a request before 30 KiB (delivery caps the body at 32 KiB), and outputs each `{ key, status, data }` of the always-`207` answer unchanged, paired to the item the list came from (*Shapes batch envelope*).
 - **Visibility.** Delivery takes claims from a context token, not the API key, and the node sends none, so a shape gated by its access policy always reads as `404`. Delivery answers a denied shape and a missing one with the same bodiless `404` (sc-10848), so the node never says "denied". A key carries no claims by decision, not by omission: delivery/ADR-044 keeps everything about a caller in a verified claim, and Management stores no claims on keys. Keys carrying claims configured in Management were raised in the review of #26, but would need a new ADR superseding ADR-044. If one lands, this section, the README's *Who can see a shape* and the node's visibility behaviour change with it.
-- **Malformed keys.** No contract defines an error for a malformed key. Deployed delivery rejects only an empty key (`400`) and answers anything else that names no shape `404`; the dev-server answers `400 invalid_key` with a message. The node passes either through and doesn't validate the key itself.
+- **Malformed and unknown keys.** No contract defines an error for a malformed key. Delivery and the SDK dev-server reject only an empty key (`400 "Missing shape key"`) and answer any other key that names no shape with a bodiless `404`. A key whose shape the manifest doesn't declare is a `404` with an `application/problem+json` body titled *Unknown shape* on Get, and a `404` item on Get Many (*Shapes batch envelope*). The node doesn't validate the key itself. `deliveryError` reads only a body's `message`, so it reports an unknown shape with its own not-found message.
 - **No `503` retry yet.** delivery/ADR-025 answers a shed read `503` + `Retry-After`; retrying it once is sc-14796.
 - **Key From › Schema** builds the key from a shape and its ID segments chosen in the editor (section 4); it waits on the schema listing entry shapes.
 
@@ -157,6 +157,7 @@ Shapes are read by the canonical shape key, `{shapeName}:{segKey}:{value}:…` (
 - **Route From** › **Route** takes the path as text; › **Schema** fills a chosen route template from mapped context values (section 4.3).
 - The body is output unchanged: each slot at its name plus `$metadata` (*Representation envelope*).
 - `200`, `202` and `207` all succeed, because which slots resolved is in `$metadata.<slot>.$state`, not the status. A `404` (no matching route, an unresolved `required` slot, or no slot resolved) fails the item.
+- **No `X-Delivery-Policy`.** With no header, delivery gives one complete resolution, entry and query slots together, bounded by a 5-second budget and 3 query passes. A read cut short by either bound is a `207` with the open slots in `$metadata` (*Representation slot*, *Resolution policy*; delivery/ADR-050). That default is ADR-050's answer for a machine caller, so the node sends no header. The one opt-in, `progressive`, defers every query slot for a client that paints first, which a workflow doesn't do. Any other value is a `400` `invalid_policy`.
 - Resuming a partial answer is not implemented in the node yet (sc-14303). Delivery and the SDK dev-server serve it: a `207` carries `$metadata.$resume`, sent back as `X-Resume` (delivery/ADR-033, still marked Proposed; the *Representation envelope* vectors pin `$resume`).
 
 ### 3.6 Schema: Get
@@ -231,7 +232,7 @@ A saved workflow keeps sending what was saved. A renamed index or field fails at
 
 - **No entry shapes in the MSD.** The *Materialised schema document* contract (like ADR-028 §4) lists indexes and representations, not entry shapes or their ID segments, so `msdShapes()` returns `[]` and Shape's Schema mode shows *This schema lists no shapes*. It is the one place to change when the MSD lists them.
 - **The MSD's form is pinned by the *Materialised schema document* contract** (semantic-graph › contracts › spec, with vectors that delivery and the SDK dev-server both pass). `msd.ts` still ignores members it doesn't know.
-- **Sort fields follow `sortableFields`, which the dev-server doesn't list yet.** The contract lists each index's `sortableFields` ("the fields a query may sort on", sc-14481), and delivery refuses a sort on any other field (sc-14365). A member is present only when non-empty, so a missing `sortableFields` means none, and the sort list shows *This index lists no sortable fields* rather than offering fields delivery would refuse. The SDK dev-server doesn't list the member yet (sc-14753), so against it the list is empty and a sort is written in JSON. A sortable field no filter list classifies is offered and saved by its plain name.
+- **Sort fields follow `sortableFields`.** The contract lists each index's `sortableFields` ("the fields a query may sort on", sc-14481), and delivery refuses a sort on any other field (sc-14365). A member is present only when non-empty, so a missing `sortableFields` means none, and the sort list shows *This index lists no sortable fields* rather than offering fields delivery would refuse. The SDK dev-server lists the member too (sc-14753). A sortable field no filter list classifies is offered and saved by its plain name.
 - **Context values reach the route and shape slots, never a query slot.** The contract defines `context.required` as the route's placeholders and the keys that fill a shape slot's ID segments, `context.optional` as keys only an `enabled` gate reads, and says a query slot's `filters`, `search` or `args` contribute nothing. *Context* therefore shows where each value is sent; there is no per-slot mapping to show.
 - **`context.resolving` isn't used yet.** It says which routes can resolve; the route list could mark one that never does.
 
@@ -286,7 +287,7 @@ Writes only, `POST {ingestUrl}/entities` with the Ingest API Key. Ingest is the 
 
 ### 6.3 Context Graph Node → Delivery
 
-Every read and the schema, with the Delivery API Key, scoped to the credential's manifest version. In the editor the node also reads the MSD to fill lists (section 4). Against the SDK dev-server (the Tonevik demo), Ingest and Delivery share one host and some routes are missing or differ: the index point read, the MSD's form, cursor paging, a malformed shape key (`400`, not `404`). The dev-server also processes a pushed record at once, where a deployed graph processes it after accepting it (ingest/ADR-013: `accepted: true` is "landed and not yet judged"), so a read straight after a push can miss it there.
+Every read and the schema, with the Delivery API Key, scoped to the credential's manifest version. In the editor the node also reads the MSD to fill lists (section 4). Against the SDK dev-server (the Tonevik demo), Ingest and Delivery share one host and some routes are missing or differ: the index point read and cursor paging. The dev-server also processes a pushed record at once, where a deployed graph processes it after accepting it (ingest/ADR-013: `accepted: true` is "landed and not yet judged"), so a read straight after a push can miss it there.
 
 ### 6.4 n8n → the Package
 
