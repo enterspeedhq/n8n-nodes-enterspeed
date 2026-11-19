@@ -251,7 +251,7 @@ With **Schema**, *Context* lists each route placeholder first (`productId (path)
 | *Max Wait Between Rounds (Ms)* | Before a round the node waits for the largest `$timeoutMs` among the open slots, up to this (default 5000). A `deferred` slot carries no `$timeoutMs`, so it's resumed at once. |
 
 - **What resumes:** slots whose `$state` is `pending` or `deferred`. The node sends no context token, so a slot whose `$requires` names a claim is left as it is; if no other slot is open, no round is sent.
-- **What doesn't:** under the Context Graph's default delivery policy a query slot comes back `deferred` on every round, so resuming never fills it: the node spends *Max Rounds* on it and outputs it still `deferred`. Write that query yourself in Index › Query.
+- **What a round resolves:** a round also sends no policy header, so the Context Graph tries to resolve every open slot, query slots included. A slot it still can't finish stays open, and at *Max Rounds* the item is output as it stands.
 - **The merge:** a resume round answers only the slots that were open; each replaces its slot and its `$metadata` entry. `$metadata.$changedAt` is the newest across rounds.
 - **A refused checkpoint** (`401` *invalid_checkpoint*, `410` *checkpoint_expired*, or `409` for another manifest or route) is answered once by reading the route again without it; that fresh answer replaces the rounds so far. Refused a second time, the item fails. A `404` on a resume round fails the item, as on the first read.
 
