@@ -1,4 +1,5 @@
 import type { IExecuteFunctions, INodeExecutionData } from 'n8n-workflow';
+import * as artifact from './artifact';
 import * as entity from './entity';
 import * as shape from './shape';
 import * as index from './index/index';
@@ -16,6 +17,7 @@ interface OperationHandler {
 }
 
 const resources: Record<string, { operations: Record<string, OperationHandler> }> = {
+	artifact,
 	entity,
 	shape,
 	index,
