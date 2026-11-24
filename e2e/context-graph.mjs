@@ -287,7 +287,8 @@ async function runWorkflow(name) {
 	// A failed run exits non-zero and is reported in the execution file, checked below.
 	await new Promise((resolve, reject) => {
 		const child = spawn(process.execPath, [join(ROOT, 'scripts', 'execute-workflow.mjs')], {
-			env: { ...process.env, N8N_WORKFLOW_NAME: name, N8N_EXECUTION_OUT: out },
+			// One sign-in for every run: n8n refuses more than a few a minute.
+			env: { ...process.env, N8N_WORKFLOW_NAME: name, N8N_EXECUTION_OUT: out, N8N_AUTH_COOKIE_FILE: join(dataDir, 'n8n-cookie') },
 			stdio: 'inherit',
 		});
 		child.on('error', reject);
