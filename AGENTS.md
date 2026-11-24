@@ -89,8 +89,9 @@ pairing, expression evaluation) is proven in Docker n8n.
 
 **The Context Graph end to end** (`e2e/`, Node 26, CI's e2e job): `npm install` in `e2e/`, run
 `setup.mjs` with `N8N_WORKFLOW_DIRS=workflows/templates,e2e/workflows`, then
-`node e2e/context-graph.mjs`. It runs the round-trip template and the delivery checks against an
-empty dev-server and checks each node's output. Add a check there when a behaviour depends on n8n
+`node e2e/context-graph.mjs`. It runs the round-trip template, the delivery checks and the
+enrichment template (its trigger fed by the dev-server's signed webhook, its LLM step by a
+stand-in chat model) against an empty dev-server and checks each node's output. Add a check there when a behaviour depends on n8n
 itself (its request helper, errors, expressions).
 
 **The Context Graph locally** runs against the SDK dev-server (semantic-graph-sdk,
@@ -150,9 +151,10 @@ A new node or credential file also needs its compiled path in `package.json`'s `
   Author and export templates from the Docker setup.
 - IMPORTANT: **never commit a real credential ID.** Use the placeholders
   `__ENTERSPEED_CREDENTIAL_ID__` (Core) and `__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__` (Context
-  Graph); `setup.mjs` substitutes them in memory, never on disk. There is no placeholder for the
-  Context Graph Webhook API credential yet: each one holds a subscription's own secret, so no
-  template ships one.
+  Graph), `__ENTERSPEED_CONTEXT_GRAPH_WEBHOOK_CREDENTIAL_ID__` (the trigger's webhook credential) and
+  `__OPENAI_CREDENTIAL_ID__` (a chat model); `setup.mjs` substitutes them in memory, never on disk,
+  and creates the credentials they name with local defaults (a random signing secret, the e2e's
+  stand-in model).
 - **To add one:** build and test it in Docker n8n, export it, strip `id`, `versionId`, `shared`,
   `creatorId`, `projectId`, `workflowId` and any real credential ID, put in the placeholder, then
   commit it.

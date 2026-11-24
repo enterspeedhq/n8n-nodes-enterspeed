@@ -395,6 +395,16 @@ The run gets one item per changed entry:
 
 **Dropping redeliveries.** A delivery the sender retries comes again with the same `deliveryId`. To process each entry once, add a **Remove Duplicates** node after the trigger with *Remove Items Processed in Previous Executions* and *Value to Dedupe On* `{{ $json.deliveryId }}:{{ $json.key }}`. Use the pair, not `deliveryId` alone: every entry of a delivery shares its `deliveryId`. The node remembers 10,000 values by default and an envelope can hold up to 1,000 entries, so raise its *History Size* if a retry can come after many busy deliveries (the sender retries for up to a day).
 
+
+### Enriching changed records without a loop
+
+The [enrich changed products](workflows/templates/Context-Graph-Enrich-Changed-Products.json) template reacts to a product change, reads the product with Shape › Get, asks a chat model for a description and pushes it back into the graph with Entity › Push. A read or model call that fails for one entry goes to its own output with the entry's key and the error; the other entries are still written, and the run doesn't fail.
+
+**Why the enrichment goes to its own source.** Every write to the graph that changes something sends the webhook again, so a workflow that writes what it reacts to starts itself forever. The envelope can't stop that: it says which entries changed, never who changed them, so the workflow can't recognise its own writes from the event. What it can recognise is *what* changed. The template writes to a separate source (`enrichment`) whose model and shape (`ProductEnrichment`) nothing else reads, and filters the trigger's items to upserted `ProductCard` entries. Its own write changes only `ProductEnrichment` entries, so the run that write starts ends at the filter and writes nothing. One edit gives one enriched record and no further writes.
+
+The guard holds only while the shape the filter keeps doesn't read the enrichment source. If `ProductCard` (or whatever you filter on) ever includes the enrichment, its own write changes the entry it reacts to, and the loop is back. On a deployed graph a webhook subscription can also take a key prefix filter (e.g. `{manifestId}:shape:ProductCard:`), so the enrichment's deliveries aren't sent at all; the template's filter stays, as it also covers the dev-server, which has no subscription filter.
+
+**Running it.** The template needs three credentials: *Enterspeed Context Graph account*, *Enterspeed Context Graph webhook* (the subscription's signing secret) and *OpenAI account*. Against the dev-server or a deployed graph only these change. For a real model, put your API key in *OpenAI account* with Base URL `https://api.openai.com/v1` (any OpenAI-compatible endpoint works through its Base URL), or swap the *Chat model* node for another provider's. CI runs the template in Docker n8n against the dev-server with a stand-in model that answers chat completions with a fixed sentence (CONTRIBUTING.md).
 ---
 
 ## Against the local dev-server
@@ -402,7 +412,7 @@ The run gets one item per changed entry:
 The Tonevik demo runs against the Context Graph SDK's local dev-server.
 
 - **Credential:** set both URLs to the dev-server's address. From the Docker n8n in this repo that's `http://host.docker.internal:5200`, not `localhost`. The dev-server accepts any key, so put anything in both key fields; the credential test there checks only the URL and manifest version.
-- **`scripts/setup.mjs`** creates the credential from `CONTEXT_GRAPH_INGEST_URL`, `CONTEXT_GRAPH_DELIVERY_URL`, `CONTEXT_GRAPH_INGEST_API_KEY`, `CONTEXT_GRAPH_DELIVERY_API_KEY` and `CONTEXT_GRAPH_MANIFEST_VERSION`, with dev-server defaults.
+- **`scripts/setup.mjs`** creates the credential from `CONTEXT_GRAPH_INGEST_URL`, `CONTEXT_GRAPH_DELIVERY_URL`, `CONTEXT_GRAPH_INGEST_API_KEY`, `CONTEXT_GRAPH_DELIVERY_API_KEY` and `CONTEXT_GRAPH_MANIFEST_VERSION`, with dev-server defaults. It also creates the trigger's *Enterspeed Context Graph webhook* credential from `CONTEXT_GRAPH_WEBHOOK_SECRET` (a random secret when it is first created, kept on later runs; start the dev-server with the same one in `webhookSecret`) and an *OpenAI account* credential from `OPENAI_API_KEY` and `OPENAI_BASE_URL` (by default the e2e's stand-in model on `:5600`).
 
 Where the dev-server differs from a deployed Context Graph:
 
