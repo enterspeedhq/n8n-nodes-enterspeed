@@ -1,0 +1,103 @@
+{
+  "name": "Context Graph · E2E delivery reads",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "When clicking ‘Execute workflow’",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "representation",
+        "operation": "get",
+        "routeFrom": "route",
+        "route": "/products/p-1",
+        "includeResponseHeaders": true
+      },
+      "name": "Read a product",
+      "type": "CUSTOM.enterspeedContextGraph",
+      "typeVersion": 1,
+      "position": [
+        220,
+        0
+      ],
+      "credentials": {
+        "enterspeedContextGraphApi": {
+          "id": "__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__",
+          "name": "Enterspeed Context Graph account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "representation",
+        "operation": "get",
+        "routeFrom": "route",
+        "route": "/products/p-1",
+        "ifNoneMatch": "={{ $json.headers.ETag }}",
+        "includeResponseHeaders": true
+      },
+      "name": "Read it again with its ETag",
+      "type": "CUSTOM.enterspeedContextGraph",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ],
+      "credentials": {
+        "enterspeedContextGraphApi": {
+          "id": "__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__",
+          "name": "Enterspeed Context Graph account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## End-to-end check, not a template\nRun by `e2e/context-graph.mjs` after the round trip has loaded `p-1`. The first read is sometimes answered `503` by the e2e proxy, to prove the node's retry through n8n's real errors. The second read sends the first one's ETag and must get a `304`.",
+        "height": 200,
+        "width": 520,
+        "color": 7
+      },
+      "name": "About",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -20,
+        -240
+      ]
+    }
+  ],
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Read a product",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read a product": {
+      "main": [
+        [
+          {
+            "node": "Read it again with its ETag",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

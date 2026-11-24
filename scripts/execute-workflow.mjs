@@ -13,12 +13,17 @@
 //   N8N_URL            (default: http://localhost:5678)
 //   N8N_CONTAINER      (default: n8n-nodes-enterspeed-n8n-1)
 //   N8N_WORKFLOW_NAME  (default: Fetch, Transform and Re-ingest)
+//   N8N_EXECUTION_OUT  a file to write the finished execution to, as
+//                      { status, error, nodes: { [node]: run data } }, so a
+//                      caller can check what each node output
 
 import { execSync } from 'child_process';
+import { writeFileSync } from 'fs';
 
 const N8N_URL = process.env.N8N_URL ?? 'http://localhost:5678';
 const CONTAINER = process.env.N8N_CONTAINER ?? 'n8n-nodes-enterspeed-n8n-1';
 const WORKFLOW_NAME = process.env.N8N_WORKFLOW_NAME ?? 'Fetch, Transform and Re-ingest';
+const EXECUTION_OUT = process.env.N8N_EXECUTION_OUT;
 const EMAIL = 'runner@n8n.local';
 const PASSWORD = 'N8nRunner99!';
 
@@ -35,6 +40,20 @@ async function get(path, headers = {}) {
   const res = await fetch(`${N8N_URL}${path}`, { headers });
   return res;
 }
+
+// Find the workflow by name, before signing in: the CLI call takes seconds, and
+// n8n closes an idle keep-alive connection that the run request would reuse.
+// n8n's CLI can print startup notices (e.g. telemetry status) to stdout ahead
+// of the JSON payload, so parse from the first '[' rather than the raw output.
+const exported = execSync(`docker exec ${CONTAINER} n8n export:workflow --all 2>/dev/null`, { encoding: 'utf-8' });
+const workflows = JSON.parse(exported.slice(exported.indexOf('[')));
+const workflow = workflows.find((w) => w.name === WORKFLOW_NAME);
+if (!workflow) {
+  console.error(`Workflow "${WORKFLOW_NAME}" not found. Available: ${workflows.map((w) => w.name).join(', ')}`);
+  process.exit(1);
+}
+const workflowId = workflow.id;
+console.log(`Triggering workflow: ${workflow.name} (${workflowId})`);
 
 // Set up owner account on a fresh instance (no-op if already exists).
 console.log('Setting up n8n owner account...');
@@ -54,19 +73,6 @@ if (!cookie) {
 }
 const authHeader = { Cookie: cookie };
 
-// Find the workflow by name.
-// n8n's CLI can print startup notices (e.g. telemetry status) to stdout ahead
-// of the JSON payload, so parse from the first '[' rather than the raw output.
-const exported = execSync(`docker exec ${CONTAINER} n8n export:workflow --all 2>/dev/null`, { encoding: 'utf-8' });
-const workflows = JSON.parse(exported.slice(exported.indexOf('[')));
-const workflow = workflows.find((w) => w.name === WORKFLOW_NAME);
-if (!workflow) {
-  console.error(`Workflow "${WORKFLOW_NAME}" not found. Available: ${workflows.map((w) => w.name).join(', ')}`);
-  process.exit(1);
-}
-const workflowId = workflow.id;
-console.log(`Triggering workflow: ${workflow.name} (${workflowId})`);
-
 // Trigger execution.
 const runRes = await post(
   `/rest/workflows/${workflowId}/run`,
@@ -81,6 +87,46 @@ if (!execId) {
 }
 console.log(`Execution ID: ${execId}`);
 
+// n8n stores an execution's data in `flatted` form: a JSON array whose first
+// entry is the root, with every string and object replaced by the index (as a
+// string) of the entry holding it.
+function unflatten(text) {
+  const entries = JSON.parse(text);
+  const revived = new Map();
+  const revive = (value) => {
+    if (typeof value === 'string') {
+      const entry = entries[Number(value)];
+      if (typeof entry !== 'object' || entry === null) return entry;
+      if (revived.has(value)) return revived.get(value);
+      const copy = Array.isArray(entry) ? [] : {};
+      revived.set(value, copy);
+      for (const [key, inner] of Object.entries(entry)) copy[key] = revive(inner);
+      return copy;
+    }
+    if (typeof value === 'object' && value !== null) {
+      const copy = Array.isArray(value) ? [] : {};
+      for (const [key, inner] of Object.entries(value)) copy[key] = revive(inner);
+      return copy;
+    }
+    return value;
+  };
+  return revive('0');
+}
+
+function writeExecution(status, execution) {
+  if (!EXECUTION_OUT) return;
+  const data = typeof execution?.data === 'string' ? unflatten(execution.data) : execution?.data;
+  const error = data?.resultData?.error;
+  writeFileSync(
+    EXECUTION_OUT,
+    JSON.stringify({
+      status,
+      error: error ? [error.message, error.description].filter(Boolean).join(' ') : null,
+      nodes: data?.resultData?.runData ?? {},
+    }),
+  );
+}
+
 // Poll until done.
 for (let i = 0; i < 30; i++) {
   await new Promise((r) => setTimeout(r, 3000));
@@ -88,8 +134,12 @@ for (let i = 0; i < 30; i++) {
   const statusBody = await statusRes.json();
   const status = statusBody.data?.status ?? statusBody.status;
   console.log(`Status: ${status}`);
-  if (status === 'success') process.exit(0);
+  if (status === 'success') {
+    writeExecution(status, statusBody.data);
+    process.exit(0);
+  }
   if (status === 'error' || status === 'crashed') {
+    writeExecution(status, statusBody.data);
     console.error('Workflow execution failed');
     process.exit(1);
   }

@@ -3,6 +3,10 @@ services:
     image: n8nio/n8n:2.27.4
     ports:
       - "5678:5678"
+    # host.docker.internal is the host on Docker Desktop; on Linux (and CI) it
+    # has to be mapped, so the container can reach a dev-server on the host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     env_file:
       - path: .env
         required: false
