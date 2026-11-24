@@ -29,6 +29,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 - **Enterspeed Context Graph — Index — Query** sends a sort as `direction` `asc`/`desc`, the form the Context Graph's query contract names, in the Builder, the JSON example and the Tonevik demo. A Builder sort saved as Ascending/Descending is sent the same way. The Builder's *Sort* list offers only the fields the schema lists as sortable (`sortableFields`), and says so when the index lists none; a sort saved earlier is read as before.
 - The action node, trigger and credential are now labelled **Enterspeed Core**, **Enterspeed Core Webhook Trigger** and **Enterspeed Core API** (previously **Enterspeed**, **Enterspeed Webhook Trigger** and **Enterspeed API**), to tell them apart from the upcoming Enterspeed Context Graph node. Newly added nodes get the default name "Enterspeed Core". Only display names changed — the internal names `enterspeed`, `enterspeedTrigger` and `enterspeedApi` are unchanged, so existing workflows and credentials need no action and existing nodes keep their names.
+- **Releases**: npm publishes only from `publish.yml` on a version tag that matches `package.json` and is on `main`, with npm trusted publishing (GitHub OIDC) and provenance; the `NPM_TOKEN` fallback is gone. The tag run and a new CI job run n8n's community package scanner (`npm run scan`) on the files npm would publish. Entity › Push and Push Many name the `$id` and `$type` fields in a hint instead of the description, which the scanner rejected.
 
 ### Fixed
 

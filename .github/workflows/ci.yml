@@ -39,6 +39,34 @@ jobs:
       - name: Test
         run: npm test
 
+  # The checks n8n runs before it verifies a community node: its scanner lints
+  # the sources and the files `npm publish` would put in the package. The npm
+  # provenance and attested-source checks need a published version, so they
+  # run when n8n scans a release.
+  scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build
+        run: npm run build
+
+      - name: n8n community package scan
+        run: npm run scan
+
+      - name: Package contents
+        run: npm pack --dry-run
+
   e2e:
     runs-on: ubuntu-latest
     needs: build
