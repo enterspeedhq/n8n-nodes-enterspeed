@@ -13,9 +13,11 @@ export const properties: INodeProperties[] = [
 		default: '={{ $json.$id }}',
 		required: true,
 		displayOptions: { show },
-		// eslint-disable-next-line n8n-nodes-base/node-param-description-miscased-id -- $id is the Ingest NDJSON contract's field name, and field names are case-sensitive
+		// The field name is case-sensitive, so it goes in the hint: n8n's scanner
+		// ignores eslint-disable comments and wants an upper-case ID in a description.
 		description:
-			"The source system's own key for the record, sent as $id. Must be text. Defaults to the record's own $id.",
+			"The source system's own key for the record. Must be text. Defaults to the incoming record's own key.",
+		hint: "Sent as the record's $id field.",
 	},
 	{
 		displayName: 'Entity Type',
