@@ -511,7 +511,7 @@ export async function execute(
 
 		// Delivery refuses a request whose derived ids repeat, failing every query in it. Split, two
 		// queries sharing an id could land in different requests, so the node refuses the run the same way.
-		// A later round holds only queries the first answered, whose ids were distinct.
+		// A later round holds only queries the first answered; delivery refuses a first round whose ids repeat.
 		const duplicate = firstRound && split ? duplicateId(queries) : undefined;
 		if (duplicate) {
 			const nodeError = new NodeOperationError(this.getNode(), duplicate);
