@@ -13,8 +13,9 @@ import type {
  *
  * The URLs have no default: the Context Graph's hosts aren't Enterspeed
  * Core's, so a pre-filled Core host would send a Context Graph key to Core.
- * Every Delivery route is scoped to a manifest version, which is entered
- * here once rather than on each node.
+ * Every Delivery route is scoped to a manifest, which is entered here once
+ * rather than on each node: on a deployed Context Graph its ID (a content
+ * hash), on the SDK dev-server the version it hosts.
  */
 export class EnterspeedContextGraphApi implements ICredentialType {
 	name = 'enterspeedContextGraphApi';
@@ -68,7 +69,8 @@ export class EnterspeedContextGraphApi implements ICredentialType {
 			type: 'string',
 			required: true,
 			default: '1.0.0',
-			description: 'The manifest version every Delivery route is scoped to (the {manifest} segment)',
+			description:
+				"The {manifest} segment of every Delivery route. On a deployed Context Graph it is the manifest's ID, the 64-character hash enterspeed-graph publish prints, not its version label. On the SDK dev-server it is the version the server hosts (1.0.0 unless set).",
 		},
 	];
 
@@ -117,7 +119,8 @@ export class EnterspeedContextGraphApi implements ICredentialType {
 				type: 'responseCode',
 				properties: {
 					value: 404,
-					message: 'No manifest with this version at the Delivery URL. Check the Manifest Version and Delivery URL.',
+					message:
+						"No manifest with this version or ID at the Delivery URL. Check the Manifest Version (a deployed Context Graph takes the manifest's ID) and the Delivery URL.",
 				},
 			},
 		],

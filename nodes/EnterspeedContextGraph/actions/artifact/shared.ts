@@ -2,7 +2,7 @@ import type { IDataObject, IExecuteFunctions, INodeExecutionData, INodePropertie
 import { NodeApiError, NodeOperationError } from 'n8n-workflow';
 import { contextGraphApiRequest, httpFailure } from '../../transport';
 import type { ContextGraphCredentials } from '../types';
-import { INGEST_API_VERSION } from '../entity/shared';
+import { INGEST_API_VERSION, INGEST_FORBIDDEN_DESCRIPTION, INGEST_FORBIDDEN_MESSAGE } from '../entity/shared';
 
 /** `{ingestUrl}/v1/sources/{alias}/artifacts`, the artifact drop (*Ingest artifact* spec). */
 export const artifactsUrl = (creds: ContextGraphCredentials, source: string) =>
@@ -61,17 +61,19 @@ export function ingestError(
 	}
 	const { reason, title, detail } = problemDetails(data);
 	let message: string;
+	let description = detail;
 	if (title && reason) message = `${title} (${reason})`;
 	else if (title) message = title;
 	else if (status === 401) message = 'The API key was rejected by the Ingest URL.';
-	// A 403 without a problem body is a key without Write scope (ingest ADR 011).
-	else if (status === 403) message = "The API key isn't allowed to write to this Context Graph.";
-	else message = `The Ingest URL answered with status ${status}.`;
+	else if (status === 403) {
+		message = INGEST_FORBIDDEN_MESSAGE;
+		description ??= INGEST_FORBIDDEN_DESCRIPTION;
+	} else message = `The Ingest URL answered with status ${status}.`;
 
 	const httpCode = String(status);
 	// A plain object, not the request's own error: NodeApiError hands back an
 	// existing NodeApiError unchanged, which would drop this message.
-	return new NodeApiError(this.getNode(), { httpCode }, { message, description: detail, httpCode, itemIndex });
+	return new NodeApiError(this.getNode(), { httpCode }, { message, description, httpCode, itemIndex });
 }
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
