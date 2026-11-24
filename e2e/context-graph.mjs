@@ -32,7 +32,7 @@
 //
 // Optional env vars:
 //   N8N_CONTAINER, N8N_URL  passed on to execute-workflow.mjs
-//   E2E_HOST                where :5200 and :5500 listen (default 0.0.0.0, so
+//   E2E_HOST                where :5200-:5202 and :5500 listen (default 0.0.0.0, so
 //                           the n8n container reaches them). No authentication:
 //                           test data only, on a network you trust.
 
