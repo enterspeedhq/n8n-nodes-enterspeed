@@ -17,6 +17,7 @@ Or in n8n: **Settings → Community Nodes → Install** and enter `@enterspeed/n
 | **Enterspeed Core** | action | Ingest, Delivery, Query and Routes operations | Enterspeed Core API |
 | **Enterspeed Core Webhook Trigger** | trigger (push) | Starts a workflow when a view is deployed or removed | Enterspeed Core API |
 | **Enterspeed Context Graph** | action | Pushes records into a Context Graph; reads its shapes, index documents, representations and schema; queries its indexes | Enterspeed Context Graph API |
+| **Enterspeed Context Graph Trigger** | trigger (push) | Starts a workflow when Context Graph content changes, one item per changed entry | Enterspeed Context Graph Webhook API |
 
 The Core nodes and the Context Graph node talk to different products and never share a credential.
 
@@ -347,6 +348,55 @@ Several Context Graph fields can be filled from the manifest's schema instead of
 
 ---
 
+## Enterspeed Context Graph Trigger
+
+Starts a workflow when a model commit changes content in the Context Graph. **The webhook carries the event, never the data**: each run gets one item per changed entry, and a workflow that needs the content reads it with the Context Graph node (Shape › Get, Index › Get or Query, Representation › Get).
+
+### Credential
+
+Each webhook subscription has its own signing secret, so the trigger has its own **Enterspeed Context Graph Webhook API** credential, one per subscription:
+
+| Field | Used for |
+|---|---|
+| Signing Secret | The subscription's secret, `whsec_` followed by base64, exactly as it was issued (or as the dev-server printed it). Every delivery's signature is checked with it |
+| Receiver Header Name / Value | Optional. When the subscription carries a receiver credential (e.g. `X-Api-Key`), a delivery without that header and value is rejected |
+
+Nothing in it is sent anywhere. Testing the credential only checks that the secret is well-formed and that a header name has a value.
+
+### Setting it up
+
+1. Add the trigger and its credential.
+2. Copy the node's URL. The **test URL** (`/webhook-test/…`) listens only while you click *Listen for test event* in the editor. The **production URL** (`/webhook/…`) listens once the workflow is published (activated); that is the one the webhook subscription in Enterspeed takes.
+3. Register the URL as a webhook subscription and put its signing secret in the credential. Registration is manual; the node never registers itself.
+
+### What a run gets
+
+Every delivery is checked before anything else (Standard Webhooks, over the exact bytes received):
+
+- A delivery whose `webhook-signature` doesn't verify, whose `webhook-timestamp` is more than five minutes from now, or that lacks the receiver header is answered `401` and starts no run.
+- During a secret rotation the Context Graph signs with both the new and the old secret; the delivery passes when either verifies, so you can switch the credential to the new secret at any time in the overlap.
+- A verified delivery is answered `200` at once, before the workflow runs, so a slow workflow never makes the sender retry.
+
+The run gets one item per changed entry:
+
+```json
+{ "key": "1.0.0:shape:ProductCard:productId:p-1", "hash": "583f…", "action": "upserted", "type": "model-changed", "environmentId": "…", "deliveryId": "…" }
+```
+
+| Field | Meaning |
+|---|---|
+| `key` | The changed entry's tag key, `{manifestId}:{kind}:{key}` (`shape`, `index`, `index-set`, `index-bucket`) |
+| `hash` | An opaque token for the entry's content, compared only for equality; `null` for a removal or a set |
+| `action` | `upserted` (written or rewritten: read it again) or `deleted` (gone: drop it) |
+| `type` | The event's type: `model-changed` today. Types added later come through too |
+| `environmentId`, `deliveryId` | The environment, and the delivery's identity, the same on every retry of one delivery |
+
+*Event Types* starts the workflow only for the types chosen; any other type is acknowledged and starts nothing. Left empty, every type starts it, including ones added later. Properties the node doesn't know are passed through.
+
+**Dropping redeliveries.** A delivery the sender retries comes again with the same `deliveryId`. To process each entry once, add a **Remove Duplicates** node after the trigger with *Remove Items Processed in Previous Executions* and *Value to Dedupe On* `{{ $json.deliveryId }}:{{ $json.key }}`. Use the pair, not `deliveryId` alone: every entry of a delivery shares its `deliveryId`.
+
+---
+
 ## Against the local dev-server
 
 The Tonevik demo runs against the Context Graph SDK's local dev-server.
@@ -364,6 +414,7 @@ Where the dev-server differs from a deployed Context Graph:
 | API keys | Not checked | — |
 | Processing | A pushed record is processed at once, so a read straight after a push sees it | On a deployed graph, read again if it isn't there yet |
 | Partial representations | Only for a slot the server's `budgetCut` option names. Tonevik's representations are never partial | Start a dev-server with `budgetCut` to try Resume Partial Answers |
+| Context Graph Trigger | Started with `webhookUrl` (the trigger's URL; from the dev-server on the host to Docker n8n that's `http://localhost:5678/webhook/…`), `webhookSecret` and, optionally, `webhookHeader`, the dev-server posts the same signed envelope after each ingest that changes something. Without `webhookSecret` it signs with its data directory's dev key, printed at startup; put that in the credential. `environmentId` is all zeros, and the hashes are its own | A secret of your own in `webhookSecret`, never one the platform issued |
 | Entity › Push, Artifact | The node sends ingest's `/v1` routes. `@enterspeed/dev-server@0.2.0-alpha.3`, the current published `alpha`, still serves only the unversioned ones and answers `404`, so use the next alpha, or run the dev-server from the Context Graph SDK's `master` (the Tonevik demo does). `latest` (0.2.0-alpha.0) has no upload. A source takes uploads only when the server declares it a snapshot source (`createDevServer(schema, { sources: { pim: { mode: "snapshot" } } })`); Tonevik declares none. The file drains at commit, so `state` is `drained` at once, and Get, Get Many and Get Lines read it straight after. An unknown source lists as empty rather than `not-found`. No size limit, URL expiry or key check, and the upload URL names no headers. It signs the upload URL with the request's host, so `host.docker.internal` works from Docker n8n | — |
 
 ---

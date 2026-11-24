@@ -19,6 +19,8 @@ repository. This is the canonical agent context; Claude Code reads it via the `@
 | `credentials/EnterspeedApi.credentials.ts` | **Enterspeed Core API** — two keys, three overridable hosts; shared by both Core nodes. |
 | `nodes/EnterspeedContextGraph/EnterspeedContextGraph.node.ts` | **Enterspeed Context Graph** action node — Artifact › Upload / Get / Get Many / Get Lines, Entity › Push / Push Many, Shape › Get / Get Many, Index › Get / Query, Representation › Get, Schema › Get. Several read fields are filled from the manifest's schema while editing (`actions/schema/msd.ts`). Unreleased (epic sc-13858). |
 | `credentials/EnterspeedContextGraphApi.credentials.ts` | **Enterspeed Context Graph API** — ingest URL + Ingest API Key, delivery URL + Delivery API Key, manifest version. Never shared with Core. |
+| `nodes/EnterspeedContextGraph/EnterspeedContextGraphTrigger.node.ts` | **Enterspeed Context Graph Trigger** — starts a workflow on the Context Graph's signed outbound envelope, one item per changed entry. Unreleased (epic sc-13858). |
+| `credentials/EnterspeedContextGraphWebhookApi.credentials.ts` | **Enterspeed Context Graph Webhook API** — the trigger's signing secret and optional receiver header, one per webhook subscription. |
 | `workflows/templates/` | Example workflows, including the Tonevik demo (`Context-Graph-Tonevik-Demo.json`) |
 | `docs/context-graph-demo/GUIDE.md` | Internal notes on how the Tonevik demo is built; what a user needs to run it is in the template's sticky notes |
 | `scripts/` | `setup.mjs` (credentials + template import into Docker n8n), `execute-workflow.mjs` (run one by name) |
