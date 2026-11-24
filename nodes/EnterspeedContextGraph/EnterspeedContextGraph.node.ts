@@ -32,7 +32,9 @@ const resourceSelector: INodeProperties = {
  *
  * Resources:
  *  - Artifact (Ingest): upload a snapshot source's complete export file, as
- *                       it is, one file per item (reserve, upload, commit)
+ *                       it is, one file per item (reserve, upload, commit); read an
+ *                       artifact, list a source's artifacts, or output an
+ *                       artifact's refused lines
  *  - Entity (Ingest)  : push records as source entities (save or delete), one
  *                       per item (Push) or a list in one item (Push Many)
  *  - Shape (Delivery) : read shapes by key, one per item (Get) or a list

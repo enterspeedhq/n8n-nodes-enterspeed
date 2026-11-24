@@ -1,6 +1,6 @@
-import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
+import type { IDataObject, IExecuteFunctions, INodeExecutionData, INodeProperties } from 'n8n-workflow';
 import { NodeApiError, NodeOperationError } from 'n8n-workflow';
-import { httpFailure } from '../../transport';
+import { contextGraphApiRequest, httpFailure } from '../../transport';
 import type { ContextGraphCredentials } from '../types';
 import { INGEST_API_VERSION } from '../entity/shared';
 
@@ -72,4 +72,125 @@ export function ingestError(
 	// A plain object, not the request's own error: NodeApiError hands back an
 	// existing NodeApiError unchanged, which would drop this message.
 	return new NodeApiError(this.getNode(), { httpCode }, { message, description: detail, httpCode, itemIndex });
+}
+
+const blank = (value: unknown) => value === undefined || value === null || (typeof value === 'string' && !value.trim());
+
+/**
+ * The item's Source (and Artifact ID, when the operation names one) as text,
+ * or the error that fails the item before anything is sent.
+ */
+export function readTarget(
+	this: IExecuteFunctions,
+	itemIndex: number,
+	withId: boolean,
+): { source: string; id: string } | NodeOperationError {
+	const fail = (problem: string) =>
+		new NodeOperationError(this.getNode(), `Item ${itemIndex} ${problem}.`, { itemIndex });
+	const source = this.getNodeParameter('sourceAlias', itemIndex, undefined);
+	if (blank(source)) return fail('has no Source');
+	if (typeof source !== 'string') return fail('has a Source that is not text');
+	if (!withId) return { source, id: '' };
+	const id = this.getNodeParameter('artifactId', itemIndex, undefined);
+	if (blank(id)) return fail('has no Artifact ID');
+	if (typeof id !== 'string') return fail('has an Artifact ID that is not text');
+	return { source, id: id.trim() };
+}
+
+/** `GET` on an artifact route with the Ingest API Key; a refusal becomes the node error that names it. */
+export async function ingestGet(
+	this: IExecuteFunctions,
+	url: string,
+	qs: IDataObject,
+	creds: ContextGraphCredentials,
+	itemIndex: number,
+): Promise<IDataObject> {
+	let response: unknown;
+	try {
+		response = await contextGraphApiRequest.call(this, { method: 'GET', url, qs, json: true });
+	} catch (error) {
+		throw ingestError.call(this, error, creds, itemIndex);
+	}
+	const body = asObject(response);
+	if (!body) {
+		throw new NodeOperationError(this.getNode(), "The Ingest URL didn't answer with an artifact or a listing.", {
+			itemIndex,
+		});
+	}
+	return body;
+}
+
+/**
+ * Runs a read once per input item and outputs what it returns, each paired to
+ * its item. With Continue On Fail a failed item comes out as
+ * `{ source, id?, error, description? }` and the next one runs.
+ */
+export async function readEachItem(
+	this: IExecuteFunctions,
+	withId: boolean,
+	read: (itemIndex: number, target: { source: string; id: string }) => Promise<IDataObject[]>,
+): Promise<INodeExecutionData[]> {
+	const items = this.getInputData();
+	const results: INodeExecutionData[] = [];
+	for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+		try {
+			const target = readTarget.call(this, itemIndex, withId);
+			if (target instanceof NodeOperationError) throw target;
+			const answered = await read(itemIndex, target);
+			results.push(...answered.map((json) => ({ json, pairedItem: { item: itemIndex } })));
+		} catch (error) {
+			const nodeError =
+				error instanceof NodeApiError || error instanceof NodeOperationError
+					? error
+					: new NodeOperationError(this.getNode(), error as Error, { itemIndex });
+			if (!this.continueOnFail()) throw nodeError;
+			const { message, description } = nodeError;
+			results.push({
+				json: {
+					source: this.getNodeParameter('sourceAlias', itemIndex, undefined) as IDataObject[string],
+					...(withId && { id: this.getNodeParameter('artifactId', itemIndex, undefined) as IDataObject[string] }),
+					error: message,
+					...(description && { description }),
+				},
+				pairedItem: { item: itemIndex },
+			});
+		}
+	}
+	return results;
+}
+
+/** Return All and Limit, shown for the given operation. */
+export function pagingProperties(operation: string, limit: { maxValue?: number }): INodeProperties[] {
+	const show = { resource: ['artifact'], operation: [operation] };
+	return [
+		{
+			displayName: 'Return All',
+			name: 'returnAll',
+			type: 'boolean',
+			default: false,
+			description: 'Whether to return all results or only up to a given limit',
+			displayOptions: { show },
+		},
+		{
+			displayName: 'Limit',
+			name: 'limit',
+			type: 'number',
+			typeOptions: { minValue: 1, ...limit },
+			default: 50,
+			description: 'Max number of results to return',
+			displayOptions: { show: { ...show, returnAll: [false] } },
+		},
+	];
+}
+
+/** The Limit parameter as a whole number of 1 or more, or the error that fails the item. */
+export function readLimit(this: IExecuteFunctions, itemIndex: number, max?: number): number {
+	const limit = Number(this.getNodeParameter('limit', itemIndex, 50));
+	if (!Number.isSafeInteger(limit) || limit < 1 || (max !== undefined && limit > max)) {
+		const range = max === undefined ? 'of 1 or more' : `from 1 to ${max}`;
+		throw new NodeOperationError(this.getNode(), `Item ${itemIndex} has a Limit that is not a whole number ${range}.`, {
+			itemIndex,
+		});
+	}
+	return limit;
 }

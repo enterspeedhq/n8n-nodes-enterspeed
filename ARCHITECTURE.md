@@ -114,6 +114,9 @@ Every resource follows one rule: **output the service's answer unchanged**. The 
 | Resource › Operation | Request | Items → requests | Contract / ADR |
 |---|---|---|---|
 | Artifact › Upload | `POST {ingestUrl}/v1/sources/{alias}/artifacts`, the bytes to `upload.url` without the credential, then `POST …/artifacts/{id}/commit` | One export file per item | *Ingest artifact*, *Ingest artifact format*; ingest/ADR-017, 018, 019; cross/ADR-022 |
+| Artifact › Get | `GET {ingestUrl}/v1/sources/{alias}/artifacts/{id}` | One artifact per item | *Ingest artifact* (status); ingest/ADR-017 D6 |
+| Artifact › Get Many | `GET {ingestUrl}/v1/sources/{alias}/artifacts?limit=&state=&cursor=` | One listing per item, Return All follows `nextCursor` | *Ingest artifact* (list) |
+| Artifact › Get Lines | `GET {ingestUrl}/v1/sources/{alias}/artifacts/{id}?after=` | One artifact's lines per item, paged by `nextAfter` | *Ingest artifact* (the artifact) |
 | Entity › Push | `POST {ingestUrl}/v1/entities` | One record per item, one request per item | *Ingest NDJSON*, *Ingest bulk result*; ingest/ADR-005, 013, 020 |
 | Entity › Push Many | `POST {ingestUrl}/v1/entities` | One item holding a list, split only at the body limit | as Push; cross/ADR-022 |
 | Shape › Get | `GET {deliveryUrl}/shapes/v1/{manifest}/{key…}` | One key per item | *Shape key*; delivery/ADR-030 §3 |
@@ -175,7 +178,7 @@ Reads the manifest's schema, `kind` being `msd`, `openapi` or `jsonschema`, opti
 
 | Field | Used for |
 |---|---|
-| `ingestUrl`, `ingestApiKey` | Writes: `POST /v1/entities`, and the artifact routes (reserve, commit) |
+| `ingestUrl`, `ingestApiKey` | Writes: `POST /v1/entities`, and the artifact routes (reserve, commit, status, list) |
 | `deliveryUrl`, `deliveryApiKey` | Every read, the schema and the credential test |
 | `manifestVersion` | The `{manifest}` segment of every Delivery route. For an SDK-published schema, the manifest id, a content hash (sdk/ADR-016) |
 
@@ -200,7 +203,14 @@ A snapshot source's complete export goes in as one artifact (cross/ADR-022 D1, i
 - **Retries.** A reservation with the same `asOf` and `contentHash` is a retry (ingest/ADR-017 D3). For one already committed the answer has `upload: null`, and the node outputs it without uploading or committing; one not committed comes with a fresh URL and is uploaded and committed again. So n8n's *Retry On Fail* is safe.
 - **Output.** The artifact as the commit answered, unchanged. The node doesn't wait for the drain: deployed ingest drains later against a 4-hour target (ingest/ADR-017 D7), so a workflow reads the status later; the dev-server drains at commit.
 - **Errors.** Refusals are problem details whose `type` is `urn:enterspeed:problem:artifact:{reason}`; `ingestError` (`actions/artifact/shared.ts`) words them as the platform's `title` plus the reason, with `detail` as the description. The artifact routes don't count against the write throttle (*Ingest artifact* spec; ingest/ADR-020 D6), so there is no `429` retry. With *Continue On Fail* an item comes out as `{ source, asOf, error, description? }`.
-- **Not built:** the status read, listing and refused lines (sc-14787); releasing or discarding a held deletion set and the mirror status.
+- **Not built:** releasing or discarding a held deletion set and the mirror status. They change state and need their own credential rules (`403` `policy-forbids`, `409` `deletions-not-held`).
+
+**Reading an upload back** (Get, Get Many, Get Lines; *Ingest artifact* spec, status and list). The node doesn't wait for a drain; a workflow waits with n8n's Wait node. Each input item is one read, and every output item is paired to it (`readEachItem` in `actions/artifact/shared.ts`).
+
+- **Get** outputs the status route's answer unchanged, one item.
+- **Get Many** outputs each `artifacts[]` entry unchanged. *State* is sent as `state` on every page; *Return All* sends `limit=200` (the route's maximum) and follows `nextCursor` until `null`; otherwise one page of *Limit* (1–200, checked before sending).
+- **Get Lines** pages the status route with `?after={nextAfter}` and outputs each `lines[]` entry unchanged, stopping at `nextAfter: null` (*Return All*) or once *Limit* lines are out, reading no further page than it needs. The page size (1,000) is the platform's. `lines` absent or `null` (not committed yet) outputs nothing.
+- **Errors.** As Upload: `ingestError` words a refusal by its problem type (`not-found`, `invalid-listing`), and a bare `401`/`403` by status. With *Continue On Fail* an item comes out as `{ source, id?, error, description? }` (`id` for Get and Get Lines).
 
 ---
 
