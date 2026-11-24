@@ -25,6 +25,21 @@
     },
     {
       "parameters": {
+        "operation": "removeItemsSeenInPreviousExecutions",
+        "dedupeValue": "={{ $json.deliveryId }}:{{ $json.key }}",
+        "options": {}
+      },
+      "name": "Drop redeliveries",
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "id": "48dada5d-7291-5bdd-bd60-7e77e0d5cce3"
+    },
+    {
+      "parameters": {
         "conditions": {
           "options": {
             "caseSensitive": true,
@@ -60,7 +75,7 @@
       "type": "n8n-nodes-base.filter",
       "typeVersion": 2.2,
       "position": [
-        220,
+        440,
         0
       ],
       "id": "bb9a9cc2-f44e-599a-b9d8-5607eb33482f"
@@ -73,7 +88,7 @@
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
-        440,
+        660,
         0
       ],
       "id": "893f71b4-37bd-51da-ae83-63c5b7228d52"
@@ -89,7 +104,7 @@
       "type": "CUSTOM.enterspeedContextGraph",
       "typeVersion": 1,
       "position": [
-        660,
+        880,
         0
       ],
       "id": "a055dba4-36a9-5757-a601-050b80c63ec6",
@@ -99,7 +114,41 @@
           "name": "Enterspeed Context Graph account"
         }
       },
-      "onError": "continueErrorOutput"
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7d3e5f1a-2b4c-4d6e-8f0a-1b2c3d4e5f01",
+              "leftValue": "={{ !$json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Read?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        0
+      ],
+      "id": "a5075dca-f1dd-59b6-bd5f-885be7a3f52d"
     },
     {
       "parameters": {
@@ -111,8 +160,8 @@
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.9,
       "position": [
-        880,
-        0
+        1320,
+        -100
       ],
       "id": "02871f8a-69e9-5e4d-b7b2-666fd8068040",
       "onError": "continueErrorOutput"
@@ -131,8 +180,8 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
       "typeVersion": 1.3,
       "position": [
-        880,
-        220
+        1320,
+        120
       ],
       "id": "736300b9-267b-5603-b6db-ef3ce8cfa1a2",
       "credentials": {
@@ -190,8 +239,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1120,
-        -100
+        1540,
+        -200
       ],
       "id": "8f762263-3e24-5321-bf3a-d67ad239c6b1"
     },
@@ -204,8 +253,8 @@
       "type": "CUSTOM.enterspeedContextGraph",
       "typeVersion": 1,
       "position": [
-        1340,
-        -100
+        1760,
+        -200
       ],
       "id": "94f099ed-0593-54c0-abac-d8e546003e36",
       "credentials": {
@@ -213,7 +262,42 @@
           "id": "__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__",
           "name": "Enterspeed Context Graph account"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7d3e5f1a-2b4c-4d6e-8f0a-1b2c3d4e5f02",
+              "leftValue": "={{ $json.accepted === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Written?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1980,
+        -200
+      ],
+      "id": "cccb081b-9384-5dd1-9ef4-d41635047147"
     },
     {
       "parameters": {
@@ -239,14 +323,14 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1120,
+        1980,
         160
       ],
       "id": "f0b787c2-035e-5fe9-b8fc-08c54492c902"
     },
     {
       "parameters": {
-        "content": "## Enrich changed products into their own source\nA product changes in the graph, the workflow reads it, a language model writes a description, and the description goes back into the graph as a record in a **separate source**, `enrichment`.\n\n- **When the graph changes** gets one item per changed entry: its tag `key`, `hash` and `action`. The webhook carries the event, never the data.\n- **Only changed products** keeps upserted `ProductCard` entries (see the loop guard below).\n- **One product at a time** takes them one by one, so each description stays matched to its product.\n- **Read the changed product** reads that shape: the tag key without its `{manifest}:shape:` prefix is the shape key.\n- **Enrich** asks the chat model for one sentence.\n- **Write to the enrichment source** pushes a `productEnrichment` record, keyed by the product's id, to the `enrichment` source. The schema reads it as the `ProductEnrichment` shape.\n\n**One entry failing doesn't stop the others.** A read or a model call that fails goes to *Entries that weren't enriched* with its tag key and the error; every other entry is still written. A record the graph refuses comes out of the push with `accepted: false` and the reason.",
+        "content": "## Enrich changed products into their own source\nA product changes in the graph, the workflow reads it, a language model writes a description, and the description goes back into the graph as a record in a **separate source**, `enrichment`.\n\n- **When the graph changes** gets one item per changed entry: its tag `key`, `hash` and `action`. The webhook carries the event, never the data.\n- **Drop redeliveries** skips an entry of a delivery the sender retried (same `deliveryId` and `key`), so a retry doesn't enrich twice.\n- **Only changed products** keeps upserted `ProductCard` entries (see the loop guard below).\n- **One product at a time** takes them one by one, so each description stays matched to its product.\n- **Read the changed product** reads that shape: the tag key without its `{manifest}:shape:` prefix is the shape key.\n- **Enrich** asks the chat model for one sentence.\n- **Write to the enrichment source** pushes a `productEnrichment` record, keyed by the product's id, to the `enrichment` source. The schema reads it as the `ProductEnrichment` shape.\n\n**One entry failing doesn't stop the others.** A read, a model call or a write that fails, or a record the graph refuses, goes to *Entries that weren't enriched* with its tag key and the error; every other entry is still written and the run succeeds.",
         "height": 560,
         "width": 720
       },
@@ -261,23 +345,23 @@
     },
     {
       "parameters": {
-        "content": "## Why the enrichment has its own source (the loop guard)\nThe workflow writes to the graph, and every write to the graph sends this webhook again. Without a guard, each enrichment would start another run, forever.\n\nThe envelope says **which entries** changed, never **who** changed them, so the workflow can't recognise its own writes from the event. It can recognise **what** changed: the enrichment is a separate source with its own model and shape (`ProductEnrichment`), and nothing in `ProductModel` reads it. A write to `enrichment` changes only `ProductEnrichment` entries, and the filter keeps only `ProductCard` entries, so that run ends at the filter and writes nothing.\n\nKeep it that way: if `ProductCard` (or anything the filter lets through) ever reads the enrichment source, the guard stops working. On a deployed graph you can also give the webhook subscription a key prefix filter (`{manifest}:shape:ProductCard:`) so those deliveries aren't sent at all.",
-        "height": 420,
-        "width": 680,
+        "content": "## Why the enrichment has its own source (the loop guard)\nThe workflow writes to the graph, and every write to the graph sends this webhook again. Without a guard, each enrichment would start another run, forever.\n\nThe envelope says **which entries** changed, never **who** changed them, so the workflow can't recognise its own writes from the event. It can recognise **what** changed: the enrichment is a separate source with its own model and shape (`ProductEnrichment`), and nothing in `ProductModel` reads it. A write to `enrichment` changes only `ProductEnrichment` entries, and the filter keeps only `ProductCard` entries, so that run ends at the filter and writes nothing.\n\nKeep it that way: if `ProductCard` (or anything the filter lets through) ever reads the enrichment source, the guard stops working. On a deployed graph you can also give the webhook subscription a filter, `{\"prefixes\": [\"shape:ProductCard\"]}` (prefixes leave out the manifest id), so those deliveries aren't sent at all.",
+        "height": 440,
+        "width": 760,
         "color": 3
       },
       "name": "Loop guard",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        720,
+        740,
         -640
       ],
       "id": "d8fe744e-229e-5df2-9bb5-0cc388ed0597"
     },
     {
       "parameters": {
-        "content": "## Before you run it\n- **A dev-server with the `catalogue` and `enrichment` sources**: `npm install` then `npm run serve` in this repo's `e2e` folder (Node 26). CI runs this workflow against it, with a stand-in chat model, on every pull request.\n- **Enterspeed Context Graph account** points at the graph, **Enterspeed Context Graph webhook** holds the webhook subscription's signing secret. Against the dev-server, start it with `webhookUrl` (this trigger's production URL) and `webhookSecret`; against a deployed graph, register the URL as a webhook subscription and use its secret. Nothing else in the workflow changes.\n- **OpenAI account**: your API key, Base URL `https://api.openai.com/v1`. Any OpenAI-compatible endpoint works through its Base URL; for another provider, swap *Chat model* for its chat model node.\n- **Publish (activate) the workflow**: the trigger only listens on its production URL once it is published.",
+        "content": "## Before you run it\n- **A dev-server with the `catalogue` and `enrichment` sources**: `npm install` then `npm run serve` in this repo's `e2e` folder (Node 26). CI runs this workflow against it, with a stand-in chat model, on every pull request.\n- **Enterspeed Context Graph account** points at the graph, **Enterspeed Context Graph webhook** holds the webhook subscription's signing secret. Against the dev-server, start it with `webhookUrl` (this trigger's production URL) and `webhookSecret` (`npm run serve` sends its webhook on to this trigger's production URL, signed with the secret `scripts/setup.mjs` stored in n8n); against a deployed graph, register the URL as a webhook subscription and use its secret. Nothing else in the workflow changes.\n- **OpenAI account**: your API key, Base URL `https://api.openai.com/v1`. Any OpenAI-compatible endpoint works through its Base URL; for another provider, swap *Chat model* for its chat model node.\n- **Publish (activate) the workflow**: the trigger only listens on its production URL once it is published.",
         "height": 300,
         "width": 720,
         "color": 7
@@ -294,6 +378,17 @@
   ],
   "connections": {
     "When the graph changes": {
+      "main": [
+        [
+          {
+            "node": "Drop redeliveries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Drop redeliveries": {
       "main": [
         [
           {
@@ -327,29 +422,18 @@
         ]
       ]
     },
-    "Write to the enrichment source": {
-      "main": [
-        [
-          {
-            "node": "One product at a time",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Entries that weren't enriched": {
-      "main": [
-        [
-          {
-            "node": "One product at a time",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Read the changed product": {
+      "main": [
+        [
+          {
+            "node": "Read?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read?": {
       "main": [
         [
           {
@@ -401,6 +485,46 @@
         [
           {
             "node": "Write to the enrichment source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write to the enrichment source": {
+      "main": [
+        [
+          {
+            "node": "Written?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Written?": {
+      "main": [
+        [
+          {
+            "node": "One product at a time",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Entries that weren't enriched",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Entries that weren't enriched": {
+      "main": [
+        [
+          {
+            "node": "One product at a time",
             "type": "main",
             "index": 0
           }

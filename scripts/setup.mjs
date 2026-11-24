@@ -24,7 +24,8 @@
 //                                   for the local dev-server; kept on re-runs)
 //   OPENAI_API_KEY                  (default: stub, which the e2e stand-in accepts)
 //   OPENAI_BASE_URL                 (default: http://host.docker.internal:5600/v1,
-//                                   the e2e stand-in chat model)
+//                                   the e2e stand-in chat model; both kept on
+//                                   re-runs unless one of them is set)
 //   N8N_WORKFLOW_DIRS               (default: workflows/templates) comma-separated
 //                                   folders to import, relative to the repo root;
 //                                   the e2e job adds e2e/workflows
@@ -147,19 +148,23 @@ if (process.env.CONTEXT_GRAPH_WEBHOOK_SECRET || !webhookCred) {
 }
 
 // The chat model's credential. The default is the e2e's stand-in model, which
-// answers without calling a real one; set both vars for a real model.
+// answers without calling a real one; set both vars for a real model. Like the
+// webhook credential, an existing one is left as it is unless the vars are set,
+// so a key put in by hand survives a re-run.
 const openAiCred = existing.find((c) => c.name === 'OpenAI account' && c.type === 'openAiApi');
 const openAiCredentialId = openAiCred?.id ?? crypto.randomUUID();
-console.log(openAiCred ? `Updating OpenAI credential (ID: ${openAiCredentialId})...` : 'Creating OpenAI credential...');
-credentials.push({
-  id: openAiCredentialId,
-  name: 'OpenAI account',
-  type: 'openAiApi',
-  data: {
-    apiKey: process.env.OPENAI_API_KEY || 'stub',
-    url: process.env.OPENAI_BASE_URL || 'http://host.docker.internal:5600/v1',
-  },
-});
+if (process.env.OPENAI_API_KEY || process.env.OPENAI_BASE_URL || !openAiCred) {
+  console.log(openAiCred ? `Updating OpenAI credential (ID: ${openAiCredentialId})...` : 'Creating OpenAI credential...');
+  credentials.push({
+    id: openAiCredentialId,
+    name: 'OpenAI account',
+    type: 'openAiApi',
+    data: {
+      apiKey: process.env.OPENAI_API_KEY || 'stub',
+      url: process.env.OPENAI_BASE_URL || 'http://host.docker.internal:5600/v1',
+    },
+  });
+}
 
 const importResult = execSync(
   `docker exec -i ${CONTAINER} n8n import:credentials --input=/dev/stdin`,

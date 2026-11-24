@@ -378,11 +378,13 @@ async function shape(key) {
 	return res.status === 200 ? res.json() : null;
 }
 
-/** The workflow's finished executions, oldest first, each as summarise() gives it. */
-async function executions(auth, workflowId) {
+/** The workflow's finished executions after execution `after`, oldest first, each as summarise() gives it. */
+async function executions(auth, workflowId, after = 0) {
 	const filter = encodeURIComponent(JSON.stringify({ workflowId }));
 	const list = await (await fetch(`${N8N_URL}/rest/executions?filter=${filter}&limit=50`, { headers: auth })).json();
-	const finished = (list.data?.results ?? []).filter((e) => !['new', 'running', 'waiting'].includes(e.status));
+	const finished = (list.data?.results ?? []).filter(
+		(e) => Number(e.id) > after && !['new', 'running', 'waiting'].includes(e.status),
+	);
 	const runs = [];
 	for (const { id, status } of finished.sort((a, b) => Number(a.id) - Number(b.id))) {
 		const body = await (await fetch(`${N8N_URL}/rest/executions/${id}`, { headers: auth })).json();
@@ -391,27 +393,35 @@ async function executions(auth, workflowId) {
 	return runs;
 }
 
+/** The highest execution id n8n has, so a case counts only the runs after it. */
+async function lastExecutionId(auth) {
+	const list = await (await fetch(`${N8N_URL}/rest/executions?limit=1`, { headers: auth })).json();
+	return Math.max(0, ...(list.data?.results ?? []).map((e) => Number(e.id)));
+}
+
 /**
  * Waits until the dev-server has sent `count` deliveries and n8n has finished
- * `count` runs after the first `before`, then a few seconds more, so a run a
- * later delivery would start has time to show up. Returns the runs after `before`.
+ * `count` runs after execution `after`, then a few seconds more, so a run a
+ * later delivery would start has time to show up. Returns the runs after `after`.
  */
-async function settle(auth, workflowId, before, count) {
+async function settle(auth, workflowId, after, count) {
 	const until = Date.now() + 60_000;
 	while (Date.now() < until) {
-		const runs = await executions(auth, workflowId);
-		if (deliveries.length >= count && runs.length >= before + count) break;
+		if (deliveries.length >= count && (await executions(auth, workflowId, after)).length >= count) break;
 		await sleep(1000);
 	}
 	await sleep(5000);
-	return (await executions(auth, workflowId)).slice(before);
+	return executions(auth, workflowId, after);
 }
 
 async function runEnrichmentCases() {
 	if (!secret) throw new Error('No webhook credential in n8n, so the enrichment template cannot be checked');
 	const auth = await signIn(N8N_URL);
 	const workflows = (await (await fetch(`${N8N_URL}/rest/workflows`, { headers: auth })).json()).data ?? [];
-	const workflow = workflows.find((w) => w.name === ENRICH);
+	// The copy setup.mjs imported last, if it ran more than once on this n8n.
+	const [workflow] = workflows
+		.filter((w) => w.name === ENRICH)
+		.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 	if (!workflow) throw new Error(`"${ENRICH}" is not imported`);
 	const published = await fetch(`${N8N_URL}/rest/workflows/${workflow.id}/activate`, {
 		method: 'POST',
@@ -419,16 +429,26 @@ async function runEnrichmentCases() {
 		body: JSON.stringify({ versionId: workflow.versionId }),
 	});
 	if (!published.ok) throw new Error(`Publishing "${ENRICH}" failed (${published.status}: ${await published.text()})`);
+	try {
+		await enrichmentCases(auth, workflow.id);
+	} finally {
+		listening = false;
+		// Unpublished again, so a later setup.mjs import of the template can be published.
+		await fetch(`${N8N_URL}/rest/workflows/${workflow.id}/deactivate`, { method: 'POST', headers: auth });
+	}
+}
+
+async function enrichmentCases(auth, workflowId) {
 	// The round trip's upload sent deliveries too; they were answered and dropped.
 	deliveries.length = 0;
 	listening = true;
-	let before = (await executions(auth, workflow.id)).length;
+	let after = await lastExecutionId(auth);
 
 	// 5. One edit: one run enriches it, and the enrichment's own commit starts a
 	// run that ends at the loop guard.
 	console.log('\n[enrichment] one edit to a product');
 	await ingest([{ $id: 'p-1', $type: 'product', $source: 'catalogue', id: 'p-1', name: 'Trail Runner Pro' }]);
-	let runs = await settle(auth, workflow.id, before, 2);
+	let runs = await settle(auth, workflowId, after, 2);
 	check(deliveries.length === 2 && deliveries.every((d) => d.status === 200), `two deliveries reached the trigger, each answered 200 (${deliveries.map((d) => d.status).join(', ')})`);
 	check(runs.length === 2 && runs.every((r) => r.status === 'success'), `two runs, both succeed (${runs.map((r) => r.status).join(', ')}${runs.find((r) => r.error) ? `: ${runs.find((r) => r.error).error}` : ''})`);
 	const [enriching, guarded] = runs;
@@ -450,12 +470,12 @@ async function runEnrichmentCases() {
 	console.log('\n[enrichment] one of two enrichments fails');
 	deliveries.length = 0;
 	prompts.length = 0;
-	before = (await executions(auth, workflow.id)).length;
+	after = await lastExecutionId(auth);
 	await ingest([
 		{ $id: 'p-4', $type: 'product', $source: 'catalogue', id: 'p-4', name: 'Harbour Loafer' },
 		{ $id: 'p-5', $type: 'product', $source: 'catalogue', id: 'p-5', name: 'Unenrichable Boot' },
 	]);
-	runs = await settle(auth, workflow.id, before, 2);
+	runs = await settle(auth, workflowId, after, 2);
 	check(runs.length === 2 && runs.every((r) => r.status === 'success'), `two more runs, both succeed (${runs.map((r) => r.status).join(', ')}${runs.find((r) => r.error) ? `: ${runs.find((r) => r.error).error}` : ''})`);
 	const [mixed] = runs;
 	const writes = output(mixed, 'Write to the enrichment source') ?? [];
@@ -464,5 +484,26 @@ async function runEnrichmentCases() {
 	check(more.length === 0 && failure?.key === '1.0.0:shape:ProductCard:productId:p-5' && typeof failure.error === 'string' && failure.error !== '', `it reports the one that didn't, with the error (${JSON.stringify(failure)})`);
 	check((await shape('ProductEnrichment:productId:p-4'))?.description === 'Harbour Loafer: a stand-in description.', 'the enrichment source holds the written one');
 	check((await shape('ProductEnrichment:productId:p-5')) === null, 'and nothing for the failed one');
-	listening = false;
+
+	// 7. One commit, two products, the first read is answered 503 with no retry
+	// header (so the node doesn't retry): the other is written, the failed read reported.
+	console.log('\n[enrichment] one of two reads fails');
+	deliveries.length = 0;
+	prompts.length = 0;
+	after = await lastExecutionId(auth);
+	shedNext = {};
+	await ingest([
+		{ $id: 'p-6', $type: 'product', $source: 'catalogue', id: 'p-6', name: 'Meadow Sandal' },
+		{ $id: 'p-7', $type: 'product', $source: 'catalogue', id: 'p-7', name: 'Summit Hiker' },
+	]);
+	runs = await settle(auth, workflowId, after, 2);
+	check(shedNext === null, 'the proxy answered a read 503');
+	check(runs.length === 2 && runs.every((r) => r.status === 'success'), `two more runs, both succeed (${runs.map((r) => r.status).join(', ')}${runs.find((r) => r.error) ? `: ${runs.find((r) => r.error).error}` : ''})`);
+	const [reads] = runs;
+	const [readFailure, ...otherFailures] = output(reads, "Entries that weren't enriched") ?? [];
+	check(otherFailures.length === 0 && readFailure?.key === '1.0.0:shape:ProductCard:productId:p-6' && typeof readFailure.error === 'string' && readFailure.error !== '', `it reports the read that failed, with the error (${JSON.stringify(readFailure)})`);
+	check(prompts.length === 1 && prompts[0].includes('Summit Hiker'), `the model was asked only about the product that was read (${prompts.length})`);
+	const readWrites = output(reads, 'Write to the enrichment source') ?? [];
+	check(readWrites.length === 1 && readWrites[0].accepted === true && readWrites[0].id === 'p-7', `the run writes the product that was read (${JSON.stringify(readWrites)})`);
+	check((await shape('ProductEnrichment:productId:p-6')) === null, 'and nothing for the one whose read failed');
 }
