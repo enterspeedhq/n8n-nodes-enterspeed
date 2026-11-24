@@ -406,6 +406,7 @@ describe('EnterspeedContextGraphTrigger.webhook', () => {
 				hash: null,
 				action: 'deleted',
 				reason: 'later field',
+				extra: { added: true },
 				type: 'something-new',
 				environmentId: '11111111-2222-3333-4444-555555555555',
 				deliveryId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
@@ -502,6 +503,10 @@ describe('EnterspeedContextGraphTrigger credential test', () => {
 	it.each([
 		['an empty secret', { signingSecret: '' }],
 		['a secret that is not base64', { signingSecret: 'whsec_not base64!' }],
+		[
+			'a secret under 24 bytes',
+			{ signingSecret: `whsec_${Buffer.alloc(23, 1).toString('base64')}` },
+		],
 		[
 			'a header name without a value',
 			{ signingSecret: GOLDEN_SECRET, receiverHeaderName: 'X-Api-Key' },

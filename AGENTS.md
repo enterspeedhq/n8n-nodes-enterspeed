@@ -113,7 +113,7 @@ from deployed Delivery in places (no index point read, no cursor paging on publi
   around a type error.
 - **Every node parameter has a `description`**; lint fails otherwise.
 - **Fix lint and type errors; don't suppress them.** The exceptions are documented where they are
-  suppressed: `usableAsTool` on the trigger (ARCHITECTURE.md §8.7) and the `$id` wording in Push's
+  suppressed: `usableAsTool` on the triggers (ARCHITECTURE.md §8.7) and the `$id` wording in Push's
   and Push Many's descriptions (`node-param-description-miscased-id`).
 - **Never hand-edit `dist/`.** It is build output and gitignored.
 - **Branches:** `feature|fix|chore/sc-XXXX/description`, from `main` or, for a stacked PR, from the
@@ -143,13 +143,16 @@ A new node or credential file also needs its compiled path in `package.json`'s `
 
 `workflows/templates/*.json` holds exported workflows, each a JSON array with one workflow.
 
-- IMPORTANT: **node types are `CUSTOM.enterspeed` / `CUSTOM.enterspeedContextGraph`**, the types n8n
+- IMPORTANT: **node types are `CUSTOM.enterspeed` / `CUSTOM.enterspeedContextGraph`** (and the
+  triggers' `CUSTOM.enterspeedTrigger` / `CUSTOM.enterspeedContextGraphTrigger`), the types n8n
   assigns when loading from Docker's custom extensions. A template exported from an `npm link`
   instance (`@enterspeed/n8n-nodes-enterspeed.enterspeed`) shows "unknown node" for everyone else.
   Author and export templates from the Docker setup.
 - IMPORTANT: **never commit a real credential ID.** Use the placeholders
   `__ENTERSPEED_CREDENTIAL_ID__` (Core) and `__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__` (Context
-  Graph); `setup.mjs` substitutes them in memory, never on disk.
+  Graph); `setup.mjs` substitutes them in memory, never on disk. There is no placeholder for the
+  Context Graph Webhook API credential yet: each one holds a subscription's own secret, so no
+  template ships one.
 - **To add one:** build and test it in Docker n8n, export it, strip `id`, `versionId`, `shared`,
   `creatorId`, `projectId`, `workflowId` and any real credential ID, put in the placeholder, then
   commit it.
@@ -167,7 +170,8 @@ Things that break silently, at runtime or in someone else's workflow, when chang
 - **Icons:** `icon: 'file:…'` resolves relative to the compiled file that declares it, so each node
   folder and `credentials/` keep their own copy of the SVG. Keep the copies identical.
 - **Internal names are saved in users' workflows.** `enterspeed`, `enterspeedTrigger`,
-  `enterspeedApi`, `enterspeedContextGraph`, `enterspeedContextGraphApi`, every parameter `name` and
+  `enterspeedApi`, `enterspeedContextGraph`, `enterspeedContextGraphApi`,
+  `enterspeedContextGraphTrigger`, `enterspeedContextGraphWebhookApi`, every parameter `name` and
   every option `value`. Change a display name freely; changing one of these breaks saved workflows.
 - **Saved schema-driven values have a format.** Filter and sort fields are saved as
   `{valueClass}:{field}` and representation context fields as `path:…`, `query:…` or `header:…`

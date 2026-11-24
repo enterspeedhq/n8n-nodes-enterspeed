@@ -361,7 +361,7 @@ Each webhook subscription has its own signing secret, so the trigger has its own
 | Signing Secret | The subscription's secret, `whsec_` followed by base64, exactly as it was issued (or as the dev-server printed it). Every delivery's signature is checked with it |
 | Receiver Header Name / Value | Optional. When the subscription carries a receiver credential (e.g. `X-Api-Key`), a delivery without that header and value is rejected |
 
-Nothing in it is sent anywhere. Testing the credential only checks that the secret is well-formed and that a header name has a value.
+Nothing in it is sent anywhere. Testing the credential only checks that the secret is well-formed (at least 24 key bytes) and that a header name has a value.
 
 ### Setting it up
 
@@ -391,9 +391,9 @@ The run gets one item per changed entry:
 | `type` | The event's type: `model-changed` today. Types added later come through too |
 | `environmentId`, `deliveryId` | The environment, and the delivery's identity, the same on every retry of one delivery |
 
-*Event Types* starts the workflow only for the types chosen; any other type is acknowledged and starts nothing. Left empty, every type starts it, including ones added later. Properties the node doesn't know are passed through.
+*Event Types* starts the workflow only for the types chosen; any other type is acknowledged and starts nothing. Left empty, every type starts it, including ones added later. Properties the node doesn't know, on an entry or on the envelope, are passed through on each item.
 
-**Dropping redeliveries.** A delivery the sender retries comes again with the same `deliveryId`. To process each entry once, add a **Remove Duplicates** node after the trigger with *Remove Items Processed in Previous Executions* and *Value to Dedupe On* `{{ $json.deliveryId }}:{{ $json.key }}`. Use the pair, not `deliveryId` alone: every entry of a delivery shares its `deliveryId`.
+**Dropping redeliveries.** A delivery the sender retries comes again with the same `deliveryId`. To process each entry once, add a **Remove Duplicates** node after the trigger with *Remove Items Processed in Previous Executions* and *Value to Dedupe On* `{{ $json.deliveryId }}:{{ $json.key }}`. Use the pair, not `deliveryId` alone: every entry of a delivery shares its `deliveryId`. The node remembers 10,000 values by default and an envelope can hold up to 1,000 entries, so raise its *History Size* if a retry can come after many busy deliveries (the sender retries for up to a day).
 
 ---
 

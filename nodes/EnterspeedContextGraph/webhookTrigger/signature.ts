@@ -16,6 +16,9 @@ import { createHmac, timingSafeEqual } from 'crypto';
 
 export const SIGNATURE_TOLERANCE_SECONDS = 5 * 60;
 
+/** The fewest key bytes a signing secret has (the platform mints 32, the dev-server takes 24). */
+export const MIN_SIGNING_KEY_BYTES = 24;
+
 const SECRET_PREFIX = 'whsec_';
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 
@@ -85,11 +88,13 @@ export function headerValueMatches(received: string, expected: string): boolean 
 
 /**
  * What is wrong with a webhook credential, or undefined when nothing is: the
- * signing secret must decode to a key, and a receiver header name needs a value.
+ * signing secret must decode to a key of at least 24 bytes, and a receiver
+ * header name needs a value.
  */
 export function checkWebhookCredential(data: Record<string, unknown>): string | undefined {
-	if (!signingKey(String(data.signingSecret ?? ''))) {
-		return 'The signing secret must be whsec_ followed by base64, exactly as it was issued';
+	const key = signingKey(String(data.signingSecret ?? ''));
+	if (!key || key.length < MIN_SIGNING_KEY_BYTES) {
+		return 'The signing secret must be whsec_ followed by the base64 of at least 24 bytes, exactly as it was issued';
 	}
 	const name = String(data.receiverHeaderName ?? '').trim();
 	if (name !== '' && String(data.receiverHeaderSecret ?? '') === '') {

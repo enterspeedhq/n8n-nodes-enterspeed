@@ -65,12 +65,10 @@ export async function handleWebhook(this: IWebhookFunctions): Promise<IWebhookRe
 		return {};
 	}
 
-	const items = (envelope.tags as IDataObject[]).map((tag) => ({
-		...tag,
-		type: envelope.type,
-		environmentId: envelope.environmentId,
-		deliveryId: envelope.deliveryId,
-	}));
+	// Each entry as it came, plus every envelope field but `tags` (so `type`,
+	// `environmentId`, `deliveryId` and any added later); the envelope's win.
+	const { tags, ...envelopeFields } = envelope;
+	const items = (tags as IDataObject[]).map((tag) => ({ ...tag, ...envelopeFields }));
 	if (items.length === 0) return {};
 
 	return { workflowData: [this.helpers.returnJsonArray(items)] };
