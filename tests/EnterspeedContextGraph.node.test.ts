@@ -2415,3 +2415,43 @@ describe('EnterspeedContextGraph — Artifact › Get, Get Many, Get Lines', () 
 		});
 	});
 });
+
+describe('EnterspeedContextGraph — Artifact reads: Continue On Fail and IDs', () => {
+	const id = '0b8a3c2e-6f51-4d0a-9a4e-3f1c2b7d9e10';
+	const artifact = { id, source: 'pim', state: 'drained' };
+
+	it('keeps going when Source is an expression that throws, with Continue On Fail on', async () => {
+		const httpRequest = vi.fn(async () => artifact);
+		const ctx = createContextGraphExecuteMock({
+			params: {
+				resource: 'artifact',
+				operation: 'get',
+				artifactId: id,
+				sourceAlias: (i: number) => {
+					if (i === 0) throw new Error("Cannot read properties of undefined (reading 'b')");
+					return 'pim';
+				},
+			},
+			items: [{}, {}],
+			httpRequest,
+			continueOnFail: true,
+		});
+		const [out] = (await node.execute.call(ctx)) as INodeExecutionData[][];
+		expect(out).toEqual([
+			{ json: { error: "Cannot read properties of undefined (reading 'b')", id }, pairedItem: { item: 0 } },
+			{ json: artifact, pairedItem: { item: 1 } },
+		]);
+	});
+
+	it.each(['get', 'getLines'])('%s fails an Artifact ID that is not a GUID before anything is sent', async (operation) => {
+		const httpRequest = vi.fn();
+		const ctx = createContextGraphExecuteMock({
+			params: { resource: 'artifact', operation, sourceAlias: 'pim', artifactId: 'P-81', returnAll: true },
+			httpRequest,
+		});
+		await expect(node.execute.call(ctx)).rejects.toMatchObject({
+			message: 'Item 0 has an Artifact ID that is not an artifact ID (a GUID).',
+		});
+		expect(httpRequest).not.toHaveBeenCalled();
+	});
+});
