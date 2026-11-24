@@ -117,7 +117,7 @@ Testing the credential reads `GET {Delivery URL}/schema/msd/v1/{Manifest Version
 | [Representation › Get](#representation--get) | `GET {Delivery URL}/v1/{Manifest Version}{Route}` | One route per item |
 | [Schema › Get](#schema--get) | `GET {Delivery URL}/schema/{Kind}/v1/{Manifest Version}[/{Prefix}]` | Once per run |
 
-Every operation outputs the Context Graph's answer exactly as it was returned; the node never reshapes records on the way in or answers on the way out. With *Continue On Fail*, a failed item comes out with `error` and, when there is one, `description`, next to what identifies it (its key, route, query or record).
+Every operation outputs the Context Graph's answer exactly as it was returned; the node never reshapes records on the way in or answers on the way out. The one exception is opt-in: Representation › Get's *Include Response Headers* wraps the answer as `{ status, headers, body }`, and a `304` to its *If-None-Match* comes out as a stand-in, since it has no body. With *Continue On Fail*, a failed item comes out with `error` and, when there is one, `description`, next to what identifies it (its key, route, query or record).
 
 ### Artifact › Upload
 
