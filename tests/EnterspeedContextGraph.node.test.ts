@@ -2008,6 +2008,17 @@ describe('EnterspeedContextGraph — a busy Delivery (503, delivery/ADR-025 D3)'
 		expect(out[0].json).toEqual({ key: 'CategoryRef:categoryId:cat-speakers', error: DELIVERY_BUSY_MESSAGE, description: problem.detail });
 	});
 
+	it("Index › Query: retries search's 503 once, then fails every query in the batch as busy with the problem's detail", async () => {
+		const problem = { title: 'Search unavailable', status: 503, detail: 'Search could not answer this batch. Retry after the time in Retry-After.' };
+		const httpRequest = vi.fn().mockRejectedValue(busy({ 'Retry-After': '5', 'X-Delivery-Retry-After-Ms': '5000' }, problem));
+		const out = await run({ resource: 'index', operation: 'query', query: '{"index":"ProductIndex"}' }, httpRequest, true);
+		expect(httpRequest).toHaveBeenCalledTimes(2);
+		expect(sleep).toHaveBeenCalledTimes(1);
+		expect(sleep.mock.calls[0][0]).toBeGreaterThanOrEqual(5000);
+		expect(sleep.mock.calls[0][0]).toBeLessThan(6000);
+		expect(out).toEqual([{ json: { error: DELIVERY_BUSY_MESSAGE, description: problem.detail }, pairedItem: { item: 0 } }]);
+	});
+
 	it('passes on a failure other than 503 on the retry as it is', async () => {
 		const httpRequest = vi
 			.fn()

@@ -43,8 +43,8 @@ export function httpFailure(error: unknown): {
 /**
  * delivery/ADR-025 Decision 3: a read Delivery can't serve right now (load
  * shed, a store or search outage, a timed-out resolution) is answered `503`
- * with `Retry-After` and `X-Delivery-Retry-After-Ms`, whose purpose is to
- * drive retry. Like Delivery's own clients, the node retries once, and not at
+ * with `Retry-After` and `X-Delivery-Retry-After-Ms`; "503's purpose is to
+ * drive retry" (Decision 5). Like Delivery's own clients, the node retries once, and not at
  * all when the wait asked for is longer than this.
  */
 export const MAX_RETRY_AFTER_MS = 30_000;

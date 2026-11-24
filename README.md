@@ -309,7 +309,7 @@ Reads the manifest's schema and outputs it as one item, exactly as returned. Use
 
 On every Delivery read, a rejected key (401), an API version the Context Graph no longer serves (410) or an unreachable Delivery URL fails the run with a message saying which.
 
-**A busy Delivery (503).** Under load, or while one of its stores is down, Delivery refuses a read with `503` and says how long to wait (`X-Delivery-Retry-After-Ms`, or `Retry-After` in seconds). Shape › Get and Get Many, Index › Query and Get, and Representation › Get (resume rounds included) wait that long plus up to a second at random, then send the same request once more. If Delivery is still busy, or asked for a wait over 30 seconds, or gave none, the item fails with a message saying Delivery is busy; with *Continue On Fail* it comes out with `error`. Run it again later.
+**A busy Delivery (503).** Under load, or while one of its stores is down, Delivery refuses a read with `503` and says how long to wait (`X-Delivery-Retry-After-Ms`, or `Retry-After` in seconds). Shape › Get and Get Many, Index › Query and Get, and Representation › Get (resume rounds included) wait that long plus a little at random (under half the wait, and under a second), then send the same request once more. Schema › Get doesn't retry. If Delivery is still busy, or asked for a wait over 30 seconds, or gave none, the item fails with a message saying Delivery is busy; with *Continue On Fail* it comes out with `error`. Run it again later.
 
 ---
 
