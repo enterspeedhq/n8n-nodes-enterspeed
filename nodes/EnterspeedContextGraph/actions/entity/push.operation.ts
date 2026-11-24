@@ -56,7 +56,7 @@ export const properties: INodeProperties[] = [
 ];
 
 /**
- * Pushes each input item, as the record it is, to `POST {ingestUrl}/entities`,
+ * Pushes each input item, as the record it is, to `POST {ingestUrl}/v1/entities`,
  * one request per item. Outputs one result per item, in input order: a record
  * the service rejected, or one without a valid ID or type, comes out with
  * `accepted: false` and the reason instead of stopping the run.

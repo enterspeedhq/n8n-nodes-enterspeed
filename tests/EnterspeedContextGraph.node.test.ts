@@ -20,7 +20,7 @@ vi.mock('n8n-workflow', async (importOriginal) => ({
 }));
 
 /**
- * Push sends each input item, as the record it is, to `POST {ingestUrl}/entities`
+ * Push sends each input item, as the record it is, to `POST {ingestUrl}/v1/entities`
  * (one NDJSON line, per the Context Graph's Ingest NDJSON contract), one
  * request per item, and outputs one result per item. Push Many sends a list
  * of records held in one item in one request, and outputs one result per
@@ -150,12 +150,12 @@ describe('EnterspeedContextGraph — Entity › Push', () => {
 			);
 		});
 
-		it('sends to {ingestUrl}/entities as NDJSON with the Ingest API Key header', async () => {
+		it('sends to {ingestUrl}/v1/entities as NDJSON with the Ingest API Key header', async () => {
 			const { httpRequest } = await push({});
 			const req = httpRequest.mock.calls[0][0] as IDataObject;
 			expect(req.method).toBe('POST');
 			// the trailing slash on the credential's Ingest URL is trimmed
-			expect(req.url).toBe('http://localhost:5090/entities');
+			expect(req.url).toBe('http://localhost:5090/v1/entities');
 			expect(req.headers).toEqual({ 'Content-Type': 'application/x-ndjson', 'X-Api-Key': 'cg-ingest-key' });
 		});
 
@@ -1227,6 +1227,73 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 		]);
 	});
 
+	describe('splitting at the 32 KiB body limit', () => {
+		// About 1 KiB per query, so 40 items need two requests under 30 KiB each.
+		const padded = (i: number) => ({ index: 'ProductIndex', args: { pad: 'x'.repeat(1000), n: i } });
+		const sent = (httpRequest: ReturnType<typeof vi.fn>) =>
+			httpRequest.mock.calls.map((c) => (c[0] as IDataObject).body as IDataObject[]);
+
+		it('keeps every request body under 30 KiB and sends every query once, in order', async () => {
+			const { httpRequest } = await query({ items: Array.from({ length: 40 }, () => ({})), params: { query: padded } });
+			const bodies = sent(httpRequest);
+			expect(bodies.length).toBe(2);
+			for (const b of bodies) expect(new TextEncoder().encode(JSON.stringify(b)).length).toBeLessThanOrEqual(30 * 1024);
+			expect(bodies.flat().map((q) => (q.args as IDataObject).n)).toEqual(Array.from({ length: 40 }, (_, i) => i));
+		});
+
+		it("gives a query without an id its position in the run, so results pair across requests", async () => {
+			const ids = (i: number) => (i === 3 ? 'own' : undefined);
+			// Answers by the platform's rule within each request, reversed, as delivery may order them.
+			const httpRequest = vi.fn(async (req: IDataObject) =>
+				(req.body as IDataObject[]).map((q, i) => envelope(idOf(q, i), [product])).reverse(),
+			);
+			const { out } = await query({
+				items: Array.from({ length: 40 }, () => ({})),
+				params: { query: (i: number) => ({ ...padded(i), id: ids(i) }) },
+				httpRequest,
+			});
+			const second = sent(httpRequest)[1];
+			expect(second[0].id).toBe(String(40 - second.length));
+			expect(out.map((o) => o.json.id)).toEqual(Array.from({ length: 40 }, (_, i) => (i === 3 ? 'own' : String(i))));
+			expect(out.map((o) => o.pairedItem)).toEqual(Array.from({ length: 40 }, (_, i) => ({ item: i })));
+		});
+
+		it('fails a query too large for one request before sending, and still sends the others', async () => {
+			const big = { index: 'ProductIndex', args: { pad: 'x'.repeat(31 * 1024) } };
+			const { out, httpRequest } = await query({
+				items: [{}, {}],
+				params: { query: (i: number) => (i === 0 ? big : { index: 'ProductIndex' }) },
+				continueOnFail: true,
+			});
+			expect(out[0].json.error).toBe('Item 0: Query is larger than the Delivery URL accepts in one request.');
+			expect(body(httpRequest)).toEqual([{ index: 'ProductIndex' }]);
+			expect(out[1].json.id).toBe('0');
+		});
+
+		it('with Continue On Fail, a failed request fails only its own queries', async () => {
+			let call = 0;
+			const httpRequest = vi.fn(async (req: IDataObject) => {
+				if (call++ === 0) {
+					throw Object.assign(new NodeApiError(httpNode, { httpCode: '400' }), {
+						cause: { response: { status: 400, data: { message: 'Bad filter.' } } },
+					});
+				}
+				return (req.body as IDataObject[]).map((q, i) => envelope(idOf(q, i), [product]));
+			});
+			const { out } = await query({
+				items: Array.from({ length: 40 }, () => ({})),
+				params: { query: padded },
+				httpRequest,
+				continueOnFail: true,
+			});
+			const firstSize = (httpRequest.mock.calls[0][0].body as IDataObject[]).length;
+			expect(out.slice(0, firstSize).every((o) => o.json.error === 'Bad filter.')).toBe(true);
+			expect(out.slice(firstSize).map((o) => o.json.id)).toEqual(
+				Array.from({ length: 40 - firstSize }, (_, i) => String(firstSize + i)),
+			);
+		});
+	});
+
 	it('outputs an empty result, not a failure, when nothing matches', async () => {
 		const { out } = await query({ httpRequest: answerEach([]) });
 		expect(out[0].json).toEqual(envelope('0', []));
@@ -1280,6 +1347,16 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 			await expect(query({ httpRequest: failWith(401) })).rejects.toThrow(
 				'The API key was rejected by the Delivery URL.',
 			);
+		});
+
+		it("shows a problem body's detail when search can't answer (503, delivery/ADR-052)", async () => {
+			const problem = {
+				type: 'https://tools.ietf.org/html/rfc9110#section-15.6.4',
+				title: 'Search unavailable',
+				status: 503,
+				detail: 'Search could not answer this batch. Retry after the time in Retry-After.',
+			};
+			await expect(query({ httpRequest: failWith(503, problem) })).rejects.toThrow(problem.detail);
 		});
 
 		it('says when the Delivery URL is unreachable', async () => {
@@ -1772,14 +1849,14 @@ describe('EnterspeedContextGraphApi credential', () => {
 		const header = async (url: string) => (await authenticate(creds, { url, headers: { a: 'b' } })).headers;
 
 		it('the Ingest API Key to the Ingest URL and under it', async () => {
-			expect(await header('https://ingest.example.com/entities')).toEqual({ a: 'b', 'X-Api-Key': 'ingest-key' });
+			expect(await header('https://ingest.example.com/v1/entities')).toEqual({ a: 'b', 'X-Api-Key': 'ingest-key' });
 			expect(await header('https://ingest.example.com')).toEqual({ a: 'b', 'X-Api-Key': 'ingest-key' });
 		});
 
 		it('the Delivery API Key everywhere else', async () => {
 			expect(await header('https://delivery.example.com/schema/msd/v1/1.0.0')).toEqual({ a: 'b', 'X-Api-Key': 'delivery-key' });
 			// a host that only starts with the ingest URL isn't under it
-			expect(await header('https://ingest.example.com.evil/entities')).toEqual({ a: 'b', 'X-Api-Key': 'delivery-key' });
+			expect(await header('https://ingest.example.com.evil/v1/entities')).toEqual({ a: 'b', 'X-Api-Key': 'delivery-key' });
 		});
 
 		it('the Delivery API Key to the credential test, which has a baseURL', async () => {
@@ -1841,9 +1918,9 @@ describe('EnterspeedContextGraph — Artifact › Upload', () => {
 	/** Answers reserve, upload and commit as the artifact drop does. */
 	function drop(reserve: IDataObject = reservation) {
 		return vi.fn(async (req: IHttpRequestOptions) => {
-			if (req.url === `${ingest}/sources/pim/artifacts`) return reserve;
+			if (req.url === `${ingest}/v1/sources/pim/artifacts`) return reserve;
 			if (req.url === signedUrl) return '';
-			if (req.url === `${ingest}/sources/pim/artifacts/a-1/commit`) return committed;
+			if (req.url === `${ingest}/v1/sources/pim/artifacts/a-1/commit`) return committed;
 			throw new Error(`Unexpected request to ${req.url}`);
 		});
 	}
@@ -1886,7 +1963,7 @@ describe('EnterspeedContextGraph — Artifact › Upload', () => {
 			const { calls } = await upload();
 			expect(calls[0]).toMatchObject({
 				method: 'POST',
-				url: `${ingest}/sources/pim/artifacts`,
+				url: `${ingest}/v1/sources/pim/artifacts`,
 				headers: { 'X-Api-Key': 'cg-ingest-key' },
 				body: {
 					asOf: '2026-11-19T02:00:00Z',
@@ -1922,7 +1999,7 @@ describe('EnterspeedContextGraph — Artifact › Upload', () => {
 			const { out, calls } = await upload();
 			expect(calls[2]).toMatchObject({
 				method: 'POST',
-				url: `${ingest}/sources/pim/artifacts/a-1/commit`,
+				url: `${ingest}/v1/sources/pim/artifacts/a-1/commit`,
 				headers: { 'X-Api-Key': 'cg-ingest-key' },
 			});
 			expect(calls).toHaveLength(3);
@@ -1932,12 +2009,12 @@ describe('EnterspeedContextGraph — Artifact › Upload', () => {
 		it('uploads one file per item, in order', async () => {
 			const { out, calls } = await upload({ binaries: [{ data: exportFile }, { data: exportFile }] });
 			expect(calls.map((c) => c.url)).toEqual([
-				`${ingest}/sources/pim/artifacts`,
+				`${ingest}/v1/sources/pim/artifacts`,
 				signedUrl,
-				`${ingest}/sources/pim/artifacts/a-1/commit`,
-				`${ingest}/sources/pim/artifacts`,
+				`${ingest}/v1/sources/pim/artifacts/a-1/commit`,
+				`${ingest}/v1/sources/pim/artifacts`,
 				signedUrl,
-				`${ingest}/sources/pim/artifacts/a-1/commit`,
+				`${ingest}/v1/sources/pim/artifacts/a-1/commit`,
 			]);
 			expect(out.map((o) => o.pairedItem)).toEqual([{ item: 0 }, { item: 1 }]);
 		});
@@ -1958,9 +2035,9 @@ describe('EnterspeedContextGraph — Artifact › Upload', () => {
 		it('uploads and commits again when the retried reservation is not committed yet', async () => {
 			const { calls } = await upload({ httpRequest: drop({ ...reservation }) });
 			expect(calls.map((c) => c.url)).toEqual([
-				`${ingest}/sources/pim/artifacts`,
+				`${ingest}/v1/sources/pim/artifacts`,
 				signedUrl,
-				`${ingest}/sources/pim/artifacts/a-1/commit`,
+				`${ingest}/v1/sources/pim/artifacts/a-1/commit`,
 			]);
 		});
 	});
@@ -1972,12 +2049,12 @@ describe('EnterspeedContextGraph — Artifact › Upload', () => {
 					409,
 					'push-source',
 					'A push source takes no artifacts.',
-					"Only a snapshot source accepts an upload. Push the rows to POST /entities, or change the source's mode.",
+					"Only a snapshot source accepts an upload. Push the rows to POST /v1/entities, or change the source's mode.",
 				);
 			});
 			await expect(upload({ httpRequest })).rejects.toMatchObject({
 				message: 'A push source takes no artifacts. (push-source)',
-				description: "Only a snapshot source accepts an upload. Push the rows to POST /entities, or change the source's mode.",
+				description: "Only a snapshot source accepts an upload. Push the rows to POST /v1/entities, or change the source's mode.",
 			});
 			expect(httpRequest).toHaveBeenCalledTimes(1);
 		});

@@ -2,10 +2,11 @@ import type { IDataObject, IExecuteFunctions } from 'n8n-workflow';
 import { NodeApiError, NodeOperationError } from 'n8n-workflow';
 import { httpFailure } from '../../transport';
 import type { ContextGraphCredentials } from '../types';
+import { INGEST_API_VERSION } from '../entity/shared';
 
-/** `{ingestUrl}/sources/{alias}/artifacts`, the artifact drop (*Ingest artifact* spec). */
+/** `{ingestUrl}/v1/sources/{alias}/artifacts`, the artifact drop (*Ingest artifact* spec). */
 export const artifactsUrl = (creds: ContextGraphCredentials, source: string) =>
-	`${creds.ingestUrl}/sources/${encodeURIComponent(source)}/artifacts`;
+	`${creds.ingestUrl}/${INGEST_API_VERSION}/sources/${encodeURIComponent(source)}/artifacts`;
 
 /** Every artifact refusal's problem `type` starts with this (*Ingest artifact* spec, Refusals). */
 const PROBLEM_TYPE_PREFIX = 'urn:enterspeed:problem:artifact:';

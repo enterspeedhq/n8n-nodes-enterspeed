@@ -35,7 +35,7 @@ function recordList(value: unknown): unknown[] | undefined {
 }
 
 /**
- * Pushes each input item's list of records to `POST {ingestUrl}/entities` in
+ * Pushes each input item's list of records to `POST {ingestUrl}/v1/entities` in
  * one request, split only at the request size limit. Each record keeps its
  * own $ fields (Ingest NDJSON contract). Outputs one result per record, in
  * list order, paired to the item the list came from.
