@@ -1141,7 +1141,7 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 				!(p.displayOptions?.show?.operation as string[] | undefined)?.includes('get') &&
 				!(p.displayOptions?.show?.queryFrom as string[] | undefined)?.includes('builder'),
 		);
-		expect(shown.map((p) => p.name)).toEqual(['operation', 'queryFrom', 'queryNotice', 'query']);
+		expect(shown.map((p) => p.name)).toEqual(['operation', 'queryFrom', 'queryNotice', 'query', 'returnAll']);
 		// JSON stays the default, so existing workflows are unchanged.
 		expect(shown[1].default).toBe('json');
 		shown.splice(1, 1);
@@ -1310,6 +1310,176 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 			expect(out.slice(firstSize).map((o) => o.json.id)).toEqual(
 				Array.from({ length: 40 - firstSize }, (_, i) => String(firstSize + i)),
 			);
+		});
+	});
+
+	describe('Return All (follows next as cursor, query-envelope contract)', () => {
+		const p = (n: number) => ({ ...product, $id: `ProductIndex:productId:p-${n}` });
+		const sent = (httpRequest: ReturnType<typeof vi.fn>) =>
+			httpRequest.mock.calls.map((c) => (c[0] as IDataObject).body as IDataObject[]);
+		/** Answers each query from its own list of pages, by cursor: page k carries next `${id}:${k + 1}` unless it is the last. */
+		const pagesFor = (pages: Record<string, IDataObject[][]>) =>
+			vi.fn(async (req: IDataObject) =>
+				(req.body as IDataObject[]).map((q, i) => {
+					const id = idOf(q, i);
+					const k = typeof q.cursor === 'string' ? Number(q.cursor.split(':')[1]) : 0;
+					const last = k === pages[id].length - 1;
+					return { ...envelope(id, pages[id][k], last ? null : `${id}:${k + 1}`), totalCount: 99 };
+				}),
+			);
+
+		it('is off by default and shown for JSON and the Builder', () => {
+			const returnAll = node.description.properties.find(
+				(prop) => prop.name === 'returnAll' && (prop.displayOptions?.show?.resource as string[]).includes('index'),
+			);
+			expect(returnAll?.type).toBe('boolean');
+			expect(returnAll?.default).toBe(false);
+			expect(returnAll?.displayOptions?.show?.queryFrom).toBeUndefined();
+		});
+
+		it('re-sends only the queries that still have a next, each with its id and cursor, and merges their pages', async () => {
+			const httpRequest = pagesFor({
+				'0': [[p(1)]],
+				'1': [[p(2)], [p(3)], [p(4)]],
+				own: [[p(5)], [p(6)]],
+			});
+			const ids = [undefined, undefined, 'own'];
+			const { out } = await query({
+				items: [{}, {}, {}],
+				params: { returnAll: true, query: (i: number) => ({ index: 'ProductIndex', limit: 1, id: ids[i] }) },
+				httpRequest,
+			});
+			expect(sent(httpRequest)).toEqual([
+				[
+					{ index: 'ProductIndex', limit: 1 },
+					{ index: 'ProductIndex', limit: 1 },
+					{ index: 'ProductIndex', limit: 1, id: 'own' },
+				],
+				[
+					{ index: 'ProductIndex', limit: 1, id: '1', cursor: '1:1' },
+					{ index: 'ProductIndex', limit: 1, id: 'own', cursor: 'own:1' },
+				],
+				[{ index: 'ProductIndex', limit: 1, id: '1', cursor: '1:2' }],
+			]);
+			expect(out).toEqual([
+				{ json: { ...envelope('0', [p(1)]), totalCount: 99 }, pairedItem: { item: 0 } },
+				{ json: { ...envelope('1', [p(2), p(3), p(4)]), totalCount: 99 }, pairedItem: { item: 1 } },
+				{ json: { ...envelope('own', [p(5), p(6)]), totalCount: 99 }, pairedItem: { item: 2 } },
+			]);
+		});
+
+		it("keeps the first page's other members, such as aggregations", async () => {
+			const aggregations = { byCategory: { buckets: [{ key: 'cat-headphones', count: 2 }] } };
+			let call = 0;
+			const httpRequest = vi.fn(async () =>
+				call++ === 0 ? [{ ...envelope('0', [p(1)], 'c1'), aggregations }] : [{ ...envelope('0', [p(2)]), aggregations: {} }],
+			);
+			const { out } = await query({ params: { returnAll: true }, httpRequest });
+			expect(out[0].json).toEqual({ ...envelope('0', [p(1), p(2)]), totalCount: 1, aggregations });
+		});
+
+		it('pages only the items that turn it on', async () => {
+			const httpRequest = pagesFor({ '0': [[p(1)], [p(2)]], '1': [[p(3)], [p(4)]] });
+			const createCtx = createContextGraphExecuteMock({
+				params: { resource: 'index', operation: 'query', query: '{"index":"ProductIndex"}' },
+				items: [{}, {}],
+				httpRequest,
+			});
+			const getNodeParameter = createCtx.getNodeParameter;
+			createCtx.getNodeParameter = ((name: string, i: number, fallback?: unknown) =>
+				name === 'returnAll' ? i === 1 : getNodeParameter(name, i, fallback)) as typeof createCtx.getNodeParameter;
+			const [out] = (await node.execute.call(createCtx)) as INodeExecutionData[][];
+			expect(out[0].json).toEqual({ ...envelope('0', [p(1)], '0:1'), totalCount: 99 });
+			expect(out[1].json.items).toEqual([p(3), p(4)]);
+			expect(sent(httpRequest)[1]).toEqual([{ index: 'ProductIndex', id: '1', cursor: '1:1' }]);
+		});
+
+		it('fails a query that sets page before sending, and still sends page 0', async () => {
+			const httpRequest = answerEach();
+			const { out } = await query({
+				items: [{}, {}],
+				params: { returnAll: true, query: (i: number) => ({ index: 'ProductIndex', page: i === 0 ? 2 : 0 }) },
+				httpRequest,
+				continueOnFail: true,
+			});
+			expect(out[0].json.error).toBe(
+				'Item 0: Query sets page, but Return All pages with the cursor. Remove page, or turn Return All off.',
+			);
+			expect(body(httpRequest)).toEqual([{ index: 'ProductIndex', page: 0 }]);
+			await expect(query({ params: { returnAll: true, query: { index: 'ProductIndex', page: 1 } } })).rejects.toThrow(
+				'Query sets page',
+			);
+		});
+
+		it('hides the Builder\'s Page and sends no page from it', async () => {
+			const page = node.description.properties.find((prop) => prop.name === 'page');
+			expect(page?.displayOptions?.hide?.returnAll).toEqual([true]);
+			const { httpRequest } = await query({
+				params: { returnAll: true, queryFrom: 'builder', builderIndex: 'ProductIndex', queryLimit: 20, page: 3 },
+			});
+			expect(body(httpRequest)).toEqual([{ index: 'ProductIndex', limit: 20 }]);
+		});
+
+		it('fails a query whose next repeats instead of looping', async () => {
+			const httpRequest = vi.fn(async () => [envelope('0', [p(1)], 'same')]);
+			await expect(query({ params: { returnAll: true }, httpRequest })).rejects.toThrow(
+				'Item 0: the Delivery URL returned the same next cursor twice for this query, so Return All stopped instead of looping.',
+			);
+			expect(httpRequest).toHaveBeenCalledTimes(2);
+			// The query's own cursor counts as sent.
+			const own = vi.fn(async () => [envelope('0', [p(1)], 'mine')]);
+			const { out } = await query({
+				params: { returnAll: true, query: { index: 'ProductIndex', cursor: 'mine' } },
+				httpRequest: own,
+				continueOnFail: true,
+			});
+			expect(own).toHaveBeenCalledTimes(1);
+			expect(String(out[0].json.error)).toContain('same next cursor twice');
+		});
+
+		it('fails only the queries in a failed later round, as a failed first request does', async () => {
+			let call = 0;
+			const pages = pagesFor({ '0': [[p(1)]], '1': [[p(2)], [p(3)]] });
+			const httpRequest = vi.fn(async (req: IDataObject) => {
+				if (call++ === 1) {
+					throw Object.assign(new NodeApiError(httpNode, { httpCode: '400' }), {
+						cause: { response: { status: 400, data: { message: 'Bad cursor.' } } },
+					});
+				}
+				return pages(req);
+			});
+			const { out } = await query({ items: [{}, {}], params: { returnAll: true }, httpRequest, continueOnFail: true });
+			expect(out).toEqual([
+				{ json: { ...envelope('0', [p(1)]), totalCount: 99 }, pairedItem: { item: 0 } },
+				{ json: { error: 'Bad cursor.' }, pairedItem: { item: 1 } },
+			]);
+			call = 0;
+			await expect(query({ items: [{}, {}], params: { returnAll: true }, httpRequest })).rejects.toThrow('Bad cursor.');
+		});
+
+		it('fails a query a later round answers nothing for', async () => {
+			let call = 0;
+			const httpRequest = vi.fn(async () => (call++ === 0 ? [envelope('0', [p(1)], 'c1')] : []));
+			const { out } = await query({ params: { returnAll: true }, httpRequest, continueOnFail: true });
+			expect(out[0].json.error).toBe('Item 0: the Delivery URL returned no result for this query.');
+		});
+
+		it('splits a later round under 30 KiB too, with every query by its id', async () => {
+			const padded = (i: number) => ({ index: 'ProductIndex', args: { pad: 'x'.repeat(1000), n: i } });
+			const pages = Object.fromEntries(Array.from({ length: 40 }, (_, i) => [String(i), [[p(i)], [p(100 + i)]]]));
+			const httpRequest = pagesFor(pages);
+			const { out } = await query({
+				items: Array.from({ length: 40 }, () => ({})),
+				params: { returnAll: true, query: padded },
+				httpRequest,
+			});
+			const bodies = sent(httpRequest);
+			expect(bodies.length).toBe(4);
+			for (const b of bodies) expect(new TextEncoder().encode(JSON.stringify(b)).length).toBeLessThanOrEqual(30 * 1024);
+			const later = bodies.slice(2).flat();
+			expect(later.map((q) => q.id)).toEqual(Array.from({ length: 40 }, (_, i) => String(i)));
+			expect(later.every((q) => q.cursor === `${q.id}:1`)).toBe(true);
+			expect(out.map((o) => o.json.items)).toEqual(Array.from({ length: 40 }, (_, i) => [p(i), p(100 + i)]));
 		});
 	});
 
