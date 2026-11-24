@@ -86,7 +86,7 @@ pairing or expression evaluation is proven in Docker n8n.
 
 **The Context Graph locally** runs against the SDK dev-server (semantic-graph-sdk,
 `packages/dev-server`). Start Tonevik stage 1 with its own empty data folder. The dev-server differs
-from deployed Delivery in places (no index point read, no cursor paging, keys not enforced); README "Against the local dev-server" lists them.
+from deployed Delivery in places (no index point read, no cursor paging on published `0.2.0-alpha.3` and earlier, keys not enforced); README "Against the local dev-server" lists them.
 
 ## Conventions
 
