@@ -66,6 +66,7 @@ jobs:
           timeout 120 bash -c 'until curl -sf http://localhost:5678/healthz; do sleep 2; done'
 
       - name: Create credential and import workflows
+        id: setup
         env:
           ENTERSPEED_SOURCE_API_KEY: ${{ secrets.ENTERSPEED_SOURCE_API_KEY }}
           ENTERSPEED_ENVIRONMENT_API_KEY: ${{ secrets.ENTERSPEED_ENVIRONMENT_API_KEY }}
@@ -82,12 +83,16 @@ jobs:
       # The SDK dev-server needs Node 26. Its native dependency (better-sqlite3)
       # downloads a prebuilt binary in its install script, which e2e/package.json
       # allows; the package's own install above skips scripts.
+      # Runs even when the Enterspeed Core workflow above fails (its demo
+      # tenant is outside this repo), as long as the workflows were imported.
       - name: Use Node.js 26.x for the dev-server
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         uses: actions/setup-node@v4
         with:
           node-version: '26.x'
 
       - name: Install the dev-server
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         working-directory: e2e
         run: npm install --no-package-lock
 
@@ -95,6 +100,7 @@ jobs:
       # export and reads it back, a malformed line must fail the run with the
       # graph's reason, and Delivery's 304 and 503 go through n8n's real errors.
       - name: Context Graph end to end
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         env:
           N8N_CONTAINER: n8n-nodes-enterspeed-n8n-1
         run: node e2e/context-graph.mjs

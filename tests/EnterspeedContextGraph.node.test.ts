@@ -89,8 +89,8 @@ const perRequest = (httpRequest: ReturnType<typeof vi.fn>) =>
 	httpRequest.mock.calls.map((c) => ndjsonLines(c[0] as IDataObject).map((l) => l.$id));
 
 /**
- * A failure as n8n hands it to the node: a NodeApiError, with the HTTP
- * error (status and headers) as its `cause`.
+ * A failed status as contextGraphApiRequest throws it: a NodeApiError, with
+ * the response (status and headers) as its `cause`.
  */
 const httpNode = { id: '1', name: 'HTTP', type: 'n8n-nodes-base.httpRequest', typeVersion: 1, position: [0, 0], parameters: {} } as INode;
 const n8nFailure = (status: number, headers: IDataObject = {}) =>

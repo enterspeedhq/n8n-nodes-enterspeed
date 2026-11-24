@@ -126,8 +126,8 @@ export async function deliveryReadRequest(this: IExecuteFunctions, options: IHtt
 	} catch (error) {
 		const { status, headers } = httpFailure(error);
 		const waitMs = status === 503 ? deliveryRetryAfterMs(headers) : undefined;
-		// n8n hands the failure over as a NodeApiError already, which this
-		// passes on unchanged; httpFailure reads either form.
+		// contextGraphApiRequest throws a NodeApiError already, which this
+		// passes on unchanged; httpFailure reads it or a plain HTTP error.
 		if (waitMs === undefined) throw new NodeApiError(this.getNode(), error as JsonObject);
 		await sleep(retryDelayMs(waitMs));
 		return await contextGraphApiRequest.call(this, options);
