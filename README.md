@@ -253,7 +253,7 @@ Operators: `equals`, `notEquals`, `greaterThan`, `greaterThanOrEquals`, `lessTha
 - **Output:** each input item is one query. All items' queries are sent in one request, or in several when they'd pass the Context Graph's 32 KiB request limit, and each item gets back its result exactly as returned: `{ id, index, items, totalCount, next }`. A query that matches nothing returns `items: []`; it doesn't fail.
 - **Ids:** a query's `id` is its own, else its position among the queries sent. When the queries are split, the node sends that position as the query's `id`, so each result still finds its item. Two queries in one run can't share an id: in one request the Context Graph rejects it with its own message, and in a split run the node refuses it before sending; either way every query fails. A single query over the limit fails before anything is sent.
 - **Paging:** `totalCount` counts all matches. For the next page, raise `page`, or set `cursor` to the previous result's `next`, e.g. `"cursor": "{{ $json.next }}"`. The local dev-server hands out no cursors (`next` is always `null`), so use `page` there.
-- **Errors:** an invalid query, such as a filter on a field the index doesn't allow, fails with the Context Graph's own message. The Context Graph then rejects the whole request, so with *Continue On Fail* every query in it comes out with `error`. When search can't answer, the request fails with `503` (or `500` when a retry would fail the same way) and the Context Graph's own message, e.g. *Search could not answer this batch…*; after a `503`, run it again.
+- **Errors:** an invalid query, such as a filter on a field the index doesn't allow, fails with the Context Graph's own message. The Context Graph then rejects the whole request, so with *Continue On Fail* every query in it comes out with `error`. When search can't answer, the Context Graph answers `503` and the node retries once (see *Common errors*); if it still can't, the request fails as busy, with the Context Graph's own reason, e.g. *Search could not answer this batch…*, as the description. A `500` means a retry would fail the same way, and fails with the Context Graph's own message.
 - **With an AI Agent:** the node can be an agent's tool. Click ✨ on *Query* to let the model write the query; it reads the field's description, which states the format above. Tell the agent which indexes and fields exist, in its prompt or the `$fromAI` description, or give it the output of *Schema › Get*.
 
 ### Index › Get
@@ -309,6 +309,8 @@ Reads the manifest's schema and outputs it as one item, exactly as returned. Use
 
 On every Delivery read, a rejected key (401), an API version the Context Graph no longer serves (410) or an unreachable Delivery URL fails the run with a message saying which.
 
+**A busy Delivery (503).** Under load, or while one of its stores is down, Delivery refuses a read with `503` and says how long to wait (`X-Delivery-Retry-After-Ms`, or `Retry-After` in seconds). Shape › Get and Get Many, Index › Query and Get, and Representation › Get (resume rounds included) wait that long plus up to a second at random, then send the same request once more. If Delivery is still busy, or asked for a wait over 30 seconds, or gave none, the item fails with a message saying Delivery is busy; with *Continue On Fail* it comes out with `error`. Run it again later.
+
 ---
 
 ## Fields filled from the schema
@@ -360,7 +362,6 @@ The Context Graph serves these; the node doesn't use them yet.
 - **Releasing or discarding held deletions**, and reading a source's mirror status.
 - **Uploading in blocks.** Artifact › Upload sends the file in one request, so a failed transfer starts again.
 - **Following `next` automatically** (Return All) on Index › Query. Use `page` or `cursor` yourself.
-- **Retrying a busy Delivery.** Under load, Delivery refuses a read with `503` and says how long to wait, and Index › Query gets a `503` when search can't answer. The node doesn't retry it yet, so the item fails; run it again.
 
 ## Not included (deliberately)
 
