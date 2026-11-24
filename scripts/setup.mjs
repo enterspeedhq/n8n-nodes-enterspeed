@@ -19,11 +19,18 @@
 //   CONTEXT_GRAPH_INGEST_URL        (default: http://host.docker.internal:5200, the local dev-server)
 //   CONTEXT_GRAPH_DELIVERY_URL      (default: http://host.docker.internal:5200)
 //   CONTEXT_GRAPH_MANIFEST_VERSION  (default: 1.0.0)
+//   CONTEXT_GRAPH_WEBHOOK_SECRET    the trigger's signing secret (default: a new
+//                                   random one when the credential is created,
+//                                   for the local dev-server; kept on re-runs)
+//   OPENAI_API_KEY                  (default: stub, which the e2e stand-in accepts)
+//   OPENAI_BASE_URL                 (default: http://host.docker.internal:5600/v1,
+//                                   the e2e stand-in chat model)
 //   N8N_WORKFLOW_DIRS               (default: workflows/templates) comma-separated
 //                                   folders to import, relative to the repo root;
 //                                   the e2e job adds e2e/workflows
 
 import { execSync } from 'child_process';
+import { randomBytes } from 'crypto';
 import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -118,6 +125,42 @@ credentials.push({
   },
 });
 
+// The Context Graph trigger's credential: one webhook subscription's signing
+// secret. Against the dev-server any well-formed secret works, as long as the
+// dev-server signs with the same one (the e2e reads it back from n8n).
+const webhookCred = existing.find(
+  (c) => c.name === 'Enterspeed Context Graph webhook' && c.type === 'enterspeedContextGraphWebhookApi',
+);
+const webhookCredentialId = webhookCred?.id ?? crypto.randomUUID();
+if (process.env.CONTEXT_GRAPH_WEBHOOK_SECRET || !webhookCred) {
+  console.log(webhookCred
+    ? `Updating Enterspeed Context Graph webhook credential (ID: ${webhookCredentialId})...`
+    : 'Creating Enterspeed Context Graph webhook credential...');
+  credentials.push({
+    id: webhookCredentialId,
+    name: 'Enterspeed Context Graph webhook',
+    type: 'enterspeedContextGraphWebhookApi',
+    data: {
+      signingSecret: process.env.CONTEXT_GRAPH_WEBHOOK_SECRET || `whsec_${randomBytes(32).toString('base64')}`,
+    },
+  });
+}
+
+// The chat model's credential. The default is the e2e's stand-in model, which
+// answers without calling a real one; set both vars for a real model.
+const openAiCred = existing.find((c) => c.name === 'OpenAI account' && c.type === 'openAiApi');
+const openAiCredentialId = openAiCred?.id ?? crypto.randomUUID();
+console.log(openAiCred ? `Updating OpenAI credential (ID: ${openAiCredentialId})...` : 'Creating OpenAI credential...');
+credentials.push({
+  id: openAiCredentialId,
+  name: 'OpenAI account',
+  type: 'openAiApi',
+  data: {
+    apiKey: process.env.OPENAI_API_KEY || 'stub',
+    url: process.env.OPENAI_BASE_URL || 'http://host.docker.internal:5600/v1',
+  },
+});
+
 const importResult = execSync(
   `docker exec -i ${CONTAINER} n8n import:credentials --input=/dev/stdin`,
   { input: JSON.stringify(credentials), encoding: 'utf-8' },
@@ -125,6 +168,8 @@ const importResult = execSync(
 console.log(importResult.trim());
 console.log(`Enterspeed credential ready with ID: ${credentialId}`);
 console.log(`Enterspeed Context Graph credential ready with ID: ${contextGraphCredentialId}`);
+console.log(`Enterspeed Context Graph webhook credential ready with ID: ${webhookCredentialId}`);
+console.log(`OpenAI credential ready with ID: ${openAiCredentialId}`);
 if (hasContentful) {
   console.log(`Contentful credential ready with ID: ${contentfulCredentialId}`);
 }
@@ -152,7 +197,9 @@ const templates = workflowDirs.flatMap((dir) =>
 for (const file of templates) {
   let templateContent = readFileSync(join(ROOT, file), 'utf-8')
     .replaceAll('__ENTERSPEED_CREDENTIAL_ID__', credentialId)
-    .replaceAll('__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__', contextGraphCredentialId);
+    .replaceAll('__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__', contextGraphCredentialId)
+    .replaceAll('__ENTERSPEED_CONTEXT_GRAPH_WEBHOOK_CREDENTIAL_ID__', webhookCredentialId)
+    .replaceAll('__OPENAI_CREDENTIAL_ID__', openAiCredentialId);
 
   if (hasContentful) {
     templateContent = templateContent.replaceAll('__CONTENTFUL_CREDENTIAL_ID__', contentfulCredentialId);

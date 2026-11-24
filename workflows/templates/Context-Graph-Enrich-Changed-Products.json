@@ -1,0 +1,415 @@
+{
+  "name": "Context Graph · Enrich changed products into their own source",
+  "nodes": [
+    {
+      "parameters": {
+        "eventTypes": [
+          "model-changed"
+        ]
+      },
+      "name": "When the graph changes",
+      "type": "CUSTOM.enterspeedContextGraphTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "403e18e5-a00c-53ba-8fd0-8371ecc184ec",
+      "webhookId": "0f6c2d4e-8a1b-4c3d-9e5f-000000014248",
+      "credentials": {
+        "enterspeedContextGraphWebhookApi": {
+          "id": "__ENTERSPEED_CONTEXT_GRAPH_WEBHOOK_CREDENTIAL_ID__",
+          "name": "Enterspeed Context Graph webhook"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6a1f3c2e-0b4d-4e8a-9c71-2d5e8f0a1b01",
+              "leftValue": "={{ $json.key }}",
+              "rightValue": ":shape:ProductCard:",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "6a1f3c2e-0b4d-4e8a-9c71-2d5e8f0a1b02",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "upserted",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Only changed products (loop guard)",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        220,
+        0
+      ],
+      "id": "bb9a9cc2-f44e-599a-b9d8-5607eb33482f"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "One product at a time",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        440,
+        0
+      ],
+      "id": "893f71b4-37bd-51da-ae83-63c5b7228d52"
+    },
+    {
+      "parameters": {
+        "resource": "shape",
+        "operation": "get",
+        "keyFrom": "shapeKey",
+        "shapeKey": "={{ $json.key.split(':').slice(2).join(':') }}"
+      },
+      "name": "Read the changed product",
+      "type": "CUSTOM.enterspeedContextGraph",
+      "typeVersion": 1,
+      "position": [
+        660,
+        0
+      ],
+      "id": "a055dba4-36a9-5757-a601-050b80c63ec6",
+      "credentials": {
+        "enterspeedContextGraphApi": {
+          "id": "__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__",
+          "name": "Enterspeed Context Graph account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Write one short sentence that describes the product \"{{ $json.name }}\" for a web shop. Answer with the sentence only.",
+        "batching": {}
+      },
+      "name": "Enrich",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        880,
+        0
+      ],
+      "id": "02871f8a-69e9-5e4d-b7b2-666fd8068040",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "gpt-4o-mini"
+        },
+        "responsesApiEnabled": false,
+        "options": {}
+      },
+      "name": "Chat model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        880,
+        220
+      ],
+      "id": "736300b9-267b-5603-b6db-ef3ce8cfa1a2",
+      "credentials": {
+        "openAiApi": {
+          "id": "__OPENAI_CREDENTIAL_ID__",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4b7e9d10-1c2a-4f3b-8d5e-6a7b8c9d0e01",
+              "name": "$id",
+              "value": "={{ $('Read the changed product').item.json.productId }}",
+              "type": "string"
+            },
+            {
+              "id": "4b7e9d10-1c2a-4f3b-8d5e-6a7b8c9d0e02",
+              "name": "$type",
+              "value": "productEnrichment",
+              "type": "string"
+            },
+            {
+              "id": "4b7e9d10-1c2a-4f3b-8d5e-6a7b8c9d0e03",
+              "name": "$source",
+              "value": "enrichment",
+              "type": "string"
+            },
+            {
+              "id": "4b7e9d10-1c2a-4f3b-8d5e-6a7b8c9d0e04",
+              "name": "$modifiedAt",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "4b7e9d10-1c2a-4f3b-8d5e-6a7b8c9d0e05",
+              "name": "productId",
+              "value": "={{ $('Read the changed product').item.json.productId }}",
+              "type": "string"
+            },
+            {
+              "id": "4b7e9d10-1c2a-4f3b-8d5e-6a7b8c9d0e06",
+              "name": "description",
+              "value": "={{ $json.text.trim() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Build the enrichment record",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1120,
+        -100
+      ],
+      "id": "8f762263-3e24-5321-bf3a-d67ad239c6b1"
+    },
+    {
+      "parameters": {
+        "resource": "entity",
+        "operation": "push"
+      },
+      "name": "Write to the enrichment source",
+      "type": "CUSTOM.enterspeedContextGraph",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        -100
+      ],
+      "id": "94f099ed-0593-54c0-abac-d8e546003e36",
+      "credentials": {
+        "enterspeedContextGraphApi": {
+          "id": "__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__",
+          "name": "Enterspeed Context Graph account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9c2d4e6f-3a5b-4c7d-8e9f-0a1b2c3d4e01",
+              "name": "key",
+              "value": "={{ $('One product at a time').item.json.key }}",
+              "type": "string"
+            },
+            {
+              "id": "9c2d4e6f-3a5b-4c7d-8e9f-0a1b2c3d4e02",
+              "name": "error",
+              "value": "={{ $json.error }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Entries that weren't enriched",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1120,
+        160
+      ],
+      "id": "f0b787c2-035e-5fe9-b8fc-08c54492c902"
+    },
+    {
+      "parameters": {
+        "content": "## Enrich changed products into their own source\nA product changes in the graph, the workflow reads it, a language model writes a description, and the description goes back into the graph as a record in a **separate source**, `enrichment`.\n\n- **When the graph changes** gets one item per changed entry: its tag `key`, `hash` and `action`. The webhook carries the event, never the data.\n- **Only changed products** keeps upserted `ProductCard` entries (see the loop guard below).\n- **One product at a time** takes them one by one, so each description stays matched to its product.\n- **Read the changed product** reads that shape: the tag key without its `{manifest}:shape:` prefix is the shape key.\n- **Enrich** asks the chat model for one sentence.\n- **Write to the enrichment source** pushes a `productEnrichment` record, keyed by the product's id, to the `enrichment` source. The schema reads it as the `ProductEnrichment` shape.\n\n**One entry failing doesn't stop the others.** A read or a model call that fails goes to *Entries that weren't enriched* with its tag key and the error; every other entry is still written. A record the graph refuses comes out of the push with `accepted: false` and the reason.",
+        "height": 560,
+        "width": 720
+      },
+      "name": "About",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -20,
+        -640
+      ],
+      "id": "84d2047d-bada-5866-8f37-bbee035c9882"
+    },
+    {
+      "parameters": {
+        "content": "## Why the enrichment has its own source (the loop guard)\nThe workflow writes to the graph, and every write to the graph sends this webhook again. Without a guard, each enrichment would start another run, forever.\n\nThe envelope says **which entries** changed, never **who** changed them, so the workflow can't recognise its own writes from the event. It can recognise **what** changed: the enrichment is a separate source with its own model and shape (`ProductEnrichment`), and nothing in `ProductModel` reads it. A write to `enrichment` changes only `ProductEnrichment` entries, and the filter keeps only `ProductCard` entries, so that run ends at the filter and writes nothing.\n\nKeep it that way: if `ProductCard` (or anything the filter lets through) ever reads the enrichment source, the guard stops working. On a deployed graph you can also give the webhook subscription a key prefix filter (`{manifest}:shape:ProductCard:`) so those deliveries aren't sent at all.",
+        "height": 420,
+        "width": 680,
+        "color": 3
+      },
+      "name": "Loop guard",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        720,
+        -640
+      ],
+      "id": "d8fe744e-229e-5df2-9bb5-0cc388ed0597"
+    },
+    {
+      "parameters": {
+        "content": "## Before you run it\n- **A dev-server with the `catalogue` and `enrichment` sources**: `npm install` then `npm run serve` in this repo's `e2e` folder (Node 26). CI runs this workflow against it, with a stand-in chat model, on every pull request.\n- **Enterspeed Context Graph account** points at the graph, **Enterspeed Context Graph webhook** holds the webhook subscription's signing secret. Against the dev-server, start it with `webhookUrl` (this trigger's production URL) and `webhookSecret`; against a deployed graph, register the URL as a webhook subscription and use its secret. Nothing else in the workflow changes.\n- **OpenAI account**: your API key, Base URL `https://api.openai.com/v1`. Any OpenAI-compatible endpoint works through its Base URL; for another provider, swap *Chat model* for its chat model node.\n- **Publish (activate) the workflow**: the trigger only listens on its production URL once it is published.",
+        "height": 300,
+        "width": 720,
+        "color": 7
+      },
+      "name": "Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -20,
+        360
+      ],
+      "id": "5a6466f8-753a-5545-a504-57939b734aec"
+    }
+  ],
+  "connections": {
+    "When the graph changes": {
+      "main": [
+        [
+          {
+            "node": "Only changed products (loop guard)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only changed products (loop guard)": {
+      "main": [
+        [
+          {
+            "node": "One product at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One product at a time": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Read the changed product",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write to the enrichment source": {
+      "main": [
+        [
+          {
+            "node": "One product at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Entries that weren't enriched": {
+      "main": [
+        [
+          {
+            "node": "One product at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read the changed product": {
+      "main": [
+        [
+          {
+            "node": "Enrich",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Entries that weren't enriched",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrich": {
+      "main": [
+        [
+          {
+            "node": "Build the enrichment record",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Entries that weren't enriched",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Enrich",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build the enrichment record": {
+      "main": [
+        [
+          {
+            "node": "Write to the enrichment source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
