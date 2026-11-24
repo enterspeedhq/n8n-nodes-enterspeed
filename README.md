@@ -396,7 +396,7 @@ For local end-to-end runs in Docker n8n, including the Context Graph round trip 
 
 ## Releasing
 
-npm gets a new version only from `.github/workflows/publish.yml`, when a version tag lands on `main`. The workflow signs in to npm with [trusted publishing](https://docs.npmjs.com/trusted-publishers) (GitHub's OIDC token, no npm token stored anywhere) and publishes with a provenance statement, which n8n requires of a verified community node.
+npm gets a new version only from `.github/workflows/publish.yml`, run by a version tag (the bare version, e.g. `0.2.0`; prereleases aren't supported). The workflow signs in to npm with [trusted publishing](https://docs.npmjs.com/trusted-publishers) (GitHub's OIDC token, no npm token stored anywhere) and publishes with a provenance statement, which n8n requires of a verified community node.
 
 ```bash
 npm run build && npm run scan   # n8n's community package scanner on what npm would publish
@@ -410,6 +410,8 @@ One-time setup on npmjs.com, by a package owner:
 1. Open [`@enterspeed/n8n-nodes-enterspeed`](https://www.npmjs.com/package/@enterspeed/n8n-nodes-enterspeed) › **Settings** › **Trusted Publisher** and pick **GitHub Actions**: organisation `enterspeedhq`, repository `n8n-nodes-enterspeed`, workflow filename `publish.yml`, environment empty.
 2. Under **Publishing access**, choose **Require two-factor authentication and disallow tokens**, so nothing but the workflow can publish.
 3. Revoke any npm automation or granular token that could publish the package, and make sure the repository has no `NPM_TOKEN` secret.
+
+npm trusts the repository and workflow file, not the branch, and the `main` check runs inside the workflow file the tag points at. To stop a tag on an unreviewed branch from publishing, add a tag ruleset in the repository's settings (**Settings** › **Rules** › **Rulesets** › **New ruleset** › **New tag ruleset**: target tags matching `*.*.*`, turn on **Restrict creations**, and add the people who release as bypass actors).
 
 ## Licence
 

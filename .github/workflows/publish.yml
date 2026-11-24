@@ -1,4 +1,4 @@
-# Publishes the package to npm from a version tag on main, and only from here.
+# The only way the package reaches npm: a version tag on main publishes it.
 #
 # n8n requires verified community nodes to be published from GitHub Actions with
 # an npm provenance statement (from 1 May 2026). This workflow authenticates with
@@ -16,7 +16,13 @@
 #   then set Publishing access to "Require two-factor authentication and
 #   disallow tokens", and delete any NPM_TOKEN repository secret.
 #
-# Tags are the bare version (0.2.0, 1.0.0-rc.1), as `npm run release` creates them.
+# Tags are the bare version (0.2.0), as `npm run release` creates them. A
+# prerelease version (1.0.0-rc.1) fails at Publish: `n8n-node release` runs
+# `npm publish` without the `--tag` npm requires for one.
+#
+# The main check below lives in this file, so a tag on a branch whose copy of it
+# drops the check would still publish; only a tag ruleset limiting who can push
+# `*.*.*` tags closes that (README → Releasing).
 
 name: Publish
 
