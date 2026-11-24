@@ -94,11 +94,11 @@ Create an **Enterspeed Context Graph API** credential with:
 | Ingest API Key | Sent as the `X-Api-Key` header on requests to the Ingest URL only |
 | Delivery URL | Reads. No default, as for the Ingest URL |
 | Delivery API Key | Sent as the `X-Api-Key` header on every other request: shapes, indexes, representations and the schema |
-| Manifest Version | The `{manifest}` segment of every Delivery route (default `1.0.0`). For a schema published with the SDK this is the manifest's id, a content hash, not its version label. |
+| Manifest Version | The `{manifest}` segment of every Delivery route (default `1.0.0`, the dev-server's). On a deployed Context Graph this is the manifest's ID, the 64-character hash `enterspeed-graph publish` prints, not its version label. |
 
 Ingest and Delivery are separate services, and each checks its own key. The node picks the key by where the request goes: a request whose URL starts with the Ingest URL gets the Ingest API Key, any other the Delivery API Key.
 
-Testing the credential reads `GET {Delivery URL}/schema/msd/v1/{Manifest Version}` with the Delivery API Key. It fails with a clear message if the URL can't be reached, the Delivery API Key is rejected (401) or the manifest version isn't hosted (404). It doesn't check the Ingest API Key; a wrong one shows on the first Push as a 401.
+Testing the credential reads `GET {Delivery URL}/schema/msd/v1/{Manifest Version}` with the Delivery API Key. It fails with a clear message if the URL can't be reached, the Delivery API Key is rejected (401) or the manifest isn't hosted (404). It doesn't check the Ingest API Key; a wrong one shows on the first Push or Upload as a 401.
 
 ### Operations
 
@@ -151,7 +151,7 @@ Read what became of an upload, with the Ingest API Key. The node doesn't wait fo
 - **Get** reads one artifact per item (*Source*, *Artifact ID*, which defaults to the item's `id`, so it follows an Upload directly) and outputs it as returned: `state`, and once committed its `drain` (counts by outcome), `deletions`, and the first page of `lines` with `nextAfter`.
 - **Get Many** lists a source's artifacts, newest reservation first, one item per artifact as returned. *State* keeps only artifacts in that state (`reserved`, `committed`, `superseded`, `draining`, `drained`, `failed`, `expired`). *Return All* follows `nextCursor`, sending the same state each time; otherwise up to *Limit* (1–200, default 50). A listing never carries the signed upload URL, nor lines.
 - **Get Lines** outputs each record of one artifact that didn't land (refused, failed or unparseable) as its own item, `{ number, outcome, type, id, reason }` as returned. *Return All* follows `nextAfter` to the end; otherwise it stops at *Limit*. The Context Graph pages 1,000 at a time; that isn't a setting. An artifact not committed yet has no lines and outputs nothing.
-- **Errors:** an *Artifact ID* that isn't a GUID fails the item before anything is sent. An unknown source or artifact fails the item as *not-found*, an invalid state or cursor as *invalid-listing*, a missing or rejected key as `401`, a key without write scope, or one whose scope leaves the source out, as `403`. With *Continue On Fail* it comes out as `{ source, id?, error, description? }`.
+- **Errors:** an *Artifact ID* that isn't a GUID fails the item before anything is sent. An unknown source or artifact fails the item as *not-found*, an invalid state or cursor as *invalid-listing*, a missing or rejected key as `401`, a key without write scope, or one whose scope leaves the source out, as `403`. A `403` without a reason also names the other cause on a deployed Context Graph: an Ingest URL that doesn't admit n8n's address. With *Continue On Fail* it comes out as `{ source, id?, error, description? }`.
 
 ### Entity › Push and Push Many
 
@@ -196,7 +196,7 @@ return $input.all().map(({ json }) => ({
 - **Not for a complete export.** A source's full export goes in with [Artifact › Upload](#artifact--upload).
 - **Request size:** Push Many splits a list into more requests only to stay under the Context Graph's request limit (32 MiB; the node closes a request before 29,000,000 bytes); a single record too large for one request is reported as failed. Push Many fails an item whose *Records* isn't a list.
 - **Throttling:** when the Context Graph is busy it refuses a request with `429` and a `Retry-After` in seconds, and nothing is written. The node waits that long and resends the refused request, up to 3 times (nothing was written when it was refused). If it's still refused, or asked to wait more than five minutes, the run fails.
-- **Errors:** a rejected key (401), a key without write access (403), a request that's too large (413), continued throttling (429) or an unreachable Ingest URL fails the run with a message saying which.
+- **Errors:** a rejected key (401), a key without write access or an address the Ingest URL doesn't admit (403), a request that's too large (413), continued throttling (429) or an unreachable Ingest URL fails the run with a message saying which.
 
 ### Shape › Get and Get Many
 
@@ -347,6 +347,27 @@ Several Context Graph fields can be filled from the manifest's schema instead of
 
 ---
 
+## Against a deployed Context Graph
+
+A workflow that runs against the dev-server runs against a deployed Context Graph unchanged; only the credential differs.
+
+| Field | On a deployed Context Graph |
+|---|---|
+| Ingest URL, Delivery URL | Each service's own `https` address. They are different hosts, so each key goes only to its own service |
+| Ingest API Key | A write key scoped to the source's alias. It writes Entity › Push and, for a snapshot source, Artifact › Upload |
+| Delivery API Key | A key with read access to the environment |
+| Manifest Version | The manifest's ID, the 64-character hash `enterspeed-graph publish` prints, not its version label. A new publish is a new ID: point the credential at it when you move to the new schema |
+
+What else differs from the dev-server:
+
+- **Ingest can admit only listed addresses.** If the address n8n sends from isn't listed, every Ingest request fails with `403`, and the error says so. Delivery checks only the key.
+- **The upload goes to storage, not to the Ingest URL.** The reservation answers a signed URL on the Context Graph's storage (Azure Blob Storage) and the header it needs. n8n must be able to reach that host. The node sends the file there with exactly those headers and a fixed length, and no API key.
+- **Only a snapshot source takes uploads.** A push source refuses one (*push-source*).
+- **Nothing is processed at once.** A pushed record is accepted before it is processed, and an upload drains after the commit, in minutes or hours. Read again later; the round-trip template waits for the drain.
+- **Limits.** A write request over 32 MiB is refused (Push Many splits a list well below it). Too many writes at once are refused with `429` and `Retry-After`, which the node waits out and resends, up to 3 times. A Delivery read the service can't answer right now is a `503` with `Retry-After`, which the node retries once.
+
+The credential test checks only the Delivery URL, the Delivery API Key and the manifest. A wrong Ingest API Key, or an address Ingest doesn't admit, shows on the first Push or Upload.
+
 ## Against the local dev-server
 
 The Tonevik demo runs against the Context Graph SDK's local dev-server.
@@ -392,7 +413,7 @@ npm run lint    # the rules n8n's verification scanner runs
 npm test        # vitest
 ```
 
-For local end-to-end runs in Docker n8n, including the Context Graph round trip CI runs against the dev-server, see [CONTRIBUTING.md](CONTRIBUTING.md). How the package is built is in [ARCHITECTURE.md](ARCHITECTURE.md); conventions and rules for contributors and coding agents are in [AGENTS.md](AGENTS.md).
+For local end-to-end runs in Docker n8n, including the Context Graph round trip CI runs against the dev-server laid out as a deployed Context Graph, see [CONTRIBUTING.md](CONTRIBUTING.md). How the package is built is in [ARCHITECTURE.md](ARCHITECTURE.md); conventions and rules for contributors and coding agents are in [AGENTS.md](AGENTS.md).
 
 ## Licence
 

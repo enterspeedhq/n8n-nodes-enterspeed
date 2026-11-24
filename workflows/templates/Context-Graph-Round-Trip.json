@@ -291,7 +291,7 @@
     },
     {
       "parameters": {
-        "content": "## Before you run it\n- **A dev-server with the `catalogue` schema**: `npm install` then `npm run serve` in this repo's `e2e` folder (Node 26) starts it, empty: the graph on :5200, this export on :5500. CI runs this workflow against it on every pull request.\n- **The credential** *Enterspeed Context Graph account* points at the dev-server, which accepts any key.\n- **Against your own graph:** change the source alias, the index query and the two fetch nodes.",
+        "content": "## Before you run it\n- **A dev-server with the `catalogue` schema**: `npm install` then `npm run serve` in this repo's `e2e` folder (Node 26) starts it, empty: the graph on :5200, this export on :5500. CI runs this workflow against it on every pull request.\n- **The credential** *Enterspeed Context Graph account* points at the dev-server, which accepts any key.\n- **Against a deployed Context Graph:** point the credential at its Ingest and Delivery URLs, each with its own key, and set *Manifest Version* to the manifest's ID (the hash `enterspeed-graph publish` prints). The source must be a snapshot source, n8n must be able to reach the storage host the upload URL names, and if Ingest admits only listed addresses, n8n's must be on the list. Then change the source alias, the index query and the two fetch nodes.",
         "height": 220,
         "width": 640,
         "color": 7
