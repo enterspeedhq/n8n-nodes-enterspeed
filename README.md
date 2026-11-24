@@ -294,6 +294,18 @@ With **Schema**, *Context* lists each route placeholder first (`productId (path)
 - **The merge:** a resume round answers only the slots that were open; each replaces its slot and its `$metadata` entry. `$metadata.$changedAt` is the newest across rounds.
 - **A refused checkpoint** (`401` *invalid_checkpoint*, `410` *checkpoint_expired*, or `409` for another manifest or route) is answered once by reading the route again without it; that fresh answer replaces the rounds so far. Refused a second time, the item fails. A `404` on a resume round fails the item, as on the first read.
 
+**Skipping unchanged representations.** A complete answer (status `200`) carries a weak `ETag`. Keep it, send it back on the next run, and an unchanged representation answers `304 Not Modified` with no body, so a scheduled workflow processes only what changed. Both fields are off by default, and then the output is as described above.
+
+| Field | What it does |
+|---|---|
+| *If-None-Match* | An expression for the ETag kept from the last run, e.g. `{{ $json.etag }}`, sent as the `If-None-Match` header (a comma-separated list or `*` also works). Empty sends nothing. |
+| *Include Response Headers* | Outputs each item as `{ status, headers, body }`, where `headers` holds whichever of `ETag`, `Cache-Control`, `Cache-Tag` and `Vary` the Context Graph sent: the shape the Context Graph MCP server's `includeHeaders` returns. |
+
+- **Not modified:** a `304` succeeds. With *Include Response Headers* it comes out as `{ status: 304, headers, body: null }`, otherwise as `{ notModified: true }`. Drop those items with an **IF** node.
+- **No ETag, no `304`:** a partial answer, a resume round and an error carry no `ETag`, and the node doesn't add one. With *Resume Partial Answers*, *If-None-Match* goes only on the first read of the route, and `status` and `headers` are those of the last response read.
+- **Keeping the ETag between runs** is the workflow's job: store `headers.ETag` per route in an n8n **Data Table**, and read it back before Representation › Get. Workflow static data isn't saved by manual runs.
+- **Store the tag from the server you read.** Each deployed Context Graph keys its tags, and the dev-server's never match a deployed one's.
+
 ### Schema › Get
 
 Reads the manifest's schema and outputs it as one item, exactly as returned. Use it to see what the graph serves (indexes, representations, their routes and slots), or to hand the schema to an AI Agent or a Code node.

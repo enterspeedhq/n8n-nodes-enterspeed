@@ -125,7 +125,7 @@ Every resource follows one rule: **output the service's answer unchanged**. The 
 | Shape › Get Many | `POST {deliveryUrl}/shapes/v1/{manifest}` | One item holding a list, split at 30 KiB | *Shapes batch envelope* |
 | Index › Query | `POST {deliveryUrl}/query/v1/{manifest}` | One query per item, split only at the body limit; Return All follows `next` in rounds | *Query envelope*; delivery/ADR-030 §3, ADR-037 |
 | Index › Get | `GET {deliveryUrl}/query/v1/{manifest}/{index}/{id}` | One document per item | delivery/ADR-030 §3, ADR-022 |
-| Representation › Get | `GET {deliveryUrl}/v1/{manifest}{route}`, then the same with `X-Resume` per resume round | One route per item | *Representation envelope*, *Representation slot*; delivery/ADR-030 §3, ADR-033, ADR-050 |
+| Representation › Get | `GET {deliveryUrl}/v1/{manifest}{route}` (with `If-None-Match` when set), then the same with `X-Resume` per resume round | One route per item | *Representation envelope*, *Representation slot*; delivery/ADR-030 §3, ADR-033, ADR-050 |
 | Schema › Get | `GET {deliveryUrl}/schema/{kind}/v1/{manifest}[/{prefix}]` | Once per run, first item | delivery/ADR-030 §3, ADR-036 |
 
 ### 3.2 Entity: Push and Push Many
@@ -172,6 +172,12 @@ Shapes are read by the canonical shape key, `{shapeName}:{segKey}:{value}:…` (
   - Before a round the node waits for the largest `$timeoutMs` among those slots, capped by *Max Wait Between Rounds*, with `sleep` from `n8n-workflow`. `deferred` withholds `$timeoutMs`, so such a round goes at once.
   - A refused checkpoint is answered once by a plain `GET` that replaces the rounds so far: `410` with `checkpoint_expired` and `409` (ADR-033 §3: "the client re-GETs"), and `401` with `invalid_checkpoint` (the ADR names no client action; the dev-server's message asks for this). Delivery's `WWW-Authenticate` hint tells these from a rejected key or a retired API version. A second refusal or a `404` fails the item.
   - A resume round re-applies the policy its own request carries (*Resolution policy*). The node's rounds carry no header, so each round may resolve query slots too. A slot that still doesn't resolve comes back open with a fresh `$resume`, and *Max Rounds* is what stops it.
+- **ETag revalidation** (*If-None-Match* and *Include Response Headers*, both off by default). No contract pins this; the source is delivery's `RepresentationEndpoints` (sc-13417 amendment to delivery/ADR-032): a complete `200` to a fresh `GET` carries a weak `ETag`, an HMAC over the body keyed per deployment, and a matching `If-None-Match` (a comma-separated list or `*`, compared weakly) is answered `304` with the same headers and no body. A `207`, a `202`, a resume round and an error carry none. The SDK dev-server does the same with its own, unkeyed tag.
+  - With either field set, the read asks for `returnFullResponse`, so the body comes with its status and headers. With both off the request and output are as before.
+  - *If-None-Match* goes only on the first `GET` of the route, not on resume rounds (delivery doesn't revalidate those) and not on the fallback after a refused checkpoint.
+  - n8n's request helper fails any status outside 2xx, `304` included, with the response as the failure's `cause`. The node reads a `304` from that failure, but only when it sent *If-None-Match*. It doesn't set `ignoreHttpStatusErrors`: that would hand every other status back as a success, so the `503` retry in `deliveryReadRequest` and the error wording would no longer run.
+  - Output: with *Include Response Headers*, `{ status, headers, body }` with whichever of `Cache-Tag`, `ETag`, `Cache-Control` and `Vary` the last response carried (the Context Graph MCP server's `includeHeaders` set, `OUTPUT_HEADERS`), and `body: null` on a `304`; without it, the body as before, or `{ notModified: true }` on a `304`. After resume rounds the headers are the last round's, so no `ETag` from an earlier response is carried over.
+  - Keeping ETags between runs is left to the workflow (an n8n Data Table); the node keeps no state.
 
 ### 3.6 Schema: Get
 
