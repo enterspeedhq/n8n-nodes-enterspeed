@@ -302,7 +302,7 @@ With **Schema**, *Context* lists each route placeholder first (`productId (path)
 | *Include Response Headers* | Outputs each item as `{ status, headers, body }`, where `headers` holds whichever of `ETag`, `Cache-Control`, `Cache-Tag` and `Vary` the Context Graph sent: the shape the Context Graph MCP server's `includeHeaders` returns. |
 
 - **Not modified:** a `304` succeeds. With *Include Response Headers* it comes out as `{ status: 304, headers, body: null }`, otherwise as `{ notModified: true }`. Drop those items with an **IF** node.
-- **No ETag, no `304`:** a partial answer, a resume round and an error carry no `ETag`, and the node doesn't add one. With *Resume Partial Answers*, *If-None-Match* goes only on the first read of the route, and `status` and `headers` are those of the last response read.
+- **No ETag, no `304`:** a partial answer, a resume round and an error carry no `ETag`, and the node doesn't add one. With *Continue On Fail* a failed item keeps its `{ route, error }` shape, without `status` or `headers`. With *Resume Partial Answers*, *If-None-Match* goes only on the first read of the route, and `status` and `headers` are those of the last response read.
 - **Keeping the ETag between runs** is the workflow's job: store `headers.ETag` per route in an n8n **Data Table**, and read it back before Representation › Get. Workflow static data isn't saved by manual runs.
 - **Store the tag from the server you read.** Each deployed Context Graph keys its tags, and the dev-server's never match a deployed one's.
 
