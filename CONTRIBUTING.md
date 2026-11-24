@@ -70,6 +70,20 @@ After changing code:
 npm run build && docker compose restart n8n
 ```
 
+### The Context Graph end to end
+
+CI runs the round-trip template (`Context-Graph-Round-Trip.json`) in this Docker n8n against the SDK dev-server, with an empty graph, on every pull request into `main`. To run it locally you need Node 26 (the dev-server's minimum):
+
+```bash
+cd e2e && npm install && cd ..   # the dev-server version pinned in e2e/package.json
+N8N_WORKFLOW_DIRS=workflows/templates,e2e/workflows node scripts/setup.mjs
+node e2e/context-graph.mjs
+```
+
+It starts the dev-server (graph on `:5200`), serves the export the template fetches (`:5500`), runs each case with `scripts/execute-workflow.mjs` and checks what each node output, then stops. `node e2e/context-graph.mjs --serve` only serves the graph and the export, for running the template by hand. On Linux the n8n container reaches the host through `host.docker.internal`, which `docker-compose.yml` maps.
+
+Until the pinned dev-server version is published, install it from a build of the Context Graph SDK's `master` instead: `pnpm pack` its `core` and `dev-server` packages, then `npm install --no-save <core.tgz> <dev-server.tgz>` in `e2e/`.
+
 ## Connecting an MCP client to your local n8n
 
 Once your local n8n instance is running (see above), you can let an MCP-capable

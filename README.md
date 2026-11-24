@@ -392,7 +392,7 @@ npm run lint    # the rules n8n's verification scanner runs
 npm test        # vitest
 ```
 
-For local end-to-end runs in Docker n8n, see [CONTRIBUTING.md](CONTRIBUTING.md). How the package is built is in [ARCHITECTURE.md](ARCHITECTURE.md); conventions and rules for contributors and coding agents are in [AGENTS.md](AGENTS.md).
+For local end-to-end runs in Docker n8n, including the Context Graph round trip CI runs against the dev-server, see [CONTRIBUTING.md](CONTRIBUTING.md). How the package is built is in [ARCHITECTURE.md](ARCHITECTURE.md); conventions and rules for contributors and coding agents are in [AGENTS.md](AGENTS.md).
 
 ## Licence
 

@@ -22,6 +22,7 @@ repository. This is the canonical agent context; Claude Code reads it via the `@
 | `workflows/templates/` | Example workflows, including the Tonevik demo (`Context-Graph-Tonevik-Demo.json`) |
 | `docs/context-graph-demo/GUIDE.md` | Internal notes on how the Tonevik demo is built; what a user needs to run it is in the template's sticky notes |
 | `scripts/` | `setup.mjs` (credentials + template import into Docker n8n), `execute-workflow.mjs` (run one by name) |
+| `e2e/` | The Context Graph end to end (Node 26): the SDK dev-server, its schema and exports, the check script and its own workflows |
 | `tests/` | One test file per node, `EnterspeedContextGraph.msd.test.ts`, `mocks.ts`, `workflow-templates.test.ts` |
 
 The Context Graph's behaviour is defined in the **semantic-graph** repository: wire contracts in
@@ -80,9 +81,15 @@ CI run and must be checked locally.
 
 **End to end** (manual, Docker): `docker compose up -d`, then `node scripts/setup.mjs` (creates both
 credentials and imports every template) and `node scripts/execute-workflow.mjs` (runs the workflow
-named in `N8N_WORKFLOW_NAME`). Unit tests don't prove n8n's run behaviour: the mocks throw plain
-errors, not n8n's wrapped `NodeApiError`, so anything that depends on real error wrapping, item
-pairing or expression evaluation is proven in Docker n8n.
+named in `N8N_WORKFLOW_NAME`). Unit tests don't prove n8n's run behaviour: the mocks stand in for n8n's
+request helper (`asN8nFullResponse`), so anything that depends on n8n itself (its errors, item
+pairing, expression evaluation) is proven in Docker n8n.
+
+**The Context Graph end to end** (`e2e/`, Node 26, CI's e2e job): `npm install` in `e2e/`, run
+`setup.mjs` with `N8N_WORKFLOW_DIRS=workflows/templates,e2e/workflows`, then
+`node e2e/context-graph.mjs`. It runs the round-trip template and the delivery checks against an
+empty dev-server and checks each node's output. Add a check there when a behaviour depends on n8n
+itself (its request helper, errors, expressions).
 
 **The Context Graph locally** runs against the SDK dev-server (semantic-graph-sdk,
 `packages/dev-server`). Start Tonevik stage 1 with its own empty data folder. The dev-server differs

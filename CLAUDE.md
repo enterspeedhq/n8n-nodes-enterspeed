@@ -38,6 +38,13 @@ node scripts/setup.mjs             # creates credential, imports workflows/templ
 node scripts/execute-workflow.mjs  # triggers a workflow by name (N8N_WORKFLOW_NAME env var)
 ```
 
+The Context Graph end to end (Node 26, `npm install` in `e2e/` first; CI runs it):
+
+```bash
+N8N_WORKFLOW_DIRS=workflows/templates,e2e/workflows node scripts/setup.mjs
+node e2e/context-graph.mjs         # dev-server + export + checks, then stops
+```
+
 ## Code style
 
 - Tabs for indentation, single quotes.

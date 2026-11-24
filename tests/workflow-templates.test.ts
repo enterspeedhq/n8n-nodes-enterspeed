@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 
-const TEMPLATES_DIR = join(__dirname, '../workflows/templates');
+// The example templates, and the Context Graph end-to-end checks' own workflows,
+// which setup.mjs imports the same way.
+const WORKFLOW_DIRS = [join(__dirname, '../workflows/templates'), join(__dirname, '../e2e/workflows')];
 // Templates reference credentials via placeholders like
 // __ENTERSPEED_CREDENTIAL_ID__ or __CONTENTFUL_CREDENTIAL_ID__. Discovering
 // them by pattern (rather than an enumerated list) means a template can
@@ -10,9 +12,11 @@ const TEMPLATES_DIR = join(__dirname, '../workflows/templates');
 const PLACEHOLDER_PATTERN = /__[A-Z0-9_]+_CREDENTIAL_ID__/g;
 
 function loadTemplates() {
-	return readdirSync(TEMPLATES_DIR)
-		.filter((f) => f.endsWith('.json'))
-		.map((f) => ({ name: f, raw: readFileSync(join(TEMPLATES_DIR, f), 'utf-8') }));
+	return WORKFLOW_DIRS.flatMap((dir) =>
+		readdirSync(dir)
+			.filter((f) => f.endsWith('.json'))
+			.map((f) => ({ name: f, raw: readFileSync(join(dir, f), 'utf-8') })),
+	);
 }
 
 function findPlaceholders(raw: string): string[] {
