@@ -1270,6 +1270,19 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 			expect(out[1].json.id).toBe('0');
 		});
 
+		it('refuses a split run in which two queries share an id, as one request would be refused', async () => {
+			// Item 0 names itself "39", which is also the id-less last query's position; they land in different requests.
+			const params = { query: (i: number) => ({ ...padded(i), id: i === 0 ? '39' : undefined }) };
+			const httpRequest = answerEach();
+			await expect(query({ items: Array.from({ length: 40 }, () => ({})), params, httpRequest })).rejects.toThrow(
+				'Items 0 and 39 both have the query id "39". Each query in a run needs its own id.',
+			);
+			expect(httpRequest).not.toHaveBeenCalled();
+			const { out } = await query({ items: Array.from({ length: 40 }, () => ({})), params, continueOnFail: true });
+			expect(out.length).toBe(40);
+			expect(out.every((o) => String(o.json.error).includes('both have the query id "39"'))).toBe(true);
+		});
+
 		it('with Continue On Fail, a failed request fails only its own queries', async () => {
 			let call = 0;
 			const httpRequest = vi.fn(async (req: IDataObject) => {
@@ -1357,6 +1370,12 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 				detail: 'Search could not answer this batch. Retry after the time in Retry-After.',
 			};
 			await expect(query({ httpRequest: failWith(503, problem) })).rejects.toThrow(problem.detail);
+		});
+
+		it('falls back to the status for a problem body without a detail', async () => {
+			await expect(query({ httpRequest: failWith(500, { title: 'Search failed', status: 500 }) })).rejects.toThrow(
+				'The Delivery URL answered with status 500.',
+			);
 		});
 
 		it('says when the Delivery URL is unreachable', async () => {
