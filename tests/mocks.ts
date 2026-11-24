@@ -7,6 +7,7 @@ import type {
 	IHttpRequestOptions,
 } from 'n8n-workflow';
 import { EnterspeedContextGraphApi } from '../credentials/EnterspeedContextGraphApi.credentials';
+import { httpFailure } from '../nodes/EnterspeedContextGraph/transport';
 
 /** The Context Graph credential's own `authenticate`, run by the Context Graph mock. */
 const authenticate = new EnterspeedContextGraphApi().authenticate as (
@@ -15,6 +16,31 @@ const authenticate = new EnterspeedContextGraphApi().authenticate as (
 ) => Promise<IHttpRequestOptions>;
 
 type ParamMap = Record<string, unknown>;
+
+/**
+ * n8n's request helper with `ignoreHttpStatusErrors` and `returnFullResponse`,
+ * as contextGraphApiRequest sends every request: a test's mock answers with a
+ * body (or a full response) or throws a failure with a status, as a server
+ * would, and this hands the node the full response either way. A failure with
+ * no status (no answer at all) is still thrown, as n8n throws it.
+ */
+export async function asN8nFullResponse(
+	requestOptions: IHttpRequestOptions,
+	send: (requestOptions: IHttpRequestOptions) => Promise<unknown>,
+): Promise<unknown> {
+	const { ignoreHttpStatusErrors, ...sent } = requestOptions;
+	if (!ignoreHttpStatusErrors) return send(sent);
+	try {
+		const answer = (await send(sent)) as { statusCode?: unknown; headers?: unknown } | undefined;
+		const isFull = typeof answer?.statusCode === 'number' && answer.headers !== undefined;
+		return isFull ? answer : { statusCode: 200, headers: {}, body: answer };
+	} catch (error) {
+		const { status, data, headers } = httpFailure(error);
+		// No answer at all: n8n throws, as before.
+		if (status === undefined) return Promise.reject(error);
+		return { statusCode: status, headers: headers ?? {}, body: data };
+	}
+}
 
 /**
  * Builds a minimal IExecuteFunctions stand-in for the Enterspeed action node.
@@ -135,7 +161,7 @@ export function createContextGraphExecuteMock(opts: {
 		continueOnFail: () => opts.continueOnFail ?? false,
 		helpers: {
 			httpRequestWithAuthentication: async (_credentialType: string, requestOptions: IHttpRequestOptions) =>
-				opts.httpRequest(await authenticate(creds, requestOptions)),
+				asN8nFullResponse(await authenticate(creds, requestOptions), opts.httpRequest),
 			// A request without the credential (the signed upload URL), sent as given.
 			httpRequest: async (requestOptions: IHttpRequestOptions) => opts.httpRequest(requestOptions),
 			getBinaryDataBuffer: async (itemIndex: number, name: string) => {

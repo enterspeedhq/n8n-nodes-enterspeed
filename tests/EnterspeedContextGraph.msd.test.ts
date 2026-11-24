@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { IDataObject, ILoadOptionsFunctions } from 'n8n-workflow';
+import type { IDataObject, IHttpRequestOptions, ILoadOptionsFunctions } from 'n8n-workflow';
 import {
 	getIndexes,
 	getFilterFields,
@@ -21,7 +21,7 @@ import {
 } from '../nodes/EnterspeedContextGraph/actions/representation/get.operation';
 import { builderQuery, execute as runQuery } from '../nodes/EnterspeedContextGraph/actions/index/query.operation';
 import { execute as getShapes } from '../nodes/EnterspeedContextGraph/actions/shape/getMany.operation';
-import { createContextGraphExecuteMock, defaultContextGraphCreds } from './mocks';
+import { asN8nFullResponse, createContextGraphExecuteMock, defaultContextGraphCreds } from './mocks';
 
 /**
  * An MSD as delivery's MaterialisedSchemaBuilder writes it (delivery/ADR-028
@@ -72,7 +72,10 @@ const loadOptions = (answer: () => Promise<unknown>, params: IDataObject = {}) =
 		getCredentials: async () => ({ ...defaultContextGraphCreds, deliveryUrl: 'http://localhost:5200/' }),
 		getCurrentNodeParameter: (name: string) => params[name],
 		getNode: () => ({ name: 'Enterspeed Context Graph' }),
-		helpers: { httpRequestWithAuthentication: async (_c: string, options: IDataObject) => httpRequest(options) },
+		helpers: {
+			httpRequestWithAuthentication: async (_c: string, options: IHttpRequestOptions) =>
+				asN8nFullResponse(options, httpRequest as (options: IHttpRequestOptions) => Promise<unknown>),
+		},
 	} as unknown as ILoadOptionsFunctions;
 	return { context, httpRequest };
 };
