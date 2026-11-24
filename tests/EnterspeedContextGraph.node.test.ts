@@ -2179,6 +2179,27 @@ describe('EnterspeedContextGraph — Representation › Get, revalidating with a
 		expect((out[0].json.headers as IDataObject).ETag).toBe(etag);
 	});
 
+	it('after a refused checkpoint, outputs the fresh read\'s own status and ETag, and sends no If-None-Match on it', async () => {
+		const first = {
+			product: { sku: 'p1' },
+			price: null,
+			$metadata: { product: { $state: 'fresh' }, price: { $state: 'deferred' }, $resume: 'token-1' },
+		};
+		const expired = Object.assign(new NodeApiError(httpNode, { httpCode: '410' }), {
+			cause: { response: { status: 410, headers: { 'www-authenticate': 'X-Resume error="checkpoint_expired"' } } },
+		});
+		const httpRequest = vi
+			.fn()
+			.mockResolvedValueOnce(full(first, 207, { 'cache-control': 'private, no-store' }))
+			.mockRejectedValueOnce(expired)
+			.mockResolvedValueOnce(tagged);
+		const out = await read({ ifNoneMatch: '"stale"', includeResponseHeaders: true, resumePartial: true }, httpRequest);
+		expect(httpRequest).toHaveBeenCalledTimes(3);
+		expect(sentHeader(httpRequest, 'If-None-Match', 2)).toBeUndefined();
+		expect(sentHeader(httpRequest, 'X-Resume', 2)).toBeUndefined();
+		expect(out[0].json).toMatchObject({ status: 200, headers: { ETag: etag }, body: page });
+	});
+
 	it('an error carries no ETag: with Continue On Fail it is output as before', async () => {
 		const httpRequest = vi.fn().mockRejectedValue(n8nError(404, { message: 'Required slot "product" could not be resolved.' }));
 		const out = await read({ ifNoneMatch: etag, includeResponseHeaders: true }, httpRequest, true);
