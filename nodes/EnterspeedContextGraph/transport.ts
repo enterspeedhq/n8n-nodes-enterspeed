@@ -55,7 +55,8 @@ export const MAX_RETRY_JITTER_MS = 1_000;
 /** What failed reads say when Delivery answers `503`, retried or not. */
 export const DELIVERY_BUSY_MESSAGE = "The Delivery URL is busy or can't answer right now (status 503). Try again later.";
 
-function header(headers: Record<string, unknown> | undefined, name: string): string | undefined {
+/** A response header's value, looked up by its lower-case name; the first value if it came more than once. */
+export function header(headers: Record<string, unknown> | undefined, name: string): string | undefined {
 	const entry = Object.entries(headers ?? {}).find(([key]) => key.toLowerCase() === name);
 	const value = Array.isArray(entry?.[1]) ? entry[1][0] : entry?.[1];
 	return value === undefined || value === null ? undefined : String(value);

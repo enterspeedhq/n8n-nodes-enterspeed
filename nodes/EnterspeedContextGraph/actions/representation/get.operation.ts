@@ -1,6 +1,6 @@
 import type { IDataObject, IExecuteFunctions, INodeExecutionData, INodeProperties } from 'n8n-workflow';
 import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
-import { deliveryReadRequest, httpFailure } from '../../transport';
+import { deliveryReadRequest, header, httpFailure } from '../../transport';
 import type { ContextGraphCredentials } from '../types';
 import { API_VERSION, deliveryError } from '../shape/shared';
 import { deliveryHeader, parseContextFieldId, routeSegments } from '../schema/msd';
@@ -79,6 +79,25 @@ export const properties: INodeProperties[] = [
 		placeholder: 'e.g. /products/42',
 		displayOptions: { show: { ...show, routeFrom: ['route'] } },
 		description: "The representation's route path, starting with a slash, as the schema declares it",
+	},
+	{
+		displayName: 'If-None-Match',
+		name: 'ifNoneMatch',
+		type: 'string',
+		default: '',
+		placeholder: 'e.g. {{ $json.etag }}',
+		displayOptions: { show },
+		description:
+			"The ETag kept from an earlier read of this route, sent as the If-None-Match header. If the representation hasn't changed, the Context Graph answers 304 Not Modified and the item says so instead of carrying the representation. Empty sends no header.",
+	},
+	{
+		displayName: 'Include Response Headers',
+		name: 'includeResponseHeaders',
+		type: 'boolean',
+		default: false,
+		displayOptions: { show },
+		description:
+			'Whether to output each item as { status, headers, body }, with whichever of the ETag, Cache-Control, Cache-Tag and Vary headers the Context Graph sent. Keep the ETag to send it back in If-None-Match on the next run.',
 	},
 	{
 		displayName: 'Resume Partial Answers',
@@ -326,7 +345,52 @@ function checkpointError(this: IExecuteFunctions, error: unknown, route: unknown
 	);
 }
 
-/** One item's representation, or the error that stops it. */
+/**
+ * The response headers Include Response Headers outputs, under these names:
+ * the ones the Context Graph MCP server's `includeHeaders` returns.
+ */
+export const OUTPUT_HEADERS = ['Cache-Tag', 'ETag', 'Cache-Control', 'Vary'];
+
+/** Whichever of OUTPUT_HEADERS the response carries. */
+export function outputHeaders(headers: Record<string, unknown> | undefined): IDataObject {
+	const selected: IDataObject = {};
+	for (const name of OUTPUT_HEADERS) {
+		const value = header(headers, name.toLowerCase());
+		if (value !== undefined) selected[name] = value;
+	}
+	return selected;
+}
+
+/** How a read is sent and output beyond the plain representation; both off by default. */
+export interface RevalidateSettings {
+	/** Sent as `If-None-Match` on the first read of the route, when not blank. */
+	ifNoneMatch?: string;
+	includeHeaders: boolean;
+}
+
+/**
+ * One item's answer: the representation, or `notModified` when the Context
+ * Graph answered `304` to If-None-Match. `status` and `headers` are those of
+ * the last response read, when they were asked for.
+ */
+export interface RepresentationAnswer {
+	body?: IDataObject;
+	notModified?: boolean;
+	status?: number;
+	headers?: Record<string, unknown>;
+}
+
+/** An answer as the item outputs it. */
+export function answerJson(answer: RepresentationAnswer, includeHeaders: boolean): IDataObject {
+	if (!includeHeaders) return answer.notModified ? { notModified: true } : (answer.body as IDataObject);
+	return {
+		status: answer.status as number,
+		headers: outputHeaders(answer.headers),
+		body: answer.notModified ? null : (answer.body as IDataObject),
+	};
+}
+
+/** One item's answer, or the error that stops it. */
 async function readRepresentation(
 	this: IExecuteFunctions,
 	route: unknown,
@@ -334,7 +398,8 @@ async function readRepresentation(
 	creds: ContextGraphCredentials,
 	request?: SchemaRequest | string,
 	resume?: ResumeSettings,
-): Promise<IDataObject | NodeApiError | NodeOperationError> {
+	revalidate: RevalidateSettings = { includeHeaders: false },
+): Promise<RepresentationAnswer | NodeApiError | NodeOperationError> {
 	const problem = typeof request === 'string' ? request : request ? undefined : invalidRoute(route);
 	if (problem) return new NodeOperationError(this.getNode(), `Item ${itemIndex} ${problem}.`, { itemIndex });
 	const fromSchema = typeof request === 'object' ? request : undefined;
@@ -347,33 +412,58 @@ async function readRepresentation(
 	const failed = (error: unknown) =>
 		deliveryError.call(this, error, creds, { itemIndex, notFound: `No representation for route "${route}".` });
 
+	// The status and headers are read only when asked for, so a plain read
+	// is sent as it always was.
+	const fullResponse = revalidate.includeHeaders || revalidate.ifNoneMatch !== undefined;
+	let status: number | undefined;
+	let responseHeaders: Record<string, unknown> | undefined;
+
 	// A resume round repeats the request exactly, query string and headers
 	// included, since delivery reads them again on every round; only
 	// X-Resume is added, holding the checkpoint as it came (delivery/ADR-033 §2).
-	const send = async (checkpoint?: string) => {
-		const headers: IDataObject = { ...(fromSchema?.headers ?? {}), ...(checkpoint && { 'X-Resume': checkpoint }) };
+	// If-None-Match goes only on the first read: delivery tags only a complete
+	// 200 to a fresh GET, never a resume round (RepresentationEndpoints).
+	const send = async (checkpoint?: string, ifNoneMatch?: string) => {
+		const headers: IDataObject = {
+			...(fromSchema?.headers ?? {}),
+			...(checkpoint && { 'X-Resume': checkpoint }),
+			...(ifNoneMatch !== undefined && { 'If-None-Match': ifNoneMatch }),
+		};
+		const response = await deliveryReadRequest.call(this, {
+			method: 'GET',
+			url: fromSchema
+				? `${creds.deliveryUrl}/${API_VERSION}/${encodeURIComponent(creds.manifestVersion)}/${fromSchema.segments.map(encodeURIComponent).join('/')}`
+				: representationUrl(creds, route as string),
+			...(fromSchema && Object.keys(fromSchema.qs).length && { qs: fromSchema.qs }),
+			...(Object.keys(headers).length && { headers }),
+			json: true,
+			...(fullResponse && { returnFullResponse: true }),
+		});
+		if (!fullResponse) return asObject(response);
+		const full = (response ?? {}) as { body?: unknown; headers?: Record<string, unknown>; statusCode?: number };
+		status = full.statusCode;
+		responseHeaders = full.headers;
 		// 200, 202 and 207 all carry the body; which slots resolved is in
 		// $metadata.<slot>.$state, not the status (Representation envelope).
-		return asObject(
-			await deliveryReadRequest.call(this, {
-				method: 'GET',
-				url: fromSchema
-					? `${creds.deliveryUrl}/${API_VERSION}/${encodeURIComponent(creds.manifestVersion)}/${fromSchema.segments.map(encodeURIComponent).join('/')}`
-					: representationUrl(creds, route as string),
-				...(fromSchema && Object.keys(fromSchema.qs).length && { qs: fromSchema.qs }),
-				...(Object.keys(headers).length && { headers }),
-				json: true,
-			}),
-		);
+		return asObject(full.body);
 	};
+	const done = (body: IDataObject): RepresentationAnswer => ({ body, status, headers: responseHeaders });
 
 	let answer: IDataObject | undefined;
 	try {
-		answer = await send();
+		answer = await send(undefined, revalidate.ifNoneMatch);
 	} catch (error) {
+		// n8n's request helper fails a 304 like any status outside 2xx; it is
+		// read from the failure, so every other status keeps its wording and a
+		// 503 its retry. It counts only when If-None-Match was sent.
+		const failure = httpFailure(error);
+		if (failure.status === 304 && revalidate.ifNoneMatch !== undefined) {
+			return { notModified: true, status: 304, headers: failure.headers };
+		}
 		return failed(error);
 	}
-	if (!answer || !resume) return answer ?? notAnObject();
+	if (!answer) return notAnObject();
+	if (!resume) return done(answer);
 
 	// Rounds go on while the answer carries a checkpoint and a slot it may
 	// complete, up to Max Rounds; each answer carries a fresh checkpoint while
@@ -407,13 +497,16 @@ async function readRepresentation(
 		if (!next) return notAnObject();
 		answer = mergeResumeRound(answer, next);
 	}
-	return answer;
+	// The status and headers are the last response's: a resume round's carry
+	// no ETag, and none is carried over from an earlier one.
+	return done(answer);
 }
 
 /**
  * Reads one representation per input item from
  * `GET {deliveryUrl}/v1/{manifest}{route}` and outputs it as it is: each slot
  * at its name, plus `$metadata`. A route with no representation fails the item.
+ * With If-None-Match or Include Response Headers set, see answerJson.
  */
 export async function execute(
 	this: IExecuteFunctions,
@@ -430,7 +523,12 @@ export async function execute(
 					maxWaitMs: Number(this.getNodeParameter('maxResumeWaitMs', itemIndex, 5000)),
 				}
 			: undefined;
-		const representation = await readRepresentation.call(this, route, itemIndex, creds, request, resume);
+		const ifNoneMatch = this.getNodeParameter('ifNoneMatch', itemIndex, '');
+		const revalidate: RevalidateSettings = {
+			ifNoneMatch: typeof ifNoneMatch === 'string' && ifNoneMatch.trim() ? ifNoneMatch : undefined,
+			includeHeaders: this.getNodeParameter('includeResponseHeaders', itemIndex, false) === true,
+		};
+		const representation = await readRepresentation.call(this, route, itemIndex, creds, request, resume, revalidate);
 		if (representation instanceof Error) {
 			if (!this.continueOnFail()) throw representation;
 			results.push({
@@ -442,7 +540,7 @@ export async function execute(
 				pairedItem: { item: itemIndex },
 			});
 		} else {
-			results.push({ json: representation, pairedItem: { item: itemIndex } });
+			results.push({ json: answerJson(representation, revalidate.includeHeaders), pairedItem: { item: itemIndex } });
 		}
 	}
 
