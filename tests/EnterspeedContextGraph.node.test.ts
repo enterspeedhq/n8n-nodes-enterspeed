@@ -2223,10 +2223,10 @@ describe('EnterspeedContextGraph — Artifact › Get, Get Many, Get Lines', () 
 
 		it('reads one artifact per item, each paired to its item', async () => {
 			const httpRequest = vi.fn(async () => drained);
-			const { out } = await run({ params: { ...params, artifactId: (i: number) => `a-${i}` }, httpRequest, items: 2 });
+			const { out } = await run({ params: { ...params, artifactId: (i: number) => `00000000-0000-0000-0000-00000000000${i}` }, httpRequest, items: 2 });
 			expect(httpRequest.mock.calls.map((c) => (c[0] as IHttpRequestOptions).url)).toEqual([
-				`${artifactsAt}/a-0`,
-				`${artifactsAt}/a-1`,
+				`${artifactsAt}/00000000-0000-0000-0000-000000000000`,
+				`${artifactsAt}/00000000-0000-0000-0000-000000000001`,
 			]);
 			expect(out.map((o) => o.pairedItem)).toEqual([{ item: 0 }, { item: 1 }]);
 		});
@@ -2386,18 +2386,23 @@ describe('EnterspeedContextGraph — Artifact › Get, Get Many, Get Lines', () 
 
 		it('with Continue On Fail, outputs { source, id, error, description } and goes on with the next item', async () => {
 			const httpRequest = vi.fn(async (req: IHttpRequestOptions) => {
-				if (req.url.endsWith('/a-0')) throw refusal(404, 'not-found', 'No such artifact.', 'No artifact a-0 under pim.');
+				if (req.url.endsWith('-000000000000')) throw refusal(404, 'not-found', 'No such artifact.', 'No artifact with this id under pim.');
 				return drained;
 			});
 			const { out } = await run({
-				params: { operation: 'get', artifactId: (i: number) => `a-${i}` },
+				params: { operation: 'get', artifactId: (i: number) => `00000000-0000-0000-0000-00000000000${i}` },
 				httpRequest,
 				items: 2,
 				continueOnFail: true,
 			});
 			expect(out).toEqual([
 				{
-					json: { source: 'pim', id: 'a-0', error: 'No such artifact. (not-found)', description: 'No artifact a-0 under pim.' },
+					json: {
+						source: 'pim',
+						id: '00000000-0000-0000-0000-000000000000',
+						error: 'No such artifact. (not-found)',
+						description: 'No artifact with this id under pim.',
+					},
 					pairedItem: { item: 0 },
 				},
 				{ json: drained, pairedItem: { item: 1 } },

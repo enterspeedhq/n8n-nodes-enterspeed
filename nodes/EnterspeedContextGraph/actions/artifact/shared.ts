@@ -74,6 +74,8 @@ export function ingestError(
 	return new NodeApiError(this.getNode(), { httpCode }, { message, description: detail, httpCode, itemIndex });
 }
 
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const blank = (value: unknown) => value === undefined || value === null || (typeof value === 'string' && !value.trim());
 
 /**
@@ -94,6 +96,8 @@ export function readTarget(
 	const id = this.getNodeParameter('artifactId', itemIndex, undefined);
 	if (blank(id)) return fail('has no Artifact ID');
 	if (typeof id !== 'string') return fail('has an Artifact ID that is not text');
+	// The routes take only a GUID; anything else answers a bare 404 that names nothing.
+	if (!GUID.test(id.trim())) return fail('has an Artifact ID that is not an artifact ID (a GUID)');
 	return { source, id: id.trim() };
 }
 
@@ -145,10 +149,20 @@ export async function readEachItem(
 					: new NodeOperationError(this.getNode(), error as Error, { itemIndex });
 			if (!this.continueOnFail()) throw nodeError;
 			const { message, description } = nodeError;
+			// A parameter may be the expression that failed: it is left out rather than read again.
+			const param = (name: string) => {
+				try {
+					return this.getNodeParameter(name, itemIndex, undefined) as IDataObject[string];
+				} catch {
+					return undefined;
+				}
+			};
+			const source = param('sourceAlias');
+			const id = withId ? param('artifactId') : undefined;
 			results.push({
 				json: {
-					source: this.getNodeParameter('sourceAlias', itemIndex, undefined) as IDataObject[string],
-					...(withId && { id: this.getNodeParameter('artifactId', itemIndex, undefined) as IDataObject[string] }),
+					...(source !== undefined && { source }),
+					...(id !== undefined && { id }),
 					error: message,
 					...(description && { description }),
 				},

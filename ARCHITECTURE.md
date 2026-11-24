@@ -209,7 +209,7 @@ A snapshot source's complete export goes in as one artifact (cross/ADR-022 D1, i
 
 - **Get** outputs the status route's answer unchanged, one item.
 - **Get Many** outputs each `artifacts[]` entry unchanged. *State* is sent as `state` on every page; *Return All* sends `limit=200` (the route's maximum) and follows `nextCursor` until `null`; otherwise one page of *Limit* (1–200, checked before sending).
-- **Get Lines** pages the status route with `?after={nextAfter}` and outputs each `lines[]` entry unchanged, stopping at `nextAfter: null` (*Return All*) or once *Limit* lines are out, reading no further page than it needs. The page size (1,000) is the platform's. `lines` absent or `null` (not committed yet) outputs nothing.
+- **Get Lines** pages the status route with `?after={nextAfter}` and outputs each `lines[]` entry unchanged, stopping at `nextAfter: null` (*Return All*) or once *Limit* lines are out, reading no further page than it needs. The page size (1,000) is the platform's. An artifact not committed yet answers no lines, so it outputs nothing. *Artifact ID* must be a GUID, checked before sending: the routes take only a GUID, and anything else answers a bare `404` that names no reason.
 - **Errors.** As Upload: `ingestError` words a refusal by its problem type (`not-found`, `invalid-listing`), and a bare `401`/`403` by status. With *Continue On Fail* an item comes out as `{ source, id?, error, description? }` (`id` for Get and Get Lines).
 
 ---
