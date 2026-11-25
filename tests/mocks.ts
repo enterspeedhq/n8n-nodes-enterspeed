@@ -61,6 +61,17 @@ export function createWebhookMock(opts: {
 		}),
 		helpers: {
 			httpRequest: opts.httpRequest,
+			// Mirrors the `enterspeedApi` credential's `authenticate` config
+			// (injects the Environment API Key as `X-Api-Key`), since the real
+			// n8n runtime applies it before delegating to `httpRequest`.
+			httpRequestWithAuthentication: async (_credentialType: string, requestOptions: IDataObject) =>
+				opts.httpRequest({
+					...requestOptions,
+					headers: {
+						...(requestOptions.headers as IDataObject | undefined),
+						'X-Api-Key': opts.creds.environmentApiKey,
+					},
+				}),
 			returnJsonArray: (data: IDataObject[]) => data.map((json) => ({ json })),
 		},
 	} as unknown as IWebhookFunctions;

@@ -9,7 +9,14 @@ const operationSelector: INodeProperties = {
 	type: 'options',
 	noDataExpression: true,
 	displayOptions: { show: { resource: ['route'] } },
-	options: [{ name: 'Get Many', value: 'getAll', action: 'Get many routes for the environment' }],
+	options: [
+		{
+			name: 'Get Many',
+			value: 'getAll',
+			action: 'Get many routes for the environment',
+			description: 'Retrieve a list of routes for the environment',
+		},
+	],
 	default: 'getAll',
 };
 

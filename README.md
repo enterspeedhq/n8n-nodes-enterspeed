@@ -1,4 +1,4 @@
-# n8n-nodes-enterspeed
+# @enterspeed/n8n-nodes-enterspeed
 
 [![CI](https://github.com/enterspeedhq/n8n-nodes-enterspeed/actions/workflows/ci.yml/badge.svg)](https://github.com/enterspeedhq/n8n-nodes-enterspeed/actions/workflows/ci.yml)
 
@@ -6,24 +6,26 @@ n8n community nodes for [Enterspeed](https://www.enterspeed.com) — get data **
 
 This package ships two nodes:
 
-- **Enterspeed** (action) — Ingest, Delivery, Query and Routes operations.
-- **Enterspeed Webhook Trigger** (push) — starts a workflow when a view is deployed or removed.
+- **Enterspeed Core** (action) — Ingest, Delivery, Query and Routes operations.
+- **Enterspeed Core Webhook Trigger** (push) — starts a workflow when a view is deployed or removed.
+
+Before 0.2.0 these were labelled **Enterspeed**, **Enterspeed Webhook Trigger** and **Enterspeed API** (credential). Only the labels changed — the internal names (`enterspeed`, `enterspeedTrigger`, `enterspeedApi`) are the same, so existing workflows and credentials need no action. Nodes already in a workflow keep their names.
 
 No keys are bundled. The customer enters their own Enterspeed credentials at runtime.
 
 ## Installation
 
-In n8n: **Settings → Community Nodes → Install** and enter `n8n-nodes-enterspeed`.
+In n8n: **Settings → Community Nodes → Install** and enter `@enterspeed/n8n-nodes-enterspeed`.
 
 Self-hosted via npm:
 
 ```bash
-npm install n8n-nodes-enterspeed
+npm install @enterspeed/n8n-nodes-enterspeed
 ```
 
 ## Credentials
 
-Create an **Enterspeed API** credential with:
+Create an **Enterspeed Core API** credential with:
 
 | Field | Where to get it | Used by |
 |---|---|---|
@@ -38,6 +40,7 @@ Create an **Enterspeed API** credential with:
 - *Delete*: requires Origin ID.
 - *Save Entities (Bulk)*: POST a JSON array of up to 50 entities (no path params).
 - *Delete Entities (Bulk)*: DELETE with `{ "originIds": [...] }` body of up to 50 origin IDs.
+- *Delete* and *Delete Entities (Bulk)* output always includes `deleted: true`, merged on top of whatever the Ingest API returned.
 
 **Delivery — Get Content** — `GET https://delivery.enterspeed.com/v2`
 - Fetch by URL, comma-separated view IDs, and/or handles.
@@ -87,7 +90,7 @@ example workflow.
 
 ## Typical flows
 
-- **Ingest**: Source (PIM/CMS/ERP) → map → **Enterspeed: Save Entity**.
+- **Ingest**: Source (PIM/CMS/ERP) → map → **Enterspeed Core: Save Entity**.
 - **Delivery / last mile**: **Poll Index for Changes** → map to feed (XML/CSV) → push to Google / Meta / marketplace.
 
 ## Licence

@@ -12,7 +12,12 @@ const operationSelector: INodeProperties = {
 	noDataExpression: true,
 	displayOptions: { show: { resource: ['query'] } },
 	options: [
-		{ name: 'Query Items', value: 'query', action: 'Query items in an index' },
+		{
+			name: 'Query Items',
+			value: 'query',
+			action: 'Query items in index',
+			description: 'Query a single index',
+		},
 		{
 			name: 'Multi Query Items',
 			value: 'queryMulti',

@@ -10,13 +10,23 @@ imported `ARCHITECTURE.md`.
 ## Commands
 
 ```bash
-npm run build       # tsc + copy icons to dist/
-npm run dev          # tsc --watch
-npm run lint         # n8n community-node linter (eslint-plugin-n8n-nodes-base)
-npm run lintfix      # auto-fix what lint can
-npm test             # vitest run
-npm run test:watch   # vitest watch mode
+npm run build        # n8n-node build
+npm run build:watch   # tsc --watch (typecheck only, no asset copy)
+npm run dev           # n8n-node dev
+npm run lint          # n8n-node lint (eslint.config.mjs, @n8n/eslint-plugin-community-nodes)
+npm run lint:fix      # n8n-node lint --fix
+npm test              # vitest run
+npm run test:watch    # vitest watch mode
 ```
+
+`n8n-node build`/`dev` copy every `**/*.{png,svg}` in the source tree into
+`dist/` at the same relative path. The node's icon lives at
+`nodes/Enterspeed/enterspeed.svg`; the `EnterspeedApi` credential reuses the
+same artwork but needs its own copy at `credentials/enterspeed.svg`, since
+each `icon: 'file:...'` reference resolves relative to the compiled file
+that declares it. Keep both files identical if the icon ever changes — there
+used to be a `gulpfile.js` step for this, but the plain glob-copy makes it
+unnecessary.
 
 Docker end-to-end flow (not npm-wired, run manually):
 

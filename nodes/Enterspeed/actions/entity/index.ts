@@ -14,8 +14,13 @@ const operationSelector: INodeProperties = {
 	noDataExpression: true,
 	displayOptions: { show: { resource: ['entity'] } },
 	options: [
-		{ name: 'Save', value: 'save', action: 'Save an entity', description: 'Ingest / update a source entity' },
-		{ name: 'Delete', value: 'delete', action: 'Delete an entity' },
+		{ name: 'Save', value: 'save', action: 'Save entity', description: 'Ingest / update a source entity' },
+		{
+			name: 'Delete',
+			value: 'delete',
+			action: 'Delete entity',
+			description: 'Delete a source entity permanently',
+		},
 		{
 			name: 'Save Entities (Bulk)',
 			value: 'saveBulk',

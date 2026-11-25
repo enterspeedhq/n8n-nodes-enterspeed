@@ -2,7 +2,7 @@ import type { IDataObject, IExecuteFunctions, IHttpRequestOptions, INodeExecutio
 import { NodeOperationError } from 'n8n-workflow';
 import { enterspeedApiRequest } from '../../transport';
 import type { EnterspeedCredentials } from '../types';
-import { MAX_BULK_ENTITIES } from './shared';
+import { MAX_BULK_ENTITIES, withDeletedFlag } from './shared';
 
 export const properties: INodeProperties[] = [
 	{
@@ -50,5 +50,5 @@ export async function execute(
 	};
 
 	const response = await enterspeedApiRequest.call(this, options);
-	return [{ json: response as IDataObject, pairedItem: { item: itemIndex } }];
+	return [{ json: withDeletedFlag(response), pairedItem: { item: itemIndex } }];
 }

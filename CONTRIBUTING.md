@@ -35,7 +35,7 @@ npm run build
 npm link
 
 # In your n8n directory (e.g. ~/.n8n)
-npm link n8n-nodes-enterspeed
+npm link @enterspeed/n8n-nodes-enterspeed
 ```
 
 Then restart n8n — the Enterspeed nodes will appear in the palette. Test each operation against a real Enterspeed environment before opening a PR.
@@ -118,7 +118,7 @@ the same name, `--out <filename>.json` to control the output filename, or
 `--file <path>` to sanitize a `.json` file downloaded via the n8n UI's
 Menu → Download instead of pulling from Docker.
 
-> **Note:** templates use the node type `CUSTOM.enterspeed`, which is the prefix n8n assigns when loading via `N8N_CUSTOM_EXTENSIONS` (the Docker path). If you load the package via `npm link` instead, your nodes will be registered as `n8n-nodes-enterspeed.enterspeed` and the imported template will show the nodes as unknown. Use the Docker setup when working with example workflows.
+> **Note:** templates use the node type `CUSTOM.enterspeed`, which is the prefix n8n assigns when loading via `N8N_CUSTOM_EXTENSIONS` (the Docker path). If you load the package via `npm link` instead, your nodes will be registered as `@enterspeed/n8n-nodes-enterspeed.enterspeed` and the imported template will show the nodes as unknown. Use the Docker setup when working with example workflows.
 
 ## Branch and PR conventions
 
@@ -173,21 +173,22 @@ Follow [semver](https://semver.org):
 | New operation or node, backwards-compatible | `minor` — e.g. `0.1.0` → `0.2.0` |
 | Breaking credential or API shape change | `major` — e.g. `0.1.0` → `1.0.0` |
 
-### Manual release
+### Release
+
+Releasing is done with `@n8n/node-cli`'s release command, not manual
+`npm publish` — n8n requires verified community nodes to be published via
+GitHub Actions with an npm provenance attestation (mandatory from 1 May
+2026), and a raw local `npm publish` can't produce that attestation.
 
 ```bash
-# 1. Bump version, commit, and tag in one step
-npm version patch   # or minor / major
-
-# 2. Build
-npm run build
-
-# 3. Publish to npm (requires npm login with an account that has publish access)
-npm publish --access public
-
-# 4. Push the version commit and tag to GitHub
-git push --follow-tags
+npm run release
 ```
+
+This lints, builds, prompts for a version bump, updates the changelog,
+commits, tags, and pushes. The pushed tag (matching `*.*.*`) triggers
+`.github/workflows/publish.yml` in CI, which runs `npm run release` again in
+the Actions runner — this time it performs the actual `npm publish` with a
+signed provenance attestation via GitHub's OIDC token.
 
 After publishing, users who installed the package via n8n's Community Nodes UI
 can update through **Settings → Community Nodes** once the new version is live
@@ -195,61 +196,20 @@ on npm (usually within a few minutes).
 
 ### Automated releases (GitHub Actions)
 
-When the project is ready for automated CD, the following two-workflow setup
-covers CI on every push/PR and publishes to npm on version tags:
+`.github/workflows/publish.yml` publishes to npm whenever a version tag
+(`*.*.*`) is pushed. It requests `id-token: write` (to mint the OIDC token
+for provenance) and `contents: read` — scoped down from the default write
+permissions — then runs `npm run release` inside the job.
 
-**`.github/workflows/ci.yml`** — runs on every push and pull request to `main`:
+Authentication is one of:
 
-```yaml
-on:
-  push:
-    branches: [main]
-  pull_request:
+- **OIDC Trusted Publishing (recommended)** — on npmjs.com, open the
+  package's settings → **Publish access** → **Trusted Publishers** → add a
+  GitHub Actions publisher pointing at this repo and workflow name
+  `publish.yml`. No secret is needed; leave `NPM_TOKEN` unset.
+- **`NPM_TOKEN` fallback** — a granular npm access token scoped to
+  `@enterspeed/n8n-nodes-enterspeed` with publish permission, added as a
+  GitHub repo secret (**Settings → Secrets and variables → Actions**).
 
-jobs:
-  ci:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - run: npm ci
-      - run: npm run lint
-      - run: npm test
-      - run: npm run build
-```
-
-**`.github/workflows/release.yml`** — triggered by pushing a version tag (`v*`):
-
-```yaml
-on:
-  push:
-    tags: ['v*']
-
-jobs:
-  publish:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          registry-url: https://registry.npmjs.org
-      - run: npm ci
-      - run: npm test
-      - run: npm run build
-      - run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-```
-
-Add an `NPM_TOKEN` secret in GitHub repo **Settings → Secrets → Actions** — a
-granular npm access token scoped to `n8n-nodes-enterspeed` with publish
-permission. With this in place, `git push --follow-tags` is the only manual
-step needed to ship a release.
+Either way, once the npm-side setup is done, `npm run release` (see above)
+is the only manual step needed to ship a release.

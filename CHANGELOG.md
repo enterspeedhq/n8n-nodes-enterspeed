@@ -6,14 +6,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Changed
+
+- The action node, trigger and credential are now labelled **Enterspeed Core**, **Enterspeed Core Webhook Trigger** and **Enterspeed Core API** (previously **Enterspeed**, **Enterspeed Webhook Trigger** and **Enterspeed API**), to tell them apart from the upcoming Enterspeed Context Graph node. Newly added nodes get the default name "Enterspeed Core". Only display names changed — the internal names `enterspeed`, `enterspeedTrigger` and `enterspeedApi` are unchanged, so existing workflows and credentials need no action and existing nodes keep their names.
+
+## [0.1.1] — 2026-08-17
+
 ### Added
 
 - Example workflow: Contentful → Enterspeed ingestion (`workflows/templates/ingest-contentful-into-enterspeed.json`), syncing entry and asset publish/unpublish/delete events across locales.
 - Example workflow: Bulk Save and Delete (`workflows/templates/bulk-save-and-delete.json`), exercising `Save Entities (Bulk)` and `Delete Entities (Bulk)` end-to-end and verifying via the Delivery API that entities actually appear and disappear, not just that the calls returned 200. Run in CI (`e2e` job) alongside `fetch-transform-reingest.json`.
+- Automated npm publishing via GitHub Actions (`.github/workflows/publish.yml`) with npm provenance, ahead of n8n's 1 May 2026 requirement for verified community nodes.
+- **Enterspeed** node is now usable as an AI agent tool (`usableAsTool: true`), so agents can invoke Ingest/Delivery/Query/Route operations directly.
 
 ### Changed
 
+- **Breaking:** package renamed from `n8n-nodes-enterspeed` to the scoped `@enterspeed/n8n-nodes-enterspeed`. Update the install command (`npm install @enterspeed/n8n-nodes-enterspeed`) and the Community Nodes package name in n8n's UI accordingly.
 - `workflows/templates/fetch-transform-reingest.json` example workflow now includes a `Verify Data` step that validates the re-ingested `productMetadata` matches the properties sent from the metadata source entity, so the fetch → enrich → re-ingest pattern is demonstrated end-to-end.
+- **Entity — Delete / Delete Entities (Bulk)** now always merge `deleted: true` onto whatever the Ingest API's delete response returned, instead of passing the raw response through unchanged.
 
 ### Fixed
 
