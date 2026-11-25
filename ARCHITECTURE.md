@@ -14,7 +14,7 @@ This package ships two n8n node types plus one shared credential type:
   `router.call(this)`; all real logic lives under `actions/<resource>/`.
 - **`EnterspeedTrigger`** (`nodes/Enterspeed/EnterspeedTrigger.node.ts`) — a
   push trigger (internal n8n type name `enterspeedTrigger`, display name
-  "Enterspeed Webhook Trigger"). Enterspeed POSTs a lightweight notification
+  "Enterspeed Core Webhook Trigger"). Enterspeed POSTs a lightweight notification
   when a *view* is deployed or removed; the node optionally fetches the full
   view from the Delivery API using the payload's URL. Properties live in
   `webhookTrigger/properties.ts`; the auth check, payload assembly, and view
