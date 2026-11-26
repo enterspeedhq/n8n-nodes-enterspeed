@@ -310,7 +310,7 @@ Where the dev-server differs from a deployed Context Graph:
 | Text filtering | Exact and in memory, not like Elasticsearch | Expect some queries to match differently in production |
 | API keys | Not checked | — |
 | Processing | A pushed record is processed at once, so a read straight after a push sees it | On a deployed graph, read again if it isn't there yet |
-| Partial representations | Only for a slot the server's `budgetCut` option names. Tonevik's representations are never partial | Start a dev-server with `budgetCut` to try Resume Partial Answers |
+| Partial representations | Only for a slot the server's `budgetCut` option names. Tonevik's representations are never partial | Start a dev-server with `budgetCut` to try Resume Partial Answers (the test workflow `workflows/fixtures/Context-Graph-Resume-Partial-Answers.json` says how) |
 
 ---
 

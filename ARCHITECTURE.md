@@ -260,6 +260,7 @@ nodes/EnterspeedContextGraph/      Context Graph action node, transport
 credentials/                       one file per credential type, plus the icon copy
 tests/                             one test file per node, msd tests, mocks, template checks
 workflows/templates/*.json         example workflows
+workflows/fixtures/*.json          test workflows that need more than n8n (not imported)
 scripts/                           setup.mjs, execute-workflow.mjs (Docker end-to-end)
 dist/                              build output: gitignored, never hand-edited
 ```
