@@ -22,6 +22,7 @@ repository. This is the canonical agent context; Claude Code reads it via the `@
 | `nodes/EnterspeedContextGraph/EnterspeedContextGraphTrigger.node.ts` | **Enterspeed Context Graph Trigger** — starts a workflow on the Context Graph's signed outbound envelope, one item per changed entry. Unreleased (epic sc-13858). |
 | `credentials/EnterspeedContextGraphWebhookApi.credentials.ts` | **Enterspeed Context Graph Webhook API** — the trigger's signing secret and optional receiver header, one per webhook subscription. |
 | `workflows/templates/` | Example workflows, including the Tonevik demo (`Context-Graph-Tonevik-Demo.json`) |
+| `workflows/fixtures/` | Test workflows that need something outside n8n, such as a dev-server option; never imported by `setup.mjs` |
 | `docs/context-graph-demo/GUIDE.md` | Internal notes on how the Tonevik demo is built; what a user needs to run it is in the template's sticky notes |
 | `scripts/` | `setup.mjs` (credentials + template import into Docker n8n), `execute-workflow.mjs` (run one by name) |
 | `e2e/` | The Context Graph end to end (Node 26): the SDK dev-server, its schema and exports, the check script and its own workflows |
@@ -142,7 +143,9 @@ A new node or credential file also needs its compiled path in `package.json`'s `
 
 ## Workflow templates
 
-`workflows/templates/*.json` holds exported workflows, each a JSON array with one workflow.
+`workflows/templates/*.json` holds exported workflows, each a JSON array with one workflow. A workflow
+that needs anything outside n8n to run (a dev-server option, another system) is a test workflow, not a
+template: it goes in `workflows/fixtures/`, which `setup.mjs` doesn't import, under the same rules.
 
 - IMPORTANT: **node types are `CUSTOM.enterspeed` / `CUSTOM.enterspeedContextGraph`** (and the
   triggers' `CUSTOM.enterspeedTrigger` / `CUSTOM.enterspeedContextGraphTrigger`), the types n8n

@@ -21,7 +21,7 @@ const operationSelector: INodeProperties = {
 			name: 'Query',
 			value: 'query',
 			action: 'Query an index',
-			description: 'Find records in an index with filters, sorting and paging. Each item is one query; all are sent in one request.',
+			description: 'Find documents in an index with filters, sorting and paging. Each item is one query; all are sent in one request.',
 		},
 	],
 	default: 'query',
