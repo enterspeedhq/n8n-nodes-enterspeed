@@ -30,7 +30,7 @@ When clicking           │
 | 1 | The PIM's categories | **The record**: what a Context Graph record is, and why Push Many sends it as it is. **Shapes**: reading back what the graph made of it | 4 results, accepted; 4 `CategoryRef` shapes |
 | 2 | The PIM's products | A product names its category; the category is composed in when the page is read. Reading many shapes, and when to read one | 12 results, accepted; 12 `ProductCard` shapes |
 | 3 | A retired product | Deleting a record by its key | 1 delete, accepted; its shape is gone |
-| 4 | A query on the product index | **Indexes and queries**: finding records with filters, sorting and paging | 4 headphones in stock, most expensive first |
+| 4 | A query on the product index | **Indexes and queries**: finding documents with filters, sorting and paging | 4 headphones in stock, most expensive first |
 
 The workflow reads left to right in the order the data travels: a **Get**
 node stands in for the source system, an **Aggregate** node collects its
@@ -256,8 +256,10 @@ shape key names the product by its own `id`.
 **Run:** *Step 4 · Query headphones*. Run steps 1–3 first: the index is
 built from the products they pushed.
 
-Shapes are read by key, so you need to know which records you want. An
-**index** answers the other question: *which* records match. Tonevik's
+Shapes are read by key, so you need to know which product you want. An
+**index** answers the other question: *which* products match. What it
+returns are its own documents, one per product with the fields the index
+declares, not the records the PIM pushed. Tonevik's
 schema declares `ProductIndex` over the products, with `categoryId`, `sku`,
 `price` and `inStock` as fields you can filter on, `price` as a field you
 can sort by, and `name` as a field you can search.
