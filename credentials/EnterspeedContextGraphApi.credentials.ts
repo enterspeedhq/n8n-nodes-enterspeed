@@ -43,7 +43,7 @@ export class EnterspeedContextGraphApi implements ICredentialType {
 			typeOptions: { password: true },
 			required: true,
 			default: '',
-			description: 'The key the Ingest service accepts. Sent as the X-Api-Key header on uploads only.',
+			description: 'The key the Ingest service accepts. Sent as the X-Api-Key header only on requests to the Ingest URL.',
 		},
 		{
 			displayName: 'Delivery URL',
@@ -61,7 +61,7 @@ export class EnterspeedContextGraphApi implements ICredentialType {
 			typeOptions: { password: true },
 			required: true,
 			default: '',
-			description: 'The key the Delivery service accepts. Sent as the X-Api-Key header on reads only.',
+			description: 'The key the Delivery service accepts. Sent as the X-Api-Key header only on requests to the Delivery URL.',
 		},
 		{
 			displayName: 'Manifest Version',
@@ -75,23 +75,30 @@ export class EnterspeedContextGraphApi implements ICredentialType {
 	];
 
 	/**
-	 * Adds the X-Api-Key header: the Ingest API Key on a request to the
-	 * Ingest URL (or under it), the Delivery API Key on every other.
+	 * Adds the X-Api-Key header: the Ingest API Key on a request under the
+	 * Ingest URL, the Delivery API Key on a request under the Delivery URL,
+	 * and no key on a request to anywhere else. "Under" means the same origin
+	 * (scheme, host and port) and a path at or below the configured path.
 	 */
 	async authenticate(
 		credentials: ICredentialDataDecryptedObject,
 		requestOptions: IHttpRequestOptions,
 	): Promise<IHttpRequestOptions> {
-		const base = (url: unknown) => String(url ?? '').replace(/\/+$/, '');
-		const target = `${requestOptions.baseURL ?? ''}${requestOptions.url}`;
-		const ingest = base(credentials.ingestUrl);
-		const toIngest = ingest !== '' && (target === ingest || target.startsWith(`${ingest}/`));
+		const target = parseUrl(joinUrl(requestOptions.baseURL, requestOptions.url));
+		const services = [
+			{ base: parseUrl(credentials.ingestUrl), key: credentials.ingestApiKey },
+			{ base: parseUrl(credentials.deliveryUrl), key: credentials.deliveryApiKey },
+		];
+		// If one URL sits under the other, the more specific one wins. If both are
+		// the same URL (the dev-server serves both services from one host), the
+		// Ingest API Key goes there: the host is the configured one either way.
+		const match = services
+			.filter((s) => target && s.base && isUnder(target, s.base))
+			.sort((a, b) => path(b.base!).length - path(a.base!).length)[0];
+		if (!match) return requestOptions;
 		return {
 			...requestOptions,
-			headers: {
-				...requestOptions.headers,
-				'X-Api-Key': String((toIngest ? credentials.ingestApiKey : credentials.deliveryApiKey) ?? ''),
-			},
+			headers: { ...requestOptions.headers, 'X-Api-Key': String(match.key ?? '') },
 		};
 	}
 
@@ -125,4 +132,29 @@ export class EnterspeedContextGraphApi implements ICredentialType {
 			},
 		],
 	};
+}
+
+/** How the HTTP client builds the request URL: an absolute `url` stands alone, a relative one goes after `baseURL`. */
+function joinUrl(baseURL: string | undefined, url: string): string {
+	if (!baseURL || /^[a-z][a-z\d+.-]*:\/\//i.test(url)) return url;
+	return `${baseURL.replace(/\/+$/, '')}/${url.replace(/^\/+/, '')}`;
+}
+
+function parseUrl(value: unknown): URL | undefined {
+	if (typeof value !== 'string' || value.trim() === '') return undefined;
+	try {
+		return new URL(value.trim());
+	} catch {
+		return undefined;
+	}
+}
+
+/** The URL's path without trailing slashes, so `https://x/` and `https://x` match alike. */
+const path = (url: URL) => url.pathname.replace(/\/+$/, '');
+
+function isUnder(target: URL, base: URL): boolean {
+	if (target.origin !== base.origin) return false;
+	const prefix = path(base);
+	const targetPath = path(target);
+	return targetPath === prefix || targetPath.startsWith(`${prefix}/`);
 }

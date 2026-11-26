@@ -169,10 +169,16 @@ export const routePlaceholders = (template: string): string[] =>
 /*
  * Where each context value goes, carried in its field's id so a run needs no
  * schema: `path:{placeholder}`, `query:{name}` or `header:{name}`. A route
- * placeholder fills its path segment. Every other caller-suppliable key goes
- * in the query string under its own name (delivery/ADR-036: every non-path
- * context entry is a query parameter), unless a binder names another key or
- * makes it a header.
+ * placeholder fills its path segment. A `query()` or `header()` binder puts its
+ * key in the query string or an `X-Delivery-` header, under the name it gives.
+ * No other key is offered: once a representation declares `$context`, which the
+ * SDK always emits, delivery drops every query param and `X-Delivery-*` header
+ * no binder reads (binder-constraint contract, "Undeclared params are dropped"),
+ * so it would be sent and ignored. The MSD can't tell a `$context` with no
+ * query or header binder from no `$context` at all, so a hand-written manifest
+ * without one, where delivery reads every param, gives up such a key here too.
+ * Delivery's OpenAPI form follows the same rule for an MSD that carries
+ * `context.resolving` (delivery/ADR-036, sc-14279).
  */
 export type ContextTarget = 'path' | 'query' | 'header';
 
@@ -199,8 +205,7 @@ const fieldType = (binder: MsdBinder | undefined): FieldType => {
 export function representationFields(representation: MsdRepresentation, route: string): ResourceMapperField[] {
 	const placeholders = routePlaceholders(route);
 	// Only this route's own placeholders fill the path. A key that is a placeholder
-	// in another route is still read by a slot key here, so it comes from the
-	// query string instead (a route without {id} still needs an id).
+	// in another route is offered here only when a binder declares it (see ContextTarget).
 	const inRoute = new Set(placeholders.map((p) => p.toLowerCase()));
 	const binderFor = (key: string) =>
 		Object.entries(representation.binders).find(([k]) => k.toLowerCase() === key.toLowerCase())?.[1];
@@ -230,7 +235,8 @@ export function representationFields(representation: MsdRepresentation, route: s
 			...(binder?.enum && { options: binder.enum.map((v) => ({ name: String(v), value: String(v) })) }),
 		};
 	};
-	const rest = (keys: string[]) => keys.filter((k) => !inRoute.has(k.toLowerCase()));
+	// An undeclared key outside the path would be sent and dropped.
+	const rest = (keys: string[]) => keys.filter((k) => !inRoute.has(k.toLowerCase()) && binderFor(k) !== undefined);
 	// A binder the caller may leave out (presence optional, or a default) isn't required.
 	const mayOmit = (key: string) => {
 		const binder = binderFor(key);
