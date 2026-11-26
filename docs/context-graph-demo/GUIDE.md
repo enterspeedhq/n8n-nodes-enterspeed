@@ -32,9 +32,9 @@ When clicking           │
 |---|---|---|---|
 | 0 | The dev-server, n8n and the workflow | Setting up | The Tonevik schema is served |
 | 1 | The PIM's categories | **The record**: what a Context Graph record is, and why Push Many sends it as it is. **Shapes**: reading back what the graph made of it | 4 results, accepted; 4 `CategoryRef` shapes |
-| 2 | The PIM's products | Records linking up in the graph: a product finds its category. Reading many shapes, and when to read one | 12 results, accepted; 12 `ProductCard` shapes |
+| 2 | The PIM's products | A product names its category; the category is composed in when the page is read. Reading many shapes, and when to read one | 12 results, accepted; 12 `ProductCard` shapes |
 | 3 | A retired product | Deleting a record by its key | 1 delete, accepted; its shape is gone |
-| 4 | A query on the product index | **Indexes and queries**: finding records with filters, sorting and paging | 4 headphones in stock, most expensive first |
+| 4 | A query on the product index | **Indexes and queries**: finding documents with filters, sorting and paging | 4 headphones in stock, most expensive first |
 | 5 | A product's representation | **Representations**: one resource, served for a route, composed from shapes and a query; each slot's state | The product, its category and 4 related products, all `fresh` |
 
 The workflow reads left to right in the order the data travels: a **Get**
@@ -180,7 +180,7 @@ shape:
 { "key": "CategoryRef:categoryId:cat-speakers", "status": 200, "data": { "id": "categorymodel:cat-speakers", "name": "Speakers" } }
 ```
 
-## Step 2 · Products: records link up
+## Step 2 · Products: a product names its category
 
 **Run:** *Step 2 · Read back*.
 
@@ -192,9 +192,11 @@ category in its own data:
 ```
 
 *Step 2 · Collect products* collects them into one list, and Push Many
-sends the twelve in one request, the same way as the categories. Nothing in n8n joins a
-product to its category: the schema declares that `categoryId` points at a
-category, and the graph makes the link from the pushed data.
+sends the twelve in one request, the same way as the categories. Nothing joins a
+product to its category, in n8n or in the graph: a model has one root and no
+joins, so the product is stored as pushed, `categoryId` and all. The schema's
+product page reads the category by that `categoryId` and composes the two when
+the page is read.
 
 **Expect** twelve results from *Step 2 · Push products*, all
 `accepted: true`.
@@ -259,8 +261,10 @@ shape key names the product by its own `id`.
 **Run:** *Step 4 · Query headphones*. Run steps 1–3 first: the index is
 built from the products they pushed.
 
-Shapes are read by key, so you need to know which records you want. An
-**index** answers the other question: *which* records match. Tonevik's
+Shapes are read by key, so you need to know which product you want. An
+**index** answers the other question: *which* products match. What it
+returns are its own documents, one per product with the fields the index
+displays, not the records the PIM pushed. Tonevik's
 schema declares `ProductIndex` over the products, with `categoryId`, `sku`,
 `price` and `inStock` as fields you can filter on, `price` as a field you
 can sort by, and `name` as a field you can search.
@@ -341,8 +345,9 @@ Tonevik's schema declares the representation `ProductPage` for the route
 
 - `product`: the product's `ProductCard` shape. It's `required`, so without
   it there is no representation.
-- `category`: the category's `CategoryRef` shape. The graph finds it through
-  the product's `categoryId`; the workflow doesn't join anything.
+- `category`: the category's `CategoryRef` shape, read by the product's
+  `categoryId` when the page is read. Nothing joins the two, in the workflow
+  or in the graph: the representation composes them.
 - `related`: a query on `ProductIndex` for the products in the same
   category, cheapest first, up to 4.
 
