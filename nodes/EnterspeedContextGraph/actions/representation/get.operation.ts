@@ -67,7 +67,7 @@ export const properties: INodeProperties[] = [
 			},
 		},
 		description:
-			"The values the representation's slots read: each route placeholder, then the other context the schema lists. Path values fill the route; the rest go in the query string or a header, as the schema declares.",
+			"The values the representation's slots read: each route placeholder, then each value a query or header binder declares. Path values fill the route; the rest go in the query string or a header, as the binder says. A value no binder declares isn't listed: the Context Graph would ignore it.",
 		displayOptions: { show: fromSchema },
 	},
 	{
