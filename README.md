@@ -91,12 +91,12 @@ Create an **Enterspeed Context Graph API** credential with:
 | Field | Used for |
 |---|---|
 | Ingest URL | Writes. No default: the Context Graph's hosts aren't Enterspeed Core's |
-| Ingest API Key | Sent as the `X-Api-Key` header on requests to the Ingest URL only |
+| Ingest API Key | Sent as the `X-Api-Key` header only on requests under the Ingest URL |
 | Delivery URL | Reads. No default, as for the Ingest URL |
-| Delivery API Key | Sent as the `X-Api-Key` header on every other request: shapes, indexes, representations and the schema |
+| Delivery API Key | Sent as the `X-Api-Key` header only on requests under the Delivery URL (reads and the credential test). Any other host gets no key |
 | Manifest Version | The `{manifest}` segment of every Delivery route (default `1.0.0`). For a schema published with the SDK this is the manifest's id, a content hash, not its version label. |
 
-Ingest and Delivery are separate services, and each checks its own key. The node picks the key by where the request goes: a request whose URL starts with the Ingest URL gets the Ingest API Key, any other the Delivery API Key.
+Ingest and Delivery are separate services, and each checks its own key. The node picks the key by where the request goes: a request under the Ingest URL gets the Ingest API Key, one under the Delivery URL the Delivery API Key, and any other host no key at all.
 
 Testing the credential reads `GET {Delivery URL}/schema/msd/v1/{Manifest Version}` with the Delivery API Key. It fails with a clear message if the URL can't be reached, the Delivery API Key is rejected (401) or the manifest version isn't hosted (404). It doesn't check the Ingest API Key; a wrong one shows on the first Push as a 401.
 
@@ -192,13 +192,13 @@ Both read the graph's **shapes**, the views its schema declares over the data, b
 
 - **Get Many** is the one to use for a list of keys. It takes one item holding the list in *Shape Keys* (default `{{ $json.keys }}`, e.g. built in a Code node: `return [{ json: { keys: [...] } }]`), sends the whole list in one request (several only past the 32 KiB request limit) and outputs one item per key, in list order: `{ key, status, data }` exactly as returned. A key with no shape comes out as `status: 404` with `data: null`, and the other keys still return. The request succeeds even when no key is found, so check each item's `status`. With no keys, nothing is sent; an item whose *Shape Keys* isn't a list fails.
 - **Get** is for a workflow that handles one key at a time, such as a lookup triggered by a webhook. It takes one *Shape Key* per item and outputs the shape exactly as returned. A key with no shape fails with *No shape for key …*.
-- **Who can see a shape:** a shape whose access policy needs a claim always comes back as `404`, the same as a shape that doesn't exist. The node sends no claims, and the Context Graph deliberately doesn't tell "missing" from "not allowed".
+- **Who can see a shape:** that depends on the Delivery API Key. A key with claims stored on it in Management reads what those claims allow; any other key reads only what no claim gates, because the node sends no context token. A shape the key may not see comes back as `404`, the same as a shape that doesn't exist: the Context Graph deliberately doesn't tell "missing" from "not allowed".
 - **Errors:** a key that names no shape, malformed or not, is a `404` like any missing shape, and so is a key whose shape the schema doesn't declare. A rejected key (401), an API version the Context Graph no longer serves (410) or an unreachable Delivery URL fails the run with a message saying which.
 - **Key From › Schema** (*Get* only) will let you pick the shape and fill in each ID segment instead of typing the key. The schema doesn't list entry shapes yet, so the list says *This schema lists no shapes*; use *Shape Key* until it does.
 
 ### Index › Query
 
-Finds documents in an **index** the schema declares, with filters, sorting and paging. *Query From* sets how the query is given:
+Finds documents in an **index** the schema declares, with filters, sorting and paging. A match is one of the index's documents, carrying the fields the index displays, not a record that was pushed. *Query From* sets how the query is given:
 
 | Query From | How |
 |---|---|
@@ -262,10 +262,10 @@ Reads the **representation** served for a route: one resource the schema compose
 | **Route** (default) | The *Route* field takes the route path, starting with `/`, e.g. `/products/42` (default `{{ $json.route }}`). Only the path: a route with `?` or `#` fails before anything is sent. To send query or header values, use **Schema**. |
 | **Schema** | Pick the *Representation* and one of its *Routes* (e.g. `/products/{productId}`) from the schema. *Context* then lists the values that route takes, each marked with where it's sent. Map each to an expression, e.g. `{{ $json.productId }}`. |
 
-With **Schema**, *Context* lists each route placeholder first (`productId (path)`), then any other context the schema lists (`locale (query)`, `market (header: X-Delivery-market)`). Path values fill the route and are required; the rest go in the query string or a header, as the schema declares (a header value is sent as `X-Delivery-<name>`, the header the Context Graph reads), and an empty optional value is left out. A missing required value fails the item before anything is sent.
+With **Schema**, *Context* lists each route placeholder first (`productId (path)`), then each value a `query()` or `header()` binder declares (`locale (query)`, `market (header: X-Delivery-market)`). Path values fill the route and are required; the rest go in the query string or a header, as the binder declares (a header value is sent as `X-Delivery-<name>`, the header the Context Graph reads), and an empty optional value is left out. A value no binder declares isn't listed, because the Context Graph would ignore it. A missing required value fails the item before anything is sent.
 
 - **Output:** one route per item, one request per item. The representation comes out exactly as returned: each slot's value at the slot's name, plus `$metadata` with each slot's `$state`.
-- **Check `$state`, not the status.** A representation where only some slots resolved still succeeds: an unresolved slot is `null`, with `$state` `missing` (not there), `pending` (not resolved in time) or `deferred` (held back on purpose, e.g. a slot that needs a claim). The node sends no claims, so a slot gated by a claim has no entry at all, and a route gated by one answers `404`.
+- **Check `$state`, not the status.** A representation where only some slots resolved still succeeds: an unresolved slot is `null`, with `$state` `missing` (not there), `pending` (not resolved in time) or `deferred` (held back on purpose, e.g. a slot that needs a claim). Unless the Delivery API Key has stored claims that open it, a slot gated by a claim has no entry at all, and a route gated by one answers `404`; the node sends no context token.
 - **One read resolves everything it can.** The node sends no delivery policy header, so the Context Graph resolves the whole representation in the one read, query slots included, within a time limit and a limit on query passes. An answer cut short by either is partial: the slots it didn't finish are left open and `$metadata.$resume` carries a checkpoint.
 - **Errors:** a route with no representation fails with *No representation for route …*, or with the Context Graph's own message: a route that matches none, a `required` slot that didn't resolve, or no slot resolved at all. An invalid request value fails with the Context Graph's message too.
 
@@ -336,7 +336,7 @@ Where the dev-server differs from a deployed Context Graph:
 | Text filtering | Exact and in memory, not like Elasticsearch | Expect some queries to match differently in production |
 | API keys | Not checked | — |
 | Processing | A pushed record is processed at once, so a read straight after a push sees it | On a deployed graph, read again if it isn't there yet |
-| Partial representations | Only for a slot the server's `budgetCut` option names. Tonevik's representations are never partial | Start a dev-server with `budgetCut` to try Resume Partial Answers |
+| Partial representations | Only for a slot the server's `budgetCut` option names. Tonevik's representations are never partial | Start a dev-server with `budgetCut` to try Resume Partial Answers (the test workflow `workflows/fixtures/Context-Graph-Resume-Partial-Answers.json` says how) |
 | Entity › Push, Artifact › Upload | The node sends ingest's `/v1` routes. `@enterspeed/dev-server@0.2.0-alpha.3`, the current published `alpha`, still serves only the unversioned ones and answers `404`, so use the next alpha, or run the dev-server from the Context Graph SDK's `master` (the Tonevik demo does). `latest` (0.2.0-alpha.0) has no upload. A source takes uploads only when the server declares it a snapshot source (`createDevServer(schema, { sources: { pim: { mode: "snapshot" } } })`); Tonevik declares none. The file drains at commit, so `state` is `drained` at once. No size limit, URL expiry or key check, and the upload URL names no headers. It signs the upload URL with the request's host, so `host.docker.internal` works from Docker n8n | — |
 
 ---
@@ -356,7 +356,7 @@ The Context Graph serves these; the node doesn't use them yet.
 - **A bulk representation read.** Representations are read one route per request, the cacheable path the Context Graph serves.
 - **A delivery policy header** (`X-Delivery-Policy`). Without it the Context Graph resolves the whole representation in one read, which is what a workflow needs. Its one other policy, `progressive`, is for a website that shows the page first and fills in the rest: query slots come back `deferred` for the client to resume.
 - **Reshaping records.** The node sends records and outputs answers as they are; reshape in a Code or Edit Fields node.
-- **Protected shapes.** The node reads with an API key only and sends no context token, so a shape protected by an access policy always reads as `404`. Read protected content from an app that sends the customer's context token.
+- **Reading as an end user.** The node reads with the Delivery API Key and sends no context token. A shape protected by an access policy reads as `404` unless the key has stored claims that allow it. Read content as a customer's signed-in user from an app that sends their context token.
 
 ---
 

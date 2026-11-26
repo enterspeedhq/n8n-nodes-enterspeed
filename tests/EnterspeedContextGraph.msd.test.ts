@@ -102,8 +102,6 @@ describe('MSD reader', () => {
 		expect(fields.map((f) => [f.id, f.required, f.type])).toEqual([
 			['path:productId', true, 'string'],
 			['header:lang', true, 'string'],
-			// Another route's placeholder is still read by a slot key, so it comes from the query string.
-			['query:sku', true, 'string'],
 			['query:preview', false, 'boolean'],
 			['query:search', false, 'string'],
 		]);
@@ -111,11 +109,23 @@ describe('MSD reader', () => {
 		expect(fields.find((f) => f.id === 'header:lang')?.displayName).toBe('locale (header: X-Delivery-lang)');
 	});
 
-	it('gives a route without placeholders every required key as a query value', () => {
+	it("doesn't offer a key outside the path that no binder declares, once the representation declares binders", () => {
+		// `sku` is the other route's placeholder. The representation declares binders, so it has a
+		// `$context`, and delivery drops every query param and X-Delivery-* header no binder reads
+		// (binder-constraint contract, "Undeclared params are dropped"): `?sku=` would be ignored.
+		const fields = representationFields(msdRepresentations(msd)[0], '/products/{productId}');
+		expect(fields.map((f) => f.id)).not.toContain('query:sku');
+		expect(representationFields(msdRepresentations(msd)[0], '/sku/{sku:alpha}').map((f) => f.id)).toContain('path:sku');
+	});
+
+	it("doesn't offer a key outside the path without a binder, even when the MSD lists no binders", () => {
+		// The SDK always emits `$context` (binder-constraint contract, "No `$context`"), and a
+		// `$context` that declares no query or header binder gets no `binders` in the MSD, so
+		// `?id=` would still be dropped.
 		const representation = msdRepresentations({
 			representations: [{ $name: 'p', $routes: ['product', 'product/{id}'], context: { required: ['id'] } }],
 		})[0];
-		expect(representationFields(representation, 'product').map((f) => [f.id, f.required])).toEqual([['query:id', true]]);
+		expect(representationFields(representation, 'product')).toEqual([]);
 		expect(representationFields(representation, 'product/{id}').map((f) => f.id)).toEqual(['path:id']);
 	});
 
