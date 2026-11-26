@@ -77,7 +77,9 @@ function reportFailure(execution) {
   if (runData.lastNodeExecuted) console.error(`Last node executed: ${runData.lastNodeExecuted}`);
   for (const [node, runs] of Object.entries(runData.runData ?? {})) {
     for (const run of runs ?? []) {
-      if (run?.error) console.error(`Node "${node}" failed: ${describe(run.error)}`);
+      if (!run?.error) continue;
+      console.error(`Node "${node}" failed: ${describe(run.error)}`);
+      console.error(`  error object: ${JSON.stringify(run.error).slice(0, 4000)}`);
     }
   }
   if (runData.error) console.error(`Execution error: ${describe(runData.error)}`);
