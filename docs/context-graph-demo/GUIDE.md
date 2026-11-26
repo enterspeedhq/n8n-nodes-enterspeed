@@ -24,7 +24,7 @@ When clicking           │
 |---|---|---|---|
 | 0 | The dev-server, n8n and the workflow | Setting up | The Tonevik schema is served |
 | 1 | The PIM's categories | **The record**: what a Context Graph record is, and why Push Many sends it as it is | 4 results, accepted |
-| 2 | The PIM's products | Records linking up in the graph: a product finds its category | 12 results, accepted |
+| 2 | The PIM's products | A product names its category; the category is composed in when the page is read | 12 results, accepted |
 | 3 | A retired product | Deleting a record by its key | 1 delete, accepted |
 
 The workflow reads left to right in the order the data travels: a **Get**
@@ -131,7 +131,7 @@ In the graph, the schema finds the category by its own `id`
 (`cat-speakers`), not its `$id`: the graph works with the record's data,
 while `$id` keeps track of where it came from.
 
-## Step 2 · Products: records link up
+## Step 2 · Products: a product names its category
 
 **Run:** *Step 2 · Push products*.
 
@@ -143,9 +143,11 @@ category in its own data:
 ```
 
 *Step 2 · Collect products* collects them into one list, and Push Many
-sends the twelve in one request, the same way as the categories. Nothing in n8n joins a
-product to its category: the schema declares that `categoryId` points at a
-category, and the graph makes the link from the pushed data.
+sends the twelve in one request, the same way as the categories. Nothing joins a
+product to its category, in n8n or in the graph: a model has one root and no
+joins, so the product is stored as pushed, `categoryId` and all. The schema's
+product page reads the category by that `categoryId` and composes the two when
+the page is read.
 
 **Expect** twelve results, all `accepted: true`.
 
