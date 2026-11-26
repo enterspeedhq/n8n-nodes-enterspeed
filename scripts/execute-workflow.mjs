@@ -70,16 +70,18 @@ function reportFailure(execution) {
     return;
   }
   if (!runData) return;
-  const describe = (error) =>
-    [error.message, error.description, error.httpCode && `HTTP ${error.httpCode}`]
-      .filter(Boolean)
-      .join(' | ');
+  // A Code node's thrown message reaches here split at a colon into `message`
+  // and `description`; the first line of its stack still holds it whole.
+  const describe = (error) => {
+    const thrown = error.stack?.split('\n')[0].replace(/^\w*Error: /, '');
+    const parts = thrown ? [thrown] : [error.message, error.description];
+    if (error.httpCode) parts.push(`HTTP ${error.httpCode}`);
+    return parts.filter(Boolean).join(' | ');
+  };
   if (runData.lastNodeExecuted) console.error(`Last node executed: ${runData.lastNodeExecuted}`);
   for (const [node, runs] of Object.entries(runData.runData ?? {})) {
     for (const run of runs ?? []) {
-      if (!run?.error) continue;
-      console.error(`Node "${node}" failed: ${describe(run.error)}`);
-      console.error(`  error object: ${JSON.stringify(run.error).slice(0, 4000)}`);
+      if (run?.error) console.error(`Node "${node}" failed: ${describe(run.error)}`);
     }
   }
   if (runData.error) console.error(`Execution error: ${describe(runData.error)}`);
@@ -130,8 +132,10 @@ if (!execId) {
 }
 console.log(`Execution ID: ${execId}`);
 
-// Poll until done.
-for (let i = 0; i < 30; i++) {
+// Poll until done. A workflow can poll Delivery itself (bulk-save-and-delete
+// waits up to 90 s for entities to appear and again for them to disappear), so
+// allow up to 5 minutes.
+for (let i = 0; i < 100; i++) {
   await new Promise((r) => setTimeout(r, 3000));
   const statusRes = await get(`/rest/executions/${execId}`, authHeader);
   const statusBody = await statusRes.json();
