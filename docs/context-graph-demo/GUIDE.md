@@ -257,7 +257,7 @@ built from the products they pushed.
 Shapes are read by key, so you need to know which product you want. An
 **index** answers the other question: *which* products match. What it
 returns are its own documents, one per product with the fields the index
-declares, not the records the PIM pushed. Tonevik's
+displays, not the records the PIM pushed. Tonevik's
 schema declares `ProductIndex` over the products, with `categoryId`, `sku`,
 `price` and `inStock` as fields you can filter on, `price` as a field you
 can sort by, and `name` as a field you can search.
