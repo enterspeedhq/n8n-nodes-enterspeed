@@ -102,11 +102,18 @@ describe('MSD reader', () => {
 		expect(fields.map((f) => [f.id, f.required, f.type])).toEqual([
 			['path:productId', true, 'string'],
 			['header:X-Locale', true, 'string'],
-			// Another route's placeholder is still read by a slot key, so it comes from the query string.
-			['query:sku', true, 'string'],
 			['query:preview', false, 'boolean'],
 			['query:search', false, 'string'],
 		]);
+	});
+
+	it("doesn't offer a key outside the path that no binder declares, once the representation declares binders", () => {
+		// `sku` is the other route's placeholder. The representation declares binders, so it has a
+		// `$context`, and delivery drops every query param and X-Delivery-* header no binder reads
+		// (binder-constraint contract, "Undeclared params are dropped"): `?sku=` would be ignored.
+		const fields = representationFields(msdRepresentations(msd)[0], '/products/{productId}');
+		expect(fields.map((f) => f.id)).not.toContain('query:sku');
+		expect(representationFields(msdRepresentations(msd)[0], '/sku/{sku:alpha}').map((f) => f.id)).toContain('path:sku');
 	});
 
 	it('gives a route without placeholders every required key as a query value', () => {
