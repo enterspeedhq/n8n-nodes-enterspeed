@@ -336,8 +336,9 @@ Tonevik's schema declares the representation `ProductPage` for the route
 
 - `product`: the product's `ProductCard` shape. It's `required`, so without
   it there is no representation.
-- `category`: the category's `CategoryRef` shape. The graph finds it through
-  the product's `categoryId`; the workflow doesn't join anything.
+- `category`: the category's `CategoryRef` shape, read by the product's
+  `categoryId` when the page is read. Nothing joins the two, in the workflow
+  or in the graph: the representation composes them.
 - `related`: a query on `ProductIndex` for the products in the same
   category, cheapest first, up to 4.
 
