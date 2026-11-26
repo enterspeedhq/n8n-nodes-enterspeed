@@ -463,6 +463,17 @@ export async function execute(
 					'Query sets page, but Return All pages with the cursor. Remove page, or turn Return All off.',
 				);
 			}
+			// Delivery answers a semantic or hybrid search as one ranked page and never sets its
+			// `next` (query-envelope contract, `next`; delivery's QueryExecutor), so following next
+			// would stop after the first page and look complete. Refused, as delivery refuses a
+			// cursor there.
+			const mode = isObject(query.search) ? query.search.mode : undefined;
+			if (returnAll && (mode === 'semantic' || mode === 'hybrid')) {
+				throw new NodeOperationError(
+					this.getNode(),
+					`Query uses search mode "${mode}", which the Delivery URL answers as one ranked page with no next, so Return All can't read further. Turn Return All off and raise limit (up to 100) instead.`,
+				);
+			}
 			// The platform's own rule: the query's id if it has one, else its position.
 			const id = query.id === undefined || query.id === null ? String(queries.length) : String(query.id);
 			const bytes = queryBytes({ ...query, id });
