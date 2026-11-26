@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
+import { MAX_BULK_ENTITIES } from '../nodes/Enterspeed/actions/entity/shared';
 
 const TEMPLATES_DIR = join(__dirname, '../workflows/templates');
 // Templates reference credentials via placeholders like
@@ -90,4 +91,13 @@ describe('workflow templates', () => {
 			});
 		});
 	}
+});
+
+describe('bulk-save-and-delete.json', () => {
+	it('sends one origin id more than MAX_BULK_ENTITIES in its over-limit check', () => {
+		const workflow = JSON.parse(readFileSync(join(TEMPLATES_DIR, 'bulk-save-and-delete.json'), 'utf-8'));
+		const node = workflow.nodes.find((n: { name: string }) => n.name === 'Build Over-Limit Origin IDs');
+		const overLimit = Number(/const OVER_LIMIT = (\d+);/.exec(node.parameters.jsCode)?.[1]);
+		expect(overLimit).toBe(MAX_BULK_ENTITIES + 1);
+	});
 });

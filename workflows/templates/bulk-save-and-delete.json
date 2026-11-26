@@ -44,7 +44,8 @@
           "id": "__ENTERSPEED_CREDENTIAL_ID__",
           "name": "Enterspeed account"
         }
-      }
+      },
+      "continueOnFail": true
     },
     {
       "parameters": {
@@ -76,7 +77,8 @@
           "id": "__ENTERSPEED_CREDENTIAL_ID__",
           "name": "Enterspeed account"
         }
-      }
+      },
+      "continueOnFail": true
     },
     {
       "parameters": {
@@ -128,7 +130,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const { originId, url, sku, response, attempt } = $json;\nconst route = response?.route;\n\nif (!route) {\n  throw new Error(`Entity ${originId} has no route ${attempt} polls after Save Bulk, so it was not created. Delivery answered ${JSON.stringify(response)}`);\n}\n\nif (route.sku !== sku) {\n  throw new Error(`Entity ${originId} route.sku is ${JSON.stringify(route.sku)}, expected \"${sku}\"`);\n}\n\nreturn { json: { originId, url, sku, exists: true, attempts: attempt } };"
+        "jsCode": "// Records a failure instead of throwing, so Delete Bulk still runs and removes the\n// test products on a red run. Assert All Checks Passed fails the workflow at the end.\nconst { originId, url, sku, response, attempt } = $json;\nconst route = response?.route;\n\nlet failure = null;\nif (!route) {\n  failure = `Entity ${originId} has no route ${attempt} polls after Save Bulk, so it was not created. Delivery answered ${JSON.stringify(response)}`;\n} else if (route.sku !== sku) {\n  failure = `Entity ${originId} route.sku is ${JSON.stringify(route.sku)}, expected \"${sku}\"`;\n}\n\nreturn { json: { originId, url, sku, exists: failure === null, attempts: attempt, failure } };"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -141,7 +143,7 @@
     },
     {
       "parameters": {
-        "jsCode": "return [{ json: { originIds: $('Build Test Entities').first().json.originIds } }];"
+        "jsCode": "// Delete Bulk runs on the same origin ids whatever the checks above found: it is\n// both the operation under test and the clean-up of this run's test products.\nreturn [{ json: { originIds: $('Build Test Entities').first().json.originIds } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -171,7 +173,8 @@
           "id": "__ENTERSPEED_CREDENTIAL_ID__",
           "name": "Enterspeed account"
         }
-      }
+      },
+      "continueOnFail": true
     },
     {
       "parameters": {
@@ -256,7 +259,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const { originId, url, sku, response, attempt } = $json;\n\nif (response?.route && response.route.sku === sku) {\n  throw new Error(`Entity ${originId} is still served ${attempt} polls after Delete Bulk (route.sku ${response.route.sku})`);\n}\n\nif (typeof response?.error !== 'string' && response?.route !== null) {\n  throw new Error(`Entity ${originId} got neither a clear not-found nor a live route after Delete Bulk. Delivery answered ${JSON.stringify(response)}`);\n}\n\nreturn { json: { originId, url, sku, deleted: true, attempts: attempt } };"
+        "jsCode": "// Records a failure instead of throwing; Assert All Checks Passed fails the workflow.\nconst { originId, url, sku, response, attempt } = $json;\n\nlet failure = null;\nif (response?.route && response.route.sku === sku) {\n  failure = `Entity ${originId} is still served ${attempt} polls after Delete Bulk (route.sku ${response.route.sku})`;\n} else if (typeof response?.error !== 'string' && response?.route !== null) {\n  failure = `Entity ${originId} got neither a clear not-found nor a live route after Delete Bulk. Delivery answered ${JSON.stringify(response)}`;\n}\n\nreturn { json: { originId, url, sku, deleted: failure === null, attempts: attempt, failure } };"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -266,6 +269,54 @@
       ],
       "id": "a1b2c3d4-0013-4a11-8a11-000000000013",
       "name": "Verify Entities Deleted"
+    },
+    {
+      "parameters": {
+        "jsCode": "// MAX_BULK_ENTITIES + 1 made-up origin ids (MAX_BULK_ENTITIES is 50 in\n// nodes/Enterspeed/actions/entity/shared.ts; tests/workflow-templates.test.ts keeps\n// OVER_LIMIT in step with it). The node leaves the limit to the Ingest API, which\n// refuses the whole request with 422 before deleting anything.\nconst OVER_LIMIT = 51;\nconst { originIds } = $('Build Test Entities').first().json;\nconst prefix = originIds[0].replace(/-1$/, '');\nreturn [{ json: { originIds: Array.from({ length: OVER_LIMIT }, (_, i) => `${prefix}-over-limit-${i + 1}`) } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2736,
+        0
+      ],
+      "id": "a1b2c3d4-0021-4a11-8a11-000000000021",
+      "name": "Build Over-Limit Origin IDs"
+    },
+    {
+      "parameters": {
+        "resource": "entity",
+        "operation": "deleteBulk",
+        "originIds": "={{ { originIds: $json.originIds } }}"
+      },
+      "type": "CUSTOM.enterspeed",
+      "typeVersion": 1,
+      "position": [
+        2960,
+        0
+      ],
+      "id": "a1b2c3d4-0022-4a11-8a11-000000000022",
+      "name": "Delete Entities (Bulk, Over Limit)",
+      "continueOnFail": true,
+      "credentials": {
+        "enterspeedApi": {
+          "id": "__ENTERSPEED_CREDENTIAL_ID__",
+          "name": "Enterspeed account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fails the workflow, and so CI, if any check above failed. It runs after Delete Bulk,\n// so a red run has already removed its test products.\nconst failures = [];\n\nconst saved = $('Save Entities (Bulk)').first().json;\nif (typeof saved.error === 'string') {\n  failures.push(`Save Bulk failed: ${saved.error}${saved.description ? ` (${saved.description})` : ''}`);\n}\n\nfor (const { json } of $('Verify Entities Exist').all()) {\n  if (json.failure) failures.push(json.failure);\n}\n\nconst deleted = $('Delete Entities (Bulk)').first().json;\nif (typeof deleted.error === 'string') {\n  failures.push(`Delete Bulk failed, so this run's test products may be left behind: ${deleted.error}${deleted.description ? ` (${deleted.description})` : ''}`);\n}\n\nfor (const { json } of $('Verify Entities Deleted').all()) {\n  if (json.failure) failures.push(json.failure);\n}\n\n// The Ingest API refuses an over-limit bulk delete with 422 before deleting anything\n// (its body says \"Request contains 51 originIds but maximum allowed is 50\"). With\n// continue-on-fail the node reports n8n's message for a 422, and its description\n// carries the status (or the API's message, if n8n parses the body).\nconst OVER_LIMIT_422 = 'Your request is invalid or could not be processed by the service';\nconst overLimit = $('Delete Entities (Bulk, Over Limit)').first().json;\nconst count = $('Build Over-Limit Origin IDs').first().json.originIds.length;\nif (overLimit.error !== OVER_LIMIT_422 || !/\\b422\\b|maximum allowed is 50/.test(String(overLimit.description))) {\n  failures.push(`Delete Bulk with ${count} origin ids should be refused with 422, but the node answered ${JSON.stringify(overLimit)}`);\n}\n\nif (failures.length > 0) {\n  throw new Error(`${failures.length} check(s) failed:\\n${failures.join('\\n')}`);\n}\n\nreturn [{ json: { saved: $('Build Test Entities').first().json.originIds.length, exists: true, deleted: true, overLimitRefused: overLimit.error, overLimitDetail: overLimit.description } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3184,
+        0
+      ],
+      "id": "a1b2c3d4-0023-4a11-8a11-000000000023",
+      "name": "Assert All Checks Passed"
     },
     {
       "parameters": {
@@ -295,8 +346,8 @@
     },
     {
       "parameters": {
-        "content": "## What this workflow demonstrates\n\nEnd-to-end coverage for the Enterspeed node's bulk ingest operations, run in CI (`.github/workflows/ci.yml`, `e2e` job) alongside `fetch-transform-reingest.json`.\n\n[Save Entities API docs](https://docs.enterspeed.com/api-reference/ingest/save-entities)\n\n### The flow\n\n1. Build 5 synthetic `product` entities with unique origin IDs and URLs — a small batch, not the full `MAX_BULK_ENTITIES` cap in `nodes/Enterspeed/actions/entity/shared.ts`, to keep this CI step fast while still exercising the real bulk code path.\n2. **Save Entities (Bulk)** — ingest all 5 in one call.\n3. Fetch each entity's View by URL via the Delivery API and verify it exists with the expected data — not just that Save Bulk returned 200. Ingest is asynchronous, so this polls every 5 s until every entity is served, for up to 90 s.\n4. **Delete Entities (Bulk)** — delete all 5 origin IDs in one call.\n5. Re-fetch each URL and verify it's now gone — not just that Delete Bulk returned 200. This polls the same way.\n\nIf any entity fails to appear within the ceiling at step 3, or is still resolvable at the ceiling of step 5, the Code node throws and the workflow — and therefore CI — fails.",
-        "height": 500,
+        "content": "## What this workflow demonstrates\n\nEnd-to-end coverage for the Enterspeed node's bulk ingest operations, run in CI (`.github/workflows/ci.yml`, `e2e` job) alongside `fetch-transform-reingest.json`.\n\n[Save Entities API docs](https://docs.enterspeed.com/api-reference/ingest/save-entities)\n\n### The flow\n\n1. Build 5 synthetic `product` entities with unique origin IDs and URLs — a small batch, not the full `MAX_BULK_ENTITIES` cap in `nodes/Enterspeed/actions/entity/shared.ts`, to keep this CI step fast while still exercising the real bulk code path.\n2. **Save Entities (Bulk)** — ingest all 5 in one call.\n3. Fetch each entity's View by URL via the Delivery API and verify it exists with the expected data — not just that Save Bulk returned 200. Ingest is asynchronous, so this polls every 5 s until every entity is served, for up to 90 s.\n4. **Delete Entities (Bulk)** — delete all 5 origin IDs in one call.\n5. Re-fetch each URL and verify it's now gone — not just that Delete Bulk returned 200. This polls the same way.\n6. **Delete Entities (Bulk, Over Limit)** — send `MAX_BULK_ENTITIES + 1` (51) made-up origin IDs and expect the Ingest API to refuse the request with 422 before deleting anything.\n7. **Assert All Checks Passed** — throws, failing the workflow and therefore CI, if Save Bulk or Delete Bulk failed, an entity didn't appear within the ceiling at step 3, is still served at the ceiling of step 5, or step 6 wasn't a 422 for the limit.\n\nThe checks record failures instead of throwing, and Save Bulk, Delete Bulk and the Get Content calls continue on fail, so Delete Bulk runs on a red run too and the test products are removed before the workflow fails.",
+        "height": 640,
         "width": 700,
         "color": "#000034"
       },
@@ -495,6 +546,39 @@
         [
           {
             "node": "Get Content (Verify Deleted)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Entities Deleted": {
+      "main": [
+        [
+          {
+            "node": "Build Over-Limit Origin IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Over-Limit Origin IDs": {
+      "main": [
+        [
+          {
+            "node": "Delete Entities (Bulk, Over Limit)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Entities (Bulk, Over Limit)": {
+      "main": [
+        [
+          {
+            "node": "Assert All Checks Passed",
             "type": "main",
             "index": 0
           }
