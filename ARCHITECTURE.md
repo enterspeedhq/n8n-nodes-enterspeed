@@ -172,7 +172,7 @@ Reads the manifest's schema, `kind` being `msd`, `openapi` or `jsonschema`, opti
 | `deliveryUrl`, `deliveryApiKey` | Every read, the schema and the credential test |
 | `manifestVersion` | The `{manifest}` segment of every Delivery route. For an SDK-published schema, the manifest id, a content hash (sdk/ADR-016) |
 
-Ingest and Delivery are separate services, each checking its own key. The credential's `authenticate` function sets `X-Api-Key` per request: the Ingest API Key when the request URL is the ingest URL or under it, the Delivery API Key otherwise.
+Ingest and Delivery are separate services, each checking its own key. The credential's `authenticate` function sets `X-Api-Key` per request: the Ingest API Key when the request URL is under the ingest URL, the Delivery API Key when it is under the delivery URL, and no key to any other host. "Under" means the same origin and a path at or below the configured one, trailing slashes ignored; if one URL is under the other, the more specific wins, so with both URLs the same (the SDK dev-server) that host gets the Ingest API Key.
 
 Neither URL has a default. The Context Graph's hosts aren't Enterspeed Core's, and no Context Graph host is settled yet, so a pre-filled Core host would send a Context Graph key to Core and fail the test with a misleading *No manifest with this version*.
 

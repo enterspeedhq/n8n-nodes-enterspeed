@@ -91,12 +91,12 @@ Create an **Enterspeed Context Graph API** credential with:
 | Field | Used for |
 |---|---|
 | Ingest URL | Writes. No default: the Context Graph's hosts aren't Enterspeed Core's |
-| Ingest API Key | Sent as the `X-Api-Key` header on requests to the Ingest URL only |
+| Ingest API Key | Sent as the `X-Api-Key` header only on requests under the Ingest URL |
 | Delivery URL | Reads. No default, as for the Ingest URL |
-| Delivery API Key | Sent as the `X-Api-Key` header on every other request: shapes, indexes, representations and the schema |
+| Delivery API Key | Sent as the `X-Api-Key` header only on requests under the Delivery URL (reads and the credential test). Any other host gets no key |
 | Manifest Version | The `{manifest}` segment of every Delivery route (default `1.0.0`). For a schema published with the SDK this is the manifest's id, a content hash, not its version label. |
 
-Ingest and Delivery are separate services, and each checks its own key. The node picks the key by where the request goes: a request whose URL starts with the Ingest URL gets the Ingest API Key, any other the Delivery API Key.
+Ingest and Delivery are separate services, and each checks its own key. The node picks the key by where the request goes: a request under the Ingest URL gets the Ingest API Key, one under the Delivery URL the Delivery API Key, and any other host no key at all.
 
 Testing the credential reads `GET {Delivery URL}/schema/msd/v1/{Manifest Version}` with the Delivery API Key. It fails with a clear message if the URL can't be reached, the Delivery API Key is rejected (401) or the manifest version isn't hosted (404). It doesn't check the Ingest API Key; a wrong one shows on the first Push as a 401.
 
@@ -172,7 +172,7 @@ Both read the graph's **shapes**, the views its schema declares over the data, b
 
 ### Index › Query
 
-Finds documents in an **index** the schema declares, with filters, sorting and paging. *Query From* sets how the query is given:
+Finds documents in an **index** the schema declares, with filters, sorting and paging. A match is one of the index's documents, carrying the fields the index displays, not a record that was pushed. *Query From* sets how the query is given:
 
 | Query From | How |
 |---|---|
