@@ -463,15 +463,21 @@ export async function execute(
 					'Query sets page, but Return All pages with the cursor. Remove page, or turn Return All off.',
 				);
 			}
-			// Delivery answers a semantic or hybrid search as one ranked page and never sets its
-			// `next` (query-envelope contract, `next`; delivery's QueryExecutor), so following next
-			// would stop after the first page and look complete. Refused, as delivery refuses a
-			// cursor there.
+			// Delivery never sets `next` on a semantic or hybrid search (query-envelope contract,
+			// `next`; delivery's QueryExecutor): a semantic one is paged with `page` over its top k,
+			// a hybrid one serves its first page only. Following next would stop after the first
+			// page and look complete, so it is refused, as delivery refuses a cursor there.
 			const mode = isObject(query.search) ? query.search.mode : undefined;
-			if (returnAll && (mode === 'semantic' || mode === 'hybrid')) {
+			if (returnAll && mode === 'semantic') {
 				throw new NodeOperationError(
 					this.getNode(),
-					`Query uses search mode "${mode}", which the Delivery URL answers as one ranked page with no next, so Return All can't read further. Turn Return All off and raise limit (up to 100) instead.`,
+					'Query uses search mode "semantic", which the Delivery URL pages with page and never with next, so Return All would stop after the first page. Turn Return All off and send each page you want with page.',
+				);
+			}
+			if (returnAll && mode === 'hybrid') {
+				throw new NodeOperationError(
+					this.getNode(),
+					'Query uses search mode "hybrid", which the Delivery URL serves only one page of, with no next, so Return All would stop after it. Turn Return All off and raise limit (up to 100) instead.',
 				);
 			}
 			// The platform's own rule: the query's id if it has one, else its position.
