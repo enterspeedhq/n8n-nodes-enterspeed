@@ -94,7 +94,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const { originId, sku } = $('Prepare Exists Check').item.json;\nconst route = $json.route;\n\nif (!route) {\n  throw new Error(`Entity ${originId}: no route returned after Save Bulk — entity was not created (or ingest hadn't finished processing yet)`);\n}\n\nif (route.sku !== sku) {\n  throw new Error(`Entity ${originId}: expected route.sku \"${sku}\", got ${JSON.stringify(route.sku)}`);\n}"
+        "jsCode": "const { originId, sku } = $('Prepare Exists Check').item.json;\nconst route = $json.route;\n\nif (!route) {\n  throw new Error(`Entity ${originId}: no route returned after Save Bulk — entity was not created (or ingest hadn't finished processing yet). Delivery answered: ${JSON.stringify($json)}; Save Bulk answered: ${JSON.stringify($('Save Entities (Bulk)').all().map((i) => i.json))}`);\n}\n\nif (route.sku !== sku) {\n  throw new Error(`Entity ${originId}: expected route.sku \"${sku}\", got ${JSON.stringify(route.sku)}`);\n}"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
