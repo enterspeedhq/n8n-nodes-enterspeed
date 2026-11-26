@@ -119,8 +119,7 @@ describe('MSD reader', () => {
 	it("doesn't offer a key outside the path without a binder, even when the MSD lists no binders", () => {
 		// The SDK always emits `$context` (binder-constraint contract, "No `$context`"), and a
 		// `$context` that declares no query or header binder gets no `binders` in the MSD, so
-		// `?id=` would still be dropped. delivery/ADR-036 (sc-14279) publishes such a key in no
-		// operation for the same reason.
+		// `?id=` would still be dropped.
 		const representation = msdRepresentations({
 			representations: [{ $name: 'p', $routes: ['product', 'product/{id}'], context: { required: ['id'] } }],
 		})[0];

@@ -174,9 +174,11 @@ export const routePlaceholders = (template: string): string[] =>
  * No other key is offered: once a representation declares `$context`, which the
  * SDK always emits, delivery drops every query param and `X-Delivery-*` header
  * no binder reads (binder-constraint contract, "Undeclared params are dropped"),
- * so it would be sent and ignored. Delivery's OpenAPI form publishes a key
- * outside the path only when a binder declares it, for the same reason
- * (delivery/ADR-036, sc-14279).
+ * so it would be sent and ignored. The MSD can't tell a `$context` with no
+ * query or header binder from no `$context` at all, so a hand-written manifest
+ * without one, where delivery reads every param, gives up such a key here too.
+ * Delivery's OpenAPI form follows the same rule for an MSD that carries
+ * `context.resolving` (delivery/ADR-036, sc-14279).
  */
 export type ContextTarget = 'path' | 'query' | 'header';
 
