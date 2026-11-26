@@ -96,9 +96,9 @@ The **Enterspeed Context Graph** node uses its own **Enterspeed Context Graph AP
 | Field | Used for |
 |---|---|
 | Ingest URL | Writes. No default: the Context Graph's hosts aren't Enterspeed Core's |
-| Ingest API Key | Sent as the `X-Api-Key` header on writes only |
+| Ingest API Key | Sent as the `X-Api-Key` header only on requests under the Ingest URL |
 | Delivery URL | Reads. No default, as for the Ingest URL |
-| Delivery API Key | Sent as the `X-Api-Key` header on reads and the credential test only |
+| Delivery API Key | Sent as the `X-Api-Key` header only on requests under the Delivery URL (reads and the credential test). Any other host gets no key |
 | Manifest Version | The `{manifest}` segment of every Delivery route (default `1.0.0`) |
 
 Testing the credential reads `GET {Delivery URL}/schema/msd/v1/{Manifest Version}`. It fails with a clear message if the URL can't be reached, the Delivery API Key is rejected (401) or the manifest version isn't hosted (404).
