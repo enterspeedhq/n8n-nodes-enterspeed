@@ -221,7 +221,7 @@ Where a context value goes follows the *binder-constraint* contract and delivery
 
 - A placeholder in the chosen route fills its path segment and is required
 - A `query()` or `header()` binder puts its key in the query string or an `X-Delivery-` header, under the name it gives
-- No other key is offered. Once a representation declares `$context`, which the SDK always emits, delivery drops every query param and `X-Delivery-*` header no binder reads (*binder-constraint*, "Undeclared params are dropped"), so a key outside the path with no binder would be sent and ignored. Delivery's OpenAPI form publishes such a key in no operation for the same reason (delivery/ADR-036, sc-14279)
+- No other key is offered. Once a representation declares `$context`, which the SDK always emits, delivery drops every query param and `X-Delivery-*` header no binder reads (*binder-constraint*, "Undeclared params are dropped"), so a key outside the path with no binder would be sent and ignored. Delivery's OpenAPI form follows the same rule for an MSD that carries `context.resolving` (delivery/ADR-036, sc-14279). The MSD can't tell a `$context` with no query or header binder from no `$context`, so a hand-written manifest without one gives such a key up too
 - A binder with `presence: optional` or a default is not required; a binder's `enum` becomes a list of options
 
 ### 4.4 When the Schema Changes
