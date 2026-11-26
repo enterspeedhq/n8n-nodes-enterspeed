@@ -129,7 +129,7 @@ Records follow the *Ingest NDJSON* contract and are sent unchanged as NDJSON lin
 - **Push** takes one record per item. Its five parameters set `$id`, `$type`, `$source`, `$action` and `$modifiedAt`, each defaulting to the record's own (`={{ $json.$id }}` and so on).
 - **Push Many** takes one item holding a list of records (`={{ $json.data }}`, as an Aggregate node makes it); each record keeps its own `$` fields.
 - **Values are sent as given.** A non-string `$id` or `$type` is reported as failed without being sent, because the contract makes it a parse error. `$source` is required by ingest (cross/ADR-010 retired the source derived from the key); a record without one is sent as it is, and the service's per-record rejection is its result. A delete line carries only the `$` fields. `$modifiedAt` is passed as given, on saves and deletes (ingest/ADR-013).
-- **Not the bulk path.** A source's complete export is an artifact upload (cross/ADR-022, ingest/ADR-017, *Ingest artifact* contract): reserve, signed upload, commit, then a paced drain. Ingest and the SDK dev-server serve it; the node's Upload operation isn't built yet (sc-13877, sc-13882). Push Many splits a list only at the body limit: a request closes before 29,000,000 bytes (ingest sets no limit, so Kestrel's default of 30,000,000 applies; ingest/ADR-020 D5's 32 MiB isn't implemented yet), and requests are sent one at a time.
+- **Not the bulk path.** A source's complete export is an artifact upload (cross/ADR-022, ingest/ADR-017, *Ingest artifact* contract): reserve, signed upload, commit, then a paced drain. Ingest and the SDK dev-server serve it; the node's Upload operation isn't built yet (sc-13877, sc-13882). Push Many splits a list only at the body limit: a request closes before 29,000,000 bytes, well under ingest's 32 MiB write body limit (ingest/ADR-020 D5), and requests are sent one at a time.
 - **Throttling.** A `429` is retried after its `Retry-After`, up to 3 times, as ingest/ADR-020 requires of workflow-tool integrations.
 - **Result.** The service answers a per-line `{ id, accepted, error?, statusCode }` array in line order (`200` all accepted, `207` otherwise), zipped back onto the records.
 
@@ -139,7 +139,7 @@ Shapes are read by the canonical shape key, `{shapeName}:{segKey}:{value}:…` (
 
 - **Get** sends the key's colon-joined parts as percent-encoded path segments (delivery/ADR-030 §3). A segment value can't hold `:` or `/`, so the split is exact. The shape is output unchanged; a `404` fails the item.
 - **Get Many** sends the list as `{ keys }`, closing a request before 30 KiB (delivery caps the body at 32 KiB), and outputs each `{ key, status, data }` of the always-`207` answer unchanged, paired to the item the list came from (*Shapes batch envelope*).
-- **Visibility.** Delivery takes claims from a context token, not the API key, and the node sends none, so a shape gated by its access policy always reads as `404`. Delivery answers a denied shape and a missing one with the same bodiless `404` (sc-10848), so the node never says "denied". A key carries no claims by decision, not by omission: delivery/ADR-044 keeps everything about a caller in a verified claim, and Management stores no claims on keys. Keys carrying claims configured in Management were raised in the review of #26, but would need a new ADR superseding ADR-044. If one lands, this section, the README's *Who can see a shape* and the node's visibility behaviour change with it.
+- **Visibility.** A request's claims come from one place, fixed by the key's kind when it is issued (cross/ADR-051): the claims Management stores on the key, or a verified context token. The node sends the Delivery API Key and no context token, so with a key that takes its claims from a token a shape gated by its access policy reads as `404`, and with a key that has stored claims it reads whatever those claims open. Delivery answers a denied shape and a missing one with the same bodiless `404` (sc-10848), so the node never says "denied". The node needs nothing of its own for either kind: the key decides.
 - **Malformed and unknown keys.** No contract defines an error for a malformed key. Delivery and the SDK dev-server reject only an empty key (`400 "Missing shape key"`) and answer any other key that names no shape with a bodiless `404`. A key whose shape the manifest doesn't declare is a `404` with an `application/problem+json` body titled *Unknown shape* on Get, and a `404` item on Get Many (*Shapes batch envelope*). The node doesn't validate the key itself. `deliveryError` reads only a body's `message`, so it reports an unknown shape with its own not-found message.
 - **No `503` retry yet.** delivery/ADR-025 answers a shed read `503` + `Retry-After`; retrying it once is sc-14796.
 - **Key From › Schema** builds the key from a shape and its ID segments chosen in the editor (section 4); it waits on the schema listing entry shapes.
@@ -217,11 +217,12 @@ So a run doesn't depend on the schema being reachable, and an imported workflow 
 
 ### 4.3 Context Targets
 
-Where a context value goes follows delivery/ADR-036 (every non-path context entry is a query parameter):
+Where a context value goes follows the *binder-constraint* contract and delivery/ADR-036:
 
 - A placeholder in the chosen route fills its path segment and is required
-- Every other caller-suppliable key (`context.required`, `context.optional`, and binders neither lists) goes in the query string under its own name
-- A `query()` or `header()` binder (*binder-constraint* contract) can name another key or make it a header
+- A `query()` or `header()` binder puts its key in the query string or an `X-Delivery-` header, under the name it gives
+- Once a representation declares `$context`, delivery drops every query param and `X-Delivery-*` header no binder reads (*binder-constraint*, "Undeclared params are dropped"). So when the MSD lists binders, a key outside the path with no binder isn't offered: it would be sent and ignored
+- When it lists none, every other key in `context.required` and `context.optional` goes in the query string under its own name, which delivery reads when the representation has no `$context`. The MSD lists binders only, so a `$context` that declares none looks the same as no `$context`, and such a key is then sent and dropped
 - A binder with `presence: optional` or a default is not required; a binder's `enum` becomes a list of options
 
 ### 4.4 When the Schema Changes
