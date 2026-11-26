@@ -1411,7 +1411,7 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 			);
 		});
 
-		it('fails a semantic or hybrid query before sending: delivery answers it as one page with no next', async () => {
+		it('fails a semantic or hybrid query before sending: delivery never sets next on either', async () => {
 			// Delivery never sets next on a semantic or hybrid search (QueryExecutor), so following
 			// next would stop after page 1 and look complete (query-envelope contract, `next`).
 			const httpRequest = answerEach();
@@ -1427,11 +1427,12 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 				httpRequest,
 				continueOnFail: true,
 			});
-			for (const [i, mode] of [[0, 'semantic'], [1, 'hybrid']] as const) {
-				expect(out[i].json.error).toBe(
-					`Item ${i}: Query uses search mode "${mode}", which the Delivery URL answers as one ranked page with no next, so Return All can't read further. Turn Return All off and raise limit (up to 100) instead.`,
-				);
-			}
+			expect(out[0].json.error).toBe(
+				'Item 0: Query uses search mode "semantic", which the Delivery URL pages with page and never with next, so Return All would stop after the first page. Turn Return All off and send each page you want with page.',
+			);
+			expect(out[1].json.error).toBe(
+				'Item 1: Query uses search mode "hybrid", which the Delivery URL serves only one page of, with no next, so Return All would stop after it. Turn Return All off and raise limit (up to 100) instead.',
+			);
 			expect(body(httpRequest)).toEqual([{ index: 'ProductIndex', search: { query: 'quiet headphones', mode: 'text' } }]);
 			await expect(
 				query({ params: { returnAll: true, query: { index: 'ProductIndex', search: { query: 'q', mode: 'semantic' } } } }),
