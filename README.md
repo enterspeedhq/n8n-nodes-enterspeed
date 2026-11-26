@@ -96,9 +96,9 @@ The **Enterspeed Context Graph** node uses its own **Enterspeed Context Graph AP
 | Field | Used for |
 |---|---|
 | Ingest URL | Writes. No default: the Context Graph's hosts aren't Enterspeed Core's |
-| Ingest API Key | Sent as the `X-Api-Key` header on writes only |
+| Ingest API Key | Sent as the `X-Api-Key` header only on requests under the Ingest URL |
 | Delivery URL | Reads. No default, as for the Ingest URL |
-| Delivery API Key | Sent as the `X-Api-Key` header on reads and the credential test only |
+| Delivery API Key | Sent as the `X-Api-Key` header only on requests under the Delivery URL (reads and the credential test). Any other host gets no key |
 | Manifest Version | The `{manifest}` segment of every Delivery route (default `1.0.0`) |
 
 Testing the credential reads `GET {Delivery URL}/schema/msd/v1/{Manifest Version}`. It fails with a clear message if the URL can't be reached, the Delivery API Key is rejected (401) or the manifest version isn't hosted (404).
@@ -160,7 +160,7 @@ Both read the graph's **shapes**: the views its schema declares over the data, b
 
 `POST {Delivery URL}/query/v1/{Manifest Version}`
 
-Finds records in an **index** the schema declares, with filters, sorting and paging. The *Query* field takes the query as a JSON object, sent as written.
+Finds documents in an **index** the schema declares, with filters, sorting and paging. A match is one of the index's documents, carrying the fields the index displays, not a record that was pushed. The *Query* field takes the query as a JSON object, sent as written.
 
 - Each input item is one query. All items' queries are sent in one request, and each item gets back its result exactly as the Context Graph returns it: `{ id, index, items, totalCount, next }`. A query that matches nothing returns `items: []`; it doesn't fail.
 - The *Query* field starts with a working example to edit. A query's `id` is optional: its result comes back labelled with it, or with the query's position in the request when it has none. Two queries in one run can't share an id; the node fails before sending, as the Context Graph would reject the request.

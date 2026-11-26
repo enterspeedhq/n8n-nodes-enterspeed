@@ -1366,15 +1366,73 @@ describe('EnterspeedContextGraphApi credential', () => {
 		) => Promise<IHttpRequestOptions>;
 		const header = async (url: string) => (await authenticate(creds, { url, headers: { a: 'b' } })).headers;
 
+		const ingest = { a: 'b', 'X-Api-Key': 'ingest-key' };
+		const delivery = { a: 'b', 'X-Api-Key': 'delivery-key' };
+		const none = { a: 'b' };
+
 		it('the Ingest API Key to the Ingest URL and under it', async () => {
-			expect(await header('https://ingest.example.com/entities')).toEqual({ a: 'b', 'X-Api-Key': 'ingest-key' });
-			expect(await header('https://ingest.example.com')).toEqual({ a: 'b', 'X-Api-Key': 'ingest-key' });
+			expect(await header('https://ingest.example.com/entities')).toEqual(ingest);
+			expect(await header('https://ingest.example.com')).toEqual(ingest);
+			expect(await header('https://INGEST.example.com:443/entities?x=1')).toEqual(ingest);
 		});
 
-		it('the Delivery API Key everywhere else', async () => {
-			expect(await header('https://delivery.example.com/schema/msd/v1/1.0.0')).toEqual({ a: 'b', 'X-Api-Key': 'delivery-key' });
-			// a host that only starts with the ingest URL isn't under it
-			expect(await header('https://ingest.example.com.evil/entities')).toEqual({ a: 'b', 'X-Api-Key': 'delivery-key' });
+		it('the Delivery API Key to the Delivery URL and under it', async () => {
+			expect(await header('https://delivery.example.com/schema/msd/v1/1.0.0')).toEqual(delivery);
+			expect(await header('https://delivery.example.com/')).toEqual(delivery);
+		});
+
+		it('no key to any other host', async () => {
+			expect(await header('https://api.enterspeed.com/entities')).toEqual(none);
+			expect(await header('https://example.com/entities')).toEqual(none);
+			// same host, other scheme or port, is another origin
+			expect(await header('http://ingest.example.com/entities')).toEqual(none);
+			expect(await header('https://delivery.example.com:8443/schema')).toEqual(none);
+			expect(await header('not a url')).toEqual(none);
+		});
+
+		it('no key to a lookalike host or a user-info trick', async () => {
+			expect(await header('https://ingest.example.com.evil.com/entities')).toEqual(none);
+			expect(await header('https://ingest.example.comevil.com/entities')).toEqual(none);
+			expect(await header('https://delivery.example.com.evil.com/schema')).toEqual(none);
+			expect(await header('https://ingest.example.com@evil.com/entities')).toEqual(none);
+		});
+
+		it('treats trailing slashes alike, on the configured URL and the request', async () => {
+			const slashed = { ...creds, ingestUrl: 'https://ingest.example.com///', deliveryUrl: 'https://delivery.example.com/' };
+			const h = async (url: string) => (await authenticate(slashed, { url, headers: { a: 'b' } })).headers;
+			expect(await h('https://ingest.example.com/entities/')).toEqual(ingest);
+			expect(await h('https://ingest.example.com')).toEqual(ingest);
+			expect(await h('https://delivery.example.com')).toEqual(delivery);
+			expect(await header('https://delivery.example.com/schema/')).toEqual(delivery);
+		});
+
+		it('matches a URL with a path on whole path segments only', async () => {
+			const pathed = { ...creds, ingestUrl: 'https://graph.example.com/ingest/', deliveryUrl: 'https://graph.example.com/delivery' };
+			const h = async (url: string) => (await authenticate(pathed, { url, headers: { a: 'b' } })).headers;
+			expect(await h('https://graph.example.com/ingest/entities')).toEqual(ingest);
+			expect(await h('https://graph.example.com/delivery/schema')).toEqual(delivery);
+			expect(await h('https://graph.example.com/ingestion/entities')).toEqual(none);
+			expect(await h('https://graph.example.com/other')).toEqual(none);
+		});
+
+		it('gives the more specific URL its key when one is under the other', async () => {
+			const nested = { ...creds, ingestUrl: 'https://graph.example.com', deliveryUrl: 'https://graph.example.com/delivery' };
+			const h = async (url: string) => (await authenticate(nested, { url, headers: { a: 'b' } })).headers;
+			expect(await h('https://graph.example.com/delivery/schema')).toEqual(delivery);
+			expect(await h('https://graph.example.com/entities')).toEqual(ingest);
+		});
+
+		it('the Ingest API Key when both URLs are the same host, as on the dev-server', async () => {
+			const one = { ...creds, ingestUrl: 'http://localhost:5200', deliveryUrl: 'http://localhost:5200/' };
+			const h = async (url: string) => (await authenticate(one, { url, headers: { a: 'b' } })).headers;
+			expect(await h('http://localhost:5200/entities')).toEqual(ingest);
+			expect(await h('http://localhost:5201/entities')).toEqual(none);
+		});
+
+		it('no key when the URLs are blank', async () => {
+			const blank = { ...creds, ingestUrl: '', deliveryUrl: '' };
+			const out = await authenticate(blank, { url: 'https://ingest.example.com/entities', headers: { a: 'b' } });
+			expect(out.headers).toEqual(none);
 		});
 
 		it('the Delivery API Key to the credential test, which has a baseURL', async () => {

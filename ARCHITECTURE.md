@@ -101,10 +101,13 @@ This package ships three n8n node types and two credential types:
   delivery URL and Delivery API Key for reads, and the manifest version every
   Delivery route is scoped to. Ingest and delivery are separate services that
   each check their own key, so `authenticate` sets `X-Api-Key` per request:
-  the Ingest API Key when the request URL is the ingest URL or under it, the
-  Delivery API Key otherwise. Neither URL has a default, so a Context Graph
-  key is never sent to an Enterspeed Core host. The SDK dev-server serves both
-  services from one host.
+  the Ingest API Key when the request URL is under the ingest URL, the
+  Delivery API Key when it is under the delivery URL, and no key to any other
+  host. "Under" means the same origin and a path at or below the configured
+  one, trailing slashes ignored; if one URL is under the other, the more
+  specific wins. Neither URL has a default, so a Context Graph key is never
+  sent to an Enterspeed Core host. The SDK dev-server serves both services
+  from one host; with both URLs the same, that host gets the Ingest API Key.
   The credential test reads `GET {deliveryUrl}/schema/msd/v1/{manifestVersion}`,
   which deployed Delivery guards with the key (401) and 404s for an unhosted
   manifest. The dev-server does not enforce keys, so against it the test only
