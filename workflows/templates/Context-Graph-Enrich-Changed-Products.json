@@ -82,13 +82,79 @@
     },
     {
       "parameters": {
+        "resource": "schema",
+        "operation": "get"
+      },
+      "name": "Read the manifest",
+      "type": "CUSTOM.enterspeedContextGraph",
+      "typeVersion": 1,
+      "position": [
+        660,
+        160
+      ],
+      "id": "3c1e7a52-9d04-5b6f-a8e2-14248000a001",
+      "credentials": {
+        "enterspeedContextGraphApi": {
+          "id": "__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__",
+          "name": "Enterspeed Context Graph account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "chooseBranch"
+      },
+      "name": "Wait for the manifest",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        880,
+        0
+      ],
+      "id": "3c1e7a52-9d04-5b6f-a8e2-14248000a002"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6a1f3c2e-0b4d-4e8a-9c71-2d5e8f0a1b03",
+              "leftValue": "={{ $json.key.split(':')[0] }}",
+              "rightValue": "={{ $('Read the manifest').first().json.manifestVersion }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Only this workflow's manifest",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        0
+      ],
+      "id": "3c1e7a52-9d04-5b6f-a8e2-14248000a003"
+    },
+    {
+      "parameters": {
         "options": {}
       },
       "name": "One product at a time",
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
-        660,
+        1100,
         0
       ],
       "id": "893f71b4-37bd-51da-ae83-63c5b7228d52"
@@ -104,7 +170,7 @@
       "type": "CUSTOM.enterspeedContextGraph",
       "typeVersion": 1,
       "position": [
-        880,
+        1320,
         0
       ],
       "id": "a055dba4-36a9-5757-a601-050b80c63ec6",
@@ -145,7 +211,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1100,
+        1540,
         0
       ],
       "id": "a5075dca-f1dd-59b6-bd5f-885be7a3f52d"
@@ -160,7 +226,7 @@
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.9,
       "position": [
-        1320,
+        1760,
         -100
       ],
       "id": "02871f8a-69e9-5e4d-b7b2-666fd8068040",
@@ -180,7 +246,7 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
       "typeVersion": 1.3,
       "position": [
-        1320,
+        1760,
         120
       ],
       "id": "736300b9-267b-5603-b6db-ef3ce8cfa1a2",
@@ -239,7 +305,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1540,
+        1980,
         -200
       ],
       "id": "8f762263-3e24-5321-bf3a-d67ad239c6b1"
@@ -253,7 +319,7 @@
       "type": "CUSTOM.enterspeedContextGraph",
       "typeVersion": 1,
       "position": [
-        1760,
+        2200,
         -200
       ],
       "id": "94f099ed-0593-54c0-abac-d8e546003e36",
@@ -294,7 +360,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1980,
+        2420,
         -200
       ],
       "id": "cccb081b-9384-5dd1-9ef4-d41635047147"
@@ -323,15 +389,15 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1980,
+        2420,
         160
       ],
       "id": "f0b787c2-035e-5fe9-b8fc-08c54492c902"
     },
     {
       "parameters": {
-        "content": "## Enrich changed products into their own source\nA product changes in the graph, the workflow reads it, a language model writes a description, and the description goes back into the graph as a record in a **separate source**, `enrichment`.\n\n- **When the graph changes** gets one item per changed entry: its tag `key`, `hash` and `action`. The webhook carries the event, never the data.\n- **Drop redeliveries** skips an entry of a delivery the sender retried (same `deliveryId` and `key`), so a retry doesn't enrich twice.\n- **Only changed products** keeps upserted `ProductCard` entries (see the loop guard below).\n- **One product at a time** takes them one by one, so each description stays matched to its product.\n- **Read the changed product** reads that shape: the tag key without its `{manifest}:shape:` prefix is the shape key.\n- **Enrich** asks the chat model for one sentence.\n- **Write to the enrichment source** pushes a `productEnrichment` record, keyed by the product's id, to the `enrichment` source. The schema reads it as the `ProductEnrichment` shape.\n\n**One entry failing doesn't stop the others.** A read, a model call or a write that fails, or a record the graph refuses, goes to *Entries that weren't enriched* with its tag key and the error; every other entry is still written and the run succeeds.",
-        "height": 560,
+        "content": "## Enrich changed products into their own source\nA product changes in the graph, the workflow reads it, a language model writes a description, and the description goes back into the graph as a record in a **separate source**, `enrichment`.\n\n- **When the graph changes** gets one item per changed entry: its tag `key`, `hash` and `action`. The webhook carries the event, never the data.\n- **Drop redeliveries** skips an entry of a delivery the sender retried (same `deliveryId` and `key`), so a retry doesn't enrich twice.\n- **Only changed products** keeps upserted `ProductCard` entries (see the loop guard below).\n- **Only this workflow's manifest** keeps the entries under the manifest the *Enterspeed Context Graph account* credential reads, which **Read the manifest** gives it. Publishing a manifest announces every entry under it, so without this a publish would enrich the whole catalogue, twice while two manifests run side by side. When you move the credential to a new manifest, the filter moves with it.\n- **One product at a time** takes them one by one, so each description stays matched to its product.\n- **Read the changed product** reads that shape: the tag key without its `{manifest}:shape:` prefix is the shape key.\n- **Enrich** asks the chat model for one sentence.\n- **Write to the enrichment source** pushes a `productEnrichment` record, keyed by the product's id, to the `enrichment` source. The schema reads it as the `ProductEnrichment` shape.\n\n**One entry failing doesn't stop the others.** A read, a model call or a write that fails, or a record the graph refuses, goes to *Entries that weren't enriched* with its tag key and the error; every other entry is still written and the run succeeds.",
+        "height": 620,
         "width": 720
       },
       "name": "About",
@@ -400,6 +466,44 @@
       ]
     },
     "Only changed products (loop guard)": {
+      "main": [
+        [
+          {
+            "node": "Wait for the manifest",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read the manifest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read the manifest": {
+      "main": [
+        [
+          {
+            "node": "Wait for the manifest",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Wait for the manifest": {
+      "main": [
+        [
+          {
+            "node": "Only this workflow's manifest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only this workflow's manifest": {
       "main": [
         [
           {

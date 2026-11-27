@@ -454,6 +454,10 @@ async function enrichmentCases(auth, workflowId) {
 	const [enriching, guarded] = runs;
 	const kept = output(enriching, 'Only changed products (loop guard)', 0) ?? [];
 	check(kept.length === 1 && kept[0].key === '1.0.0:shape:ProductCard:productId:p-1', `the first run keeps only the product's ProductCard entry (${kept.map((k) => k.key).join(', ')})`);
+	const [manifest, ...moreManifests] = output(enriching, 'Read the manifest') ?? [];
+	check(moreManifests.length === 0 && manifest?.manifestVersion === '1.0.0', `it reads the credential's manifest once (${manifest?.manifestVersion})`);
+	const ownManifest = output(enriching, "Only this workflow's manifest", 0) ?? [];
+	check(ownManifest.length === 1 && ownManifest[0].key === kept[0].key, `and keeps the entry, which is under that manifest (${ownManifest.map((k) => k.key).join(', ')})`);
 	const written = output(enriching, 'Write to the enrichment source') ?? [];
 	check(written.length === 1 && written[0].accepted === true, `the first run writes exactly one record, accepted (${JSON.stringify(written)})`);
 	check(prompts.length === 1 && prompts[0].includes('Trail Runner Pro'), `the model was asked once, about the edited product (${prompts.length})`);
