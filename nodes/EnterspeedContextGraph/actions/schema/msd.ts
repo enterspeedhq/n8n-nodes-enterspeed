@@ -182,6 +182,9 @@ export const routePlaceholders = (template: string): string[] =>
  */
 export type ContextTarget = 'path' | 'query' | 'header';
 
+/** The request header a header binder reads: `X-Delivery-<key or context key>` (binder-constraint). */
+export const deliveryHeader = (name: string) => `X-Delivery-${name}`;
+
 export const contextFieldId = (target: ContextTarget, name: string) => `${target}:${name}`;
 
 export function parseContextFieldId(id: string): { target: ContextTarget; name: string } | undefined {
@@ -221,7 +224,10 @@ export function representationFields(representation: MsdRepresentation, route: s
 		const name = binder?.key ?? key;
 		return {
 			id: contextFieldId(target, name),
-			displayName: `${key} (${target}${name !== key ? `: ${name}` : ''})`,
+			displayName:
+				target === 'header'
+					? `${key} (header: ${deliveryHeader(name)})`
+					: `${key} (${target}${name !== key ? `: ${name}` : ''})`,
 			required,
 			defaultMatch: false,
 			display: true,
