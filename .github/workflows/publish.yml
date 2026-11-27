@@ -22,10 +22,11 @@
 #
 # Only the last job holds `id-token: write`. Everything that installs or runs
 # code from the registry (npm ci, lint, tests, build, the scanner via npx) runs
-# in `verify` with read-only permissions and hands over the packed tarball; the
-# publish job installs nothing and only runs `npm publish` on that tarball, so
-# no other step can mint the OIDC token. Actions are pinned by commit SHA and
-# nothing is restored from a cache.
+# in `verify` with read-only permissions and hands over the packed tarball,
+# packed and uploaded before the scanner runs, with its SHA-256; the publish job
+# installs nothing, checks the hash and only runs `npm publish` on that tarball,
+# so no other step can mint the OIDC token or change what ships. Actions are
+# pinned by commit SHA and nothing is restored from a cache.
 #
 # The main check below lives in this file, so a tag on a branch whose copy of it
 # drops the check would still publish; only a tag ruleset limiting who can push
@@ -47,8 +48,11 @@ concurrency:
 
 jobs:
   verify:
-    name: Test, build, scan and pack
+    name: Test, build, pack and scan
     runs-on: ubuntu-latest
+
+    outputs:
+      sha256: ${{ steps.pack.outputs.sha256 }}
 
     permissions:
       contents: read
@@ -91,17 +95,18 @@ jobs:
       - name: Build
         run: npm run build
 
-      # The checks n8n runs before it verifies a community node, on the files
-      # npm is about to publish.
-      - name: n8n community package scan
-        run: npm run scan
-
-      # The exact files the publish job releases.
+      # The exact files the publish job releases, packed and uploaded before the
+      # scanner runs: the scanner comes through npx with dependencies resolved
+      # fresh from the registry, so it must not be able to change what ships.
+      # The tarball's SHA-256 leaves as a step output, which a later step can't
+      # rewrite, and the publish job checks the tarball against it.
       - name: Pack
+        id: pack
         run: |
           mkdir -p pack
           npm pack --ignore-scripts --pack-destination pack
           ls -l pack
+          echo "sha256=$(sha256sum pack/*.tgz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -109,6 +114,11 @@ jobs:
           path: pack/*.tgz
           if-no-files-found: error
           retention-days: 1
+
+      # The checks n8n runs before it verifies a community node, on the same
+      # build that was just packed.
+      - name: n8n community package scan
+        run: npm run scan
 
   publish:
     name: Publish to npm
@@ -139,6 +149,17 @@ jobs:
         with:
           name: package
           path: pack
+
+      # The tarball verify packed before its scanner ran, byte for byte.
+      - name: Check the tarball is the one verify packed
+        env:
+          EXPECTED_SHA256: ${{ needs.verify.outputs.sha256 }}
+        run: |
+          actual="$(sha256sum "pack/enterspeed-n8n-nodes-enterspeed-${GITHUB_REF_NAME}.tgz" | cut -d' ' -f1)"
+          if [ -z "$EXPECTED_SHA256" ] || [ "$actual" != "$EXPECTED_SHA256" ]; then
+            echo "::error::The tarball's SHA-256 $actual isn't the $EXPECTED_SHA256 verify packed"
+            exit 1
+          fi
 
       # What `n8n-node release` did in CI (lint and build happen in verify):
       # `npm publish` with provenance on; npm authenticates with OIDC. A

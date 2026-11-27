@@ -202,9 +202,9 @@ npm run release
 This lints, builds, prompts for a version bump, updates the changelog,
 commits, tags (the bare version, e.g. `0.2.0`) and pushes. It doesn't publish.
 The tag starts `.github/workflows/publish.yml`, which checks the tag equals
-`package.json`'s version and is on `main`, runs the tests, the build and the
-scanner, and runs `npm run release` again; inside GitHub Actions that publishes
-with a provenance statement. npm publishes only from that workflow: never run
+`package.json`'s version and is on `main`, runs the tests and the build, packs
+the tarball, runs the scanner, and publishes that tarball with a provenance
+statement from a job that installs nothing. npm publishes only from that workflow: never run
 `npm publish` or `npm run release -- --publish` from your machine.
 
 After publishing, users who installed the package via n8n's Community Nodes UI

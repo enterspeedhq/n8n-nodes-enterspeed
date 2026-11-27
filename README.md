@@ -403,7 +403,7 @@ npm run build && npm run scan   # n8n's community package scanner on what npm wo
 npm run release                 # on main: bump, changelog, commit, tag (e.g. 0.2.0), push
 ```
 
-The pushed tag starts the workflow. It stops unless the tag equals `package.json`'s version and points at a commit on `main`, then lints, tests, builds, scans and packs the package in a job without publish rights. A second job, the only one allowed to request GitHub's OIDC token, installs nothing and publishes that tarball with `npm publish --provenance`. CI runs the same scan on every pull request into `main`. A local scan skips the provenance and attested-source checks; n8n runs those against the published version, which you can do too with `npx @n8n/scan-community-package @enterspeed/n8n-nodes-enterspeed@<version>`.
+The pushed tag starts the workflow. It stops unless the tag equals `package.json`'s version and points at a commit on `main`, then lints, tests, builds and packs the package in a job without publish rights, uploads the tarball and only then runs the scanner, so the scanner can't change what ships. A second job, the only one allowed to request GitHub's OIDC token, installs nothing, checks the tarball's SHA-256 against the one packed and publishes it with `npm publish --provenance`. CI runs the same scan on every pull request into `main`. A local scan skips the provenance and attested-source checks; n8n runs those against the published version, which you can do too with `npx @n8n/scan-community-package @enterspeed/n8n-nodes-enterspeed@<version>`.
 
 One-time setup on npmjs.com, by a package owner:
 
