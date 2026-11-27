@@ -8,6 +8,12 @@ import {
 	MAX_THROTTLE_RETRIES,
 } from '../nodes/EnterspeedContextGraph/actions/entity/shared';
 import { MAX_BODY_BYTES } from '../nodes/EnterspeedContextGraph/actions/shape/getMany.operation';
+import {
+	DELIVERY_BUSY_MESSAGE,
+	MAX_RETRY_AFTER_MS,
+	deliveryRetryAfterMs,
+	retryDelayMs,
+} from '../nodes/EnterspeedContextGraph/transport';
 import { EnterspeedContextGraphApi } from '../credentials/EnterspeedContextGraphApi.credentials';
 import { createContextGraphExecuteMock } from './mocks';
 
@@ -1370,7 +1376,13 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 				status: 503,
 				detail: 'Search could not answer this batch. Retry after the time in Retry-After.',
 			};
-			await expect(query({ httpRequest: failWith(503, problem) })).rejects.toThrow(problem.detail);
+			// No Retry-After here, so no retry: the item fails as busy, with the detail as the description.
+			const httpRequest = failWith(503, problem);
+			const error = await query({ httpRequest }).catch((e: NodeApiError) => e);
+			expect(error).toBeInstanceOf(NodeApiError);
+			expect((error as NodeApiError).message).toBe(DELIVERY_BUSY_MESSAGE);
+			expect((error as NodeApiError).description).toBe(problem.detail);
+			expect(httpRequest).toHaveBeenCalledTimes(1);
 		});
 
 		it('falls back to the status for a problem body without a detail', async () => {
@@ -1830,6 +1842,228 @@ describe('EnterspeedContextGraph — Representation › Get, resuming a partial 
 				pairedItem: { item: 0 },
 			},
 		]);
+	});
+});
+
+/**
+ * delivery/ADR-025 Decision 3: a read Delivery can't serve right now is
+ * answered 503 + Retry-After + X-Delivery-Retry-After-Ms. Every Delivery read
+ * waits that long plus a jitter and sends the same request once more, as
+ * Delivery's own clients do.
+ */
+describe('EnterspeedContextGraph — a busy Delivery (503, delivery/ADR-025 D3)', () => {
+	const busy = (headers: IDataObject = { 'Retry-After': '1', 'X-Delivery-Retry-After-Ms': '1000' }, data?: unknown) =>
+		Object.assign(new NodeApiError(httpNode, { httpCode: '503' }), { cause: { response: { status: 503, headers, data } } });
+
+	describe('the wait asked for', () => {
+		it('takes X-Delivery-Retry-After-Ms over Retry-After', () => {
+			expect(deliveryRetryAfterMs({ 'x-delivery-retry-after-ms': '250', 'retry-after': '5' })).toBe(250);
+		});
+
+		it('falls back to Retry-After in whole seconds', () => {
+			expect(deliveryRetryAfterMs({ 'retry-after': '2' })).toBe(2000);
+		});
+
+		it('reads the headers in any case', () => {
+			expect(deliveryRetryAfterMs({ 'X-Delivery-Retry-After-Ms': '300' })).toBe(300);
+			expect(deliveryRetryAfterMs({ 'Retry-After': '1' })).toBe(1000);
+		});
+
+		it('falls back to Retry-After when X-Delivery-Retry-After-Ms is unusable', () => {
+			expect(deliveryRetryAfterMs({ 'x-delivery-retry-after-ms': '-5', 'retry-after': '1' })).toBe(1000);
+			expect(deliveryRetryAfterMs({ 'x-delivery-retry-after-ms': 'soon', 'retry-after': '1' })).toBe(1000);
+		});
+
+		it('has no usable value without either header, or with an HTTP date or a fraction of a second in Retry-After', () => {
+			expect(deliveryRetryAfterMs({})).toBeUndefined();
+			expect(deliveryRetryAfterMs(undefined)).toBeUndefined();
+			expect(deliveryRetryAfterMs({ 'retry-after': new Date(Date.now() + 2000).toUTCString() })).toBeUndefined();
+			expect(deliveryRetryAfterMs({ 'retry-after': '1.5' })).toBeUndefined();
+			expect(deliveryRetryAfterMs({ 'retry-after': '' })).toBeUndefined();
+		});
+
+		it(`takes up to ${MAX_RETRY_AFTER_MS} ms, and nothing above it`, () => {
+			expect(MAX_RETRY_AFTER_MS).toBe(30_000);
+			expect(deliveryRetryAfterMs({ 'x-delivery-retry-after-ms': '30000' })).toBe(30_000);
+			expect(deliveryRetryAfterMs({ 'retry-after': '30' })).toBe(30_000);
+			expect(deliveryRetryAfterMs({ 'x-delivery-retry-after-ms': '30001' })).toBeUndefined();
+			expect(deliveryRetryAfterMs({ 'retry-after': '31' })).toBeUndefined();
+		});
+	});
+
+	describe('the jitter, in [0, min(wait / 2, 1 s))', () => {
+		const almostOne = () => 0.999999;
+		it('adds nothing at the bottom of its range', () => {
+			expect(retryDelayMs(1000, () => 0)).toBe(1000);
+		});
+
+		it('stays under half the wait for a short wait', () => {
+			expect(retryDelayMs(1000, almostOne)).toBe(1499);
+			expect(retryDelayMs(250, almostOne)).toBe(374);
+		});
+
+		it('stays under 1 s for a long wait', () => {
+			expect(retryDelayMs(5000, almostOne)).toBe(5999);
+			expect(retryDelayMs(30_000, almostOne)).toBe(30_999);
+		});
+
+		it('adds nothing to a wait of 0', () => {
+			expect(retryDelayMs(0, almostOne)).toBe(0);
+		});
+
+		it('uses a random value when none is given', () => {
+			const random = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+			try {
+				expect(retryDelayMs(1000)).toBe(1250);
+			} finally {
+				random.mockRestore();
+			}
+		});
+	});
+
+	/** Each Delivery read, run once: its parameters, and an answer that succeeds. */
+	const reads: Array<[string, Record<string, unknown>, unknown]> = [
+		['Shape › Get', { resource: 'shape', operation: 'get', shapeKey: 'CategoryRef:categoryId:cat-speakers' }, { name: 'Speakers' }],
+		[
+			'Shape › Get Many',
+			{ resource: 'shape', operation: 'getMany', shapeKeys: ['CategoryRef:categoryId:cat-speakers'] },
+			[{ key: 'CategoryRef:categoryId:cat-speakers', status: 200, data: { name: 'Speakers' } }],
+		],
+		[
+			'Shape › Get Many (Schema)',
+			{ resource: 'shape', operation: 'getMany', keyFrom: 'schema', shapeName: 'CategoryRef', idSegments: { segment: [{ name: 'categoryId', value: 'cat-speakers' }] } },
+			[{ key: 'CategoryRef:categoryId:cat-speakers', status: 200, data: { name: 'Speakers' } }],
+		],
+		['Index › Get', { resource: 'index', operation: 'get', indexName: 'ProductIndex', documentId: 'ProductIndex:productId:p-1001' }, { $id: 'p-1001' }],
+		[
+			'Index › Query',
+			{ resource: 'index', operation: 'query', query: '{"index":"ProductIndex"}' },
+			[{ id: '0', index: 'ProductIndex', items: [], totalCount: 0, next: null }],
+		],
+		['Representation › Get', { resource: 'representation', operation: 'get', route: '/products/p1' }, { product: { sku: 'p1' }, $metadata: { product: { $state: 'fresh' } } }],
+	];
+
+	async function run(params: Record<string, unknown>, httpRequest: ReturnType<typeof vi.fn>, continueOnFail = false) {
+		sleep.mockClear();
+		const ctx = createContextGraphExecuteMock({ params, items: [{}], httpRequest, continueOnFail });
+		const [out] = (await node.execute.call(ctx)) as INodeExecutionData[][];
+		return out;
+	}
+
+	describe.each(reads)('%s', (_name, params, answer) => {
+		it('waits the wait asked for plus jitter, then sends the same request once more', async () => {
+			const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+			try {
+				const httpRequest = vi.fn().mockRejectedValueOnce(busy({ 'x-delivery-retry-after-ms': '250', 'retry-after': '1' })).mockResolvedValueOnce(answer);
+				const out = await run(params, httpRequest);
+				expect(sleep.mock.calls).toEqual([[250]]);
+				expect(httpRequest).toHaveBeenCalledTimes(2);
+				expect(httpRequest.mock.calls[1][0]).toEqual(httpRequest.mock.calls[0][0]);
+				expect(out[0].json.error).toBeUndefined();
+			} finally {
+				random.mockRestore();
+			}
+		});
+
+		it('fails the item as busy on a second 503', async () => {
+			const httpRequest = vi.fn().mockRejectedValue(busy());
+			await expect(run(params, httpRequest)).rejects.toThrow(DELIVERY_BUSY_MESSAGE);
+			expect(httpRequest).toHaveBeenCalledTimes(2);
+			expect(sleep).toHaveBeenCalledTimes(1);
+		});
+
+		it('with Continue On Fail, outputs the item with error', async () => {
+			const out = await run(params, vi.fn().mockRejectedValue(busy()), true);
+			expect(out).toHaveLength(1);
+			expect(out[0].json.error).toBe(DELIVERY_BUSY_MESSAGE);
+			expect(out[0].pairedItem).toEqual({ item: 0 });
+		});
+
+		it.each([
+			['no wait', {}],
+			['a wait over 30 s', { 'x-delivery-retry-after-ms': '60000', 'retry-after': '60' }],
+		])("doesn't retry a 503 with %s, and fails the item as busy", async (_case, headers) => {
+			const httpRequest = vi.fn().mockRejectedValue(busy(headers));
+			await expect(run(params, httpRequest)).rejects.toThrow(DELIVERY_BUSY_MESSAGE);
+			expect(httpRequest).toHaveBeenCalledTimes(1);
+			expect(sleep).not.toHaveBeenCalled();
+		});
+
+		it("doesn't retry any other failure", async () => {
+			const httpRequest = vi.fn().mockRejectedValue(
+				Object.assign(new NodeApiError(httpNode, { httpCode: '500' }), { cause: { response: { status: 500, headers: { 'retry-after': '1' } } } }),
+			);
+			await expect(run(params, httpRequest)).rejects.toThrow('The Delivery URL answered with status 500.');
+			expect(httpRequest).toHaveBeenCalledTimes(1);
+			expect(sleep).not.toHaveBeenCalled();
+		});
+	});
+
+	it("shows why in the description when the 503's problem body has a detail", async () => {
+		const problem = { title: 'Search unavailable', status: 503, detail: 'Search could not answer this batch. Retry after the time in Retry-After.' };
+		const out = await run(
+			{ resource: 'shape', operation: 'get', shapeKey: 'CategoryRef:categoryId:cat-speakers' },
+			vi.fn().mockRejectedValue(busy({ 'retry-after': '1' }, problem)),
+			true,
+		);
+		expect(out[0].json).toEqual({ key: 'CategoryRef:categoryId:cat-speakers', error: DELIVERY_BUSY_MESSAGE, description: problem.detail });
+	});
+
+	it("Index › Query: retries search's 503 once, then fails every query in the batch as busy with the problem's detail", async () => {
+		const problem = { title: 'Search unavailable', status: 503, detail: 'Search could not answer this batch. Retry after the time in Retry-After.' };
+		const httpRequest = vi.fn().mockRejectedValue(busy({ 'Retry-After': '5', 'X-Delivery-Retry-After-Ms': '5000' }, problem));
+		const out = await run({ resource: 'index', operation: 'query', query: '{"index":"ProductIndex"}' }, httpRequest, true);
+		expect(httpRequest).toHaveBeenCalledTimes(2);
+		expect(sleep).toHaveBeenCalledTimes(1);
+		expect(sleep.mock.calls[0][0]).toBeGreaterThanOrEqual(5000);
+		expect(sleep.mock.calls[0][0]).toBeLessThan(6000);
+		expect(out).toEqual([{ json: { error: DELIVERY_BUSY_MESSAGE, description: problem.detail }, pairedItem: { item: 0 } }]);
+	});
+
+	it('passes on a failure other than 503 on the retry as it is', async () => {
+		const httpRequest = vi
+			.fn()
+			.mockRejectedValueOnce(busy())
+			.mockRejectedValueOnce(Object.assign(new NodeApiError(httpNode, { httpCode: '404' }), { cause: { response: { status: 404 } } }));
+		await expect(
+			run({ resource: 'shape', operation: 'get', shapeKey: 'CategoryRef:categoryId:cat-speakers' }, httpRequest),
+		).rejects.toThrow('No shape for key "CategoryRef:categoryId:cat-speakers".');
+	});
+
+	describe('Representation › Get, resuming a partial answer', () => {
+		const deferredFirst = {
+			product: { sku: 'p1' },
+			price: null,
+			$metadata: { product: { $state: 'fresh' }, price: { $state: 'deferred' }, $resume: 'token-1' },
+		};
+		const deferredRound = { price: { amount: 129 }, $metadata: { price: { $state: 'fresh' } } };
+		const params = { resource: 'representation', operation: 'get', route: '/products/p1', resumePartial: true };
+
+		it('retries a resume round once on a 503, with the same checkpoint', async () => {
+			const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+			try {
+				const httpRequest = vi
+					.fn()
+					.mockResolvedValueOnce(deferredFirst)
+					.mockRejectedValueOnce(busy())
+					.mockResolvedValueOnce(deferredRound);
+				const out = await run(params, httpRequest);
+				expect(httpRequest).toHaveBeenCalledTimes(3);
+				expect(sleep.mock.calls).toEqual([[1000]]);
+				const resumeOf = (call: number) => ((httpRequest.mock.calls[call][0] as IDataObject).headers as IDataObject)['X-Resume'];
+				expect([resumeOf(1), resumeOf(2)]).toEqual(['token-1', 'token-1']);
+				expect(out[0].json.price).toEqual({ amount: 129 });
+			} finally {
+				random.mockRestore();
+			}
+		});
+
+		it('fails the item as busy when the resume round is shed twice', async () => {
+			const httpRequest = vi.fn().mockResolvedValueOnce(deferredFirst).mockRejectedValue(busy());
+			const out = await run(params, httpRequest, true);
+			expect(httpRequest).toHaveBeenCalledTimes(3);
+			expect(out[0].json).toEqual({ route: '/products/p1', error: DELIVERY_BUSY_MESSAGE });
+		});
 	});
 });
 

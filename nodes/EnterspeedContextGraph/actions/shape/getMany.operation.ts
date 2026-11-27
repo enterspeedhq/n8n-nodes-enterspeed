@@ -1,6 +1,6 @@
 import type { IDataObject, IExecuteFunctions, INodeExecutionData, INodeProperties, NodeApiError } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
-import { contextGraphApiRequest } from '../../transport';
+import { deliveryReadRequest } from '../../transport';
 import type { ContextGraphCredentials } from '../types';
 import { deliveryError, failedItem, invalidKey, shapesUrl } from './shared';
 import { schemaKey } from './get.operation';
@@ -116,7 +116,7 @@ export async function execute(
 		for (const request of toRequests(keys)) {
 			let response: unknown;
 			try {
-				response = await contextGraphApiRequest.call(this, {
+				response = await deliveryReadRequest.call(this, {
 					method: 'POST',
 					url: shapesUrl(creds),
 					body: { keys: request.map((k) => k.key) },
@@ -180,7 +180,7 @@ async function fromSchema(this: IExecuteFunctions, creds: ContextGraphCredential
 	for (const request of toRequests(keys)) {
 		let response: unknown;
 		try {
-			response = await contextGraphApiRequest.call(this, {
+			response = await deliveryReadRequest.call(this, {
 				method: 'POST',
 				url: shapesUrl(creds),
 				body: { keys: request.map((k) => k.key) },

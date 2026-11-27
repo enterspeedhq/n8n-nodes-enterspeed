@@ -1,6 +1,6 @@
 import type { IDataObject, IExecuteFunctions, INodeExecutionData, INodeProperties, NodeApiError } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
-import { contextGraphApiRequest } from '../../transport';
+import { deliveryReadRequest } from '../../transport';
 import type { ContextGraphCredentials } from '../types';
 import { API_VERSION, deliveryError } from '../shape/shared';
 
@@ -72,7 +72,7 @@ async function readDocument(
 	const url = `${creds.deliveryUrl}/query/${API_VERSION}/${encodeURIComponent(creds.manifestVersion)}/${encodeURIComponent(indexName as string)}/${encodeURIComponent(documentId as string)}`;
 	let response: unknown;
 	try {
-		response = await contextGraphApiRequest.call(this, { method: 'GET', url, json: true });
+		response = await deliveryReadRequest.call(this, { method: 'GET', url, json: true });
 	} catch (error) {
 		// Delivery answers a missing document, and one the key may not see, with the same bodiless 404.
 		return deliveryError.call(this, error, creds, {

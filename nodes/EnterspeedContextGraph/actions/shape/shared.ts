@@ -1,6 +1,7 @@
 import type { IDataObject, IExecuteFunctions, INodeExecutionData, INodeProperties } from 'n8n-workflow';
 import { NodeApiError, NodeOperationError } from 'n8n-workflow';
-import { httpFailure } from '../../transport';
+import { DELIVERY_BUSY_MESSAGE, httpFailure } from '../../transport';
+import { problemDetails } from '../artifact/shared';
 import type { ContextGraphCredentials } from '../types';
 
 /**
@@ -72,10 +73,13 @@ export function deliveryError(
 			itemIndex: opts.itemIndex,
 		});
 	}
-	const fromService = platformMessage(data);
+	// A 503's body, when it has one, is a problem whose detail says why.
+	const fromService = platformMessage(data) ?? (status === 503 ? problemDetails(data).detail : undefined);
 	let message: string;
 	if (status === 401) message = 'The API key was rejected by the Delivery URL.';
 	else if (status === 410) message = `The Delivery URL no longer serves API version ${API_VERSION}.`;
+	// Busy after the one retry, or not retried (delivery/ADR-025 D3).
+	else if (status === 503) message = DELIVERY_BUSY_MESSAGE;
 	else if (fromService) message = fromService;
 	else if (status === 404 && opts.notFound) message = opts.notFound;
 	else message = `The Delivery URL answered with status ${status}.`;

@@ -1,6 +1,6 @@
 import type { IDataObject, IExecuteFunctions, INodeExecutionData, INodeProperties, NodeApiError } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
-import { contextGraphApiRequest } from '../../transport';
+import { deliveryReadRequest } from '../../transport';
 import type { ContextGraphCredentials } from '../types';
 import { deliveryError, failedItem, invalidKey, shapeKeyProperty, shapesUrl } from './shared';
 
@@ -123,7 +123,7 @@ async function readShape(
 
 	let response: unknown;
 	try {
-		response = await contextGraphApiRequest.call(this, {
+		response = await deliveryReadRequest.call(this, {
 			method: 'GET',
 			url: `${shapesUrl(creds)}/${shapePath(key as string)}`,
 			json: true,

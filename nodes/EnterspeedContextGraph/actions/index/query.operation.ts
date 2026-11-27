@@ -1,6 +1,6 @@
 import type { IDataObject, IExecuteFunctions, INodeExecutionData, INodeProperties } from 'n8n-workflow';
 import { NodeApiError, NodeOperationError } from 'n8n-workflow';
-import { contextGraphApiRequest, httpFailure } from '../../transport';
+import { DELIVERY_BUSY_MESSAGE, deliveryReadRequest, httpFailure } from '../../transport';
 import type { ContextGraphCredentials } from '../types';
 import { parseClassedField } from '../schema/msd';
 import { MAX_BODY_BYTES } from '../shape/getMany.operation';
@@ -341,14 +341,18 @@ function requestError(this: IExecuteFunctions, error: unknown, url: string): Nod
 	const own = platformMessage(data);
 	let message: string;
 	if (status === 401) message = 'The API key was rejected by the Delivery URL.';
+	// Busy after the one retry, or not retried (delivery/ADR-025 D3). Why, e.g.
+	// that search can't answer (delivery/ADR-052), is the problem's detail.
+	else if (status === 503) message = DELIVERY_BUSY_MESSAGE;
 	// An invalid query or unknown manifest: the platform says which. An unknown
 	// index isn't an error: delivery answers it with an empty result.
 	else if (own) message = own;
 	else message = `The Delivery URL answered with status ${status}.`;
 	const httpCode = String(status);
+	const description = status === 503 ? own : undefined;
 	// A plain object, not the request's own error: NodeApiError hands back an
 	// existing NodeApiError unchanged, which would drop this message.
-	return new NodeApiError(this.getNode(), { httpCode }, { message, httpCode });
+	return new NodeApiError(this.getNode(), { httpCode }, { message, description, httpCode });
 }
 
 /** `[]`, the array around a request's queries. */
@@ -452,7 +456,7 @@ export async function execute(
 	for (const request of requests) {
 		let response: unknown;
 		try {
-			response = await contextGraphApiRequest.call(this, {
+			response = await deliveryReadRequest.call(this, {
 				method: 'POST',
 				url,
 				body: request.map((q) =>

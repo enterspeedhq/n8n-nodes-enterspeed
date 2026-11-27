@@ -1,6 +1,6 @@
 import type { IDataObject, IExecuteFunctions, INodeExecutionData, INodeProperties } from 'n8n-workflow';
 import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
-import { contextGraphApiRequest, httpFailure } from '../../transport';
+import { deliveryReadRequest, httpFailure } from '../../transport';
 import type { ContextGraphCredentials } from '../types';
 import { API_VERSION, deliveryError } from '../shape/shared';
 import { deliveryHeader, parseContextFieldId, routeSegments } from '../schema/msd';
@@ -355,7 +355,7 @@ async function readRepresentation(
 		// 200, 202 and 207 all carry the body; which slots resolved is in
 		// $metadata.<slot>.$state, not the status (Representation envelope).
 		return asObject(
-			await contextGraphApiRequest.call(this, {
+			await deliveryReadRequest.call(this, {
 				method: 'GET',
 				url: fromSchema
 					? `${creds.deliveryUrl}/${API_VERSION}/${encodeURIComponent(creds.manifestVersion)}/${fromSchema.segments.map(encodeURIComponent).join('/')}`
