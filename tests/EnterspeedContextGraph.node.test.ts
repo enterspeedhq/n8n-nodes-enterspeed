@@ -2222,3 +2222,300 @@ describe('EnterspeedContextGraph — Artifact › Upload', () => {
 		});
 	});
 });
+
+/**
+ * Artifact › Get, Get Many and Get Lines read what became of an upload
+ * (*Ingest artifact* spec: status, list, the artifact's lines), with the
+ * Ingest API Key, and output each answer as returned, paired to its item.
+ */
+describe('EnterspeedContextGraph — Artifact › Get, Get Many, Get Lines', () => {
+	const ingest = 'http://localhost:5090';
+	const artifactsAt = `${ingest}/v1/sources/pim/artifacts`;
+	const id = '0b8a3c2e-6f51-4d0a-9a4e-3f1c2b7d9e10';
+	const line = (number: number) => ({ number, outcome: 'refused', type: 'product', id: `P-${number}`, reason: 'policy-forbids' });
+	const drained = {
+		id,
+		source: 'pim',
+		state: 'drained',
+		upload: null,
+		drain: { recordsPresented: 3, recordsDrained: 3, result: { applied: 1, refused: 2 } },
+		lines: [line(1), line(2)],
+		nextAfter: null,
+	};
+	const listed = (n: number) => ({ id: `a-${n}`, source: 'pim', state: 'drained', upload: null, lines: null, nextAfter: null });
+
+	const refusal = (status: number, reason: string, title: string, detail: string) =>
+		Object.assign(new NodeApiError(httpNode, { httpCode: String(status) }), {
+			cause: {
+				response: { status, data: { type: `urn:enterspeed:problem:artifact:${reason}`, title, status, detail } },
+			},
+		});
+
+	async function run(opts: {
+		params: Record<string, unknown>;
+		httpRequest: ReturnType<typeof vi.fn>;
+		items?: number;
+		continueOnFail?: boolean;
+	}) {
+		const ctx = createContextGraphExecuteMock({
+			params: { resource: 'artifact', sourceAlias: 'pim', ...opts.params },
+			items: Array.from({ length: opts.items ?? 1 }, () => ({})),
+			httpRequest: opts.httpRequest,
+			continueOnFail: opts.continueOnFail,
+		});
+		const [out] = (await node.execute.call(ctx)) as INodeExecutionData[][];
+		const calls = opts.httpRequest.mock.calls.map((c) => c[0] as IHttpRequestOptions);
+		return { out, calls };
+	}
+
+	describe('Get', () => {
+		const params = { operation: 'get', artifactId: id };
+
+		it('reads the status route with the Ingest API Key and outputs the artifact as returned', async () => {
+			const httpRequest = vi.fn(async () => drained);
+			const { out, calls } = await run({ params, httpRequest });
+			expect(calls).toEqual([
+				expect.objectContaining({ method: 'GET', url: `${artifactsAt}/${id}`, qs: {}, headers: { 'X-Api-Key': 'cg-ingest-key' } }),
+			]);
+			expect(out).toEqual([{ json: drained, pairedItem: { item: 0 } }]);
+		});
+
+		it('reads one artifact per item, each paired to its item', async () => {
+			const httpRequest = vi.fn(async () => drained);
+			const { out } = await run({ params: { ...params, artifactId: (i: number) => `00000000-0000-0000-0000-00000000000${i}` }, httpRequest, items: 2 });
+			expect(httpRequest.mock.calls.map((c) => (c[0] as IHttpRequestOptions).url)).toEqual([
+				`${artifactsAt}/00000000-0000-0000-0000-000000000000`,
+				`${artifactsAt}/00000000-0000-0000-0000-000000000001`,
+			]);
+			expect(out.map((o) => o.pairedItem)).toEqual([{ item: 0 }, { item: 1 }]);
+		});
+
+		it.each([
+			['no Source', { sourceAlias: ' ' }, 'Item 0 has no Source.'],
+			['no Artifact ID', { artifactId: '' }, 'Item 0 has no Artifact ID.'],
+		])('fails an item with %s before anything is sent', async (_, override, message) => {
+			const httpRequest = vi.fn();
+			await expect(run({ params: { ...params, ...override }, httpRequest })).rejects.toMatchObject({ message });
+			expect(httpRequest).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('Get Many', () => {
+		const params = { operation: 'getMany', returnAll: false, limit: 50, state: '' };
+
+		it('reads one page of Limit artifacts and outputs each as returned, paired to its item', async () => {
+			const httpRequest = vi.fn(async () => ({ source: 'pim', artifacts: [listed(1), listed(2)], nextCursor: 'c-1' }));
+			const { out, calls } = await run({ params: { ...params, limit: 2 }, httpRequest });
+			expect(calls).toEqual([
+				expect.objectContaining({ method: 'GET', url: artifactsAt, qs: { limit: 2 }, headers: { 'X-Api-Key': 'cg-ingest-key' } }),
+			]);
+			expect(out).toEqual([
+				{ json: listed(1), pairedItem: { item: 0 } },
+				{ json: listed(2), pairedItem: { item: 0 } },
+			]);
+		});
+
+		it('sends State as the state filter', async () => {
+			const httpRequest = vi.fn(async () => ({ source: 'pim', artifacts: [], nextCursor: null }));
+			const { calls, out } = await run({ params: { ...params, state: 'failed' }, httpRequest });
+			expect(calls[0].qs).toEqual({ limit: 50, state: 'failed' });
+			expect(out).toEqual([]);
+		});
+
+		it('with Return All, follows nextCursor with the same state until it is null, 200 a page', async () => {
+			const pages = [
+				{ source: 'pim', artifacts: [listed(1)], nextCursor: 'c-1' },
+				{ source: 'pim', artifacts: [listed(2)], nextCursor: 'c-2' },
+				{ source: 'pim', artifacts: [listed(3)], nextCursor: null },
+			];
+			const httpRequest = vi.fn(async () => pages.shift());
+			const { calls, out } = await run({ params: { ...params, returnAll: true, state: 'drained' }, httpRequest });
+			expect(calls.map((c) => c.qs)).toEqual([
+				{ limit: 200, state: 'drained' },
+				{ limit: 200, state: 'drained', cursor: 'c-1' },
+				{ limit: 200, state: 'drained', cursor: 'c-2' },
+			]);
+			expect(out.map((o) => o.json.id)).toEqual(['a-1', 'a-2', 'a-3']);
+			expect(out.every((o) => (o.pairedItem as { item: number }).item === 0)).toBe(true);
+		});
+
+		it('pairs each listing to the item it came from', async () => {
+			const httpRequest = vi.fn(async (req: IHttpRequestOptions) => ({
+				source: req.url.split('/').at(-2),
+				artifacts: [listed(1)],
+				nextCursor: null,
+			}));
+			const { calls, out } = await run({ params: { ...params, sourceAlias: (i: number) => `src-${i}` }, httpRequest, items: 2 });
+			expect(calls.map((c) => c.url)).toEqual([`${ingest}/v1/sources/src-0/artifacts`, `${ingest}/v1/sources/src-1/artifacts`]);
+			expect(out.map((o) => o.pairedItem)).toEqual([{ item: 0 }, { item: 1 }]);
+		});
+
+		it.each([0, 201, 1.5])('fails an item whose Limit is %s before anything is sent', async (limit) => {
+			const httpRequest = vi.fn();
+			await expect(run({ params: { ...params, limit }, httpRequest })).rejects.toMatchObject({
+				message: 'Item 0 has a Limit that is not a whole number from 1 to 200.',
+			});
+			expect(httpRequest).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('Get Lines', () => {
+		const params = { operation: 'getLines', artifactId: id, returnAll: false, limit: 50 };
+
+		it('outputs each line as returned, one item each, paired to its item', async () => {
+			const httpRequest = vi.fn(async () => drained);
+			const { out, calls } = await run({ params, httpRequest });
+			expect(calls).toEqual([
+				expect.objectContaining({ method: 'GET', url: `${artifactsAt}/${id}`, qs: {}, headers: { 'X-Api-Key': 'cg-ingest-key' } }),
+			]);
+			expect(out).toEqual([
+				{ json: line(1), pairedItem: { item: 0 } },
+				{ json: line(2), pairedItem: { item: 0 } },
+			]);
+		});
+
+		it('with Return All, pages with ?after= from nextAfter until it is null', async () => {
+			const pages = [
+				{ ...drained, lines: [line(1), line(2)], nextAfter: 2 },
+				{ ...drained, lines: [line(5)], nextAfter: 5 },
+				{ ...drained, lines: [line(9)], nextAfter: null },
+			];
+			const httpRequest = vi.fn(async () => pages.shift());
+			const { calls, out } = await run({ params: { ...params, returnAll: true }, httpRequest });
+			expect(calls.map((c) => c.qs)).toEqual([{}, { after: 2 }, { after: 5 }]);
+			expect(out.map((o) => o.json.number)).toEqual([1, 2, 5, 9]);
+		});
+
+		it('stops at Limit, reading no further page than it needs', async () => {
+			const pages = [
+				{ ...drained, lines: [line(1), line(2)], nextAfter: 2 },
+				{ ...drained, lines: [line(3), line(4)], nextAfter: 4 },
+				{ ...drained, lines: [line(5)], nextAfter: null },
+			];
+			const httpRequest = vi.fn(async () => pages.shift());
+			const { calls, out } = await run({ params: { ...params, limit: 3 }, httpRequest });
+			expect(calls).toHaveLength(2);
+			expect(out.map((o) => o.json.number)).toEqual([1, 2, 3]);
+		});
+
+		it('outputs nothing for an artifact with no lines yet', async () => {
+			const httpRequest = vi.fn(async () => ({ id, source: 'pim', state: 'reserved' }));
+			const { out } = await run({ params, httpRequest });
+			expect(out).toEqual([]);
+		});
+	});
+
+	describe('refusals (Ingest artifact spec: problem details)', () => {
+		const ops = [
+			['Get', { operation: 'get', artifactId: id }],
+			['Get Many', { operation: 'getMany', returnAll: false, limit: 50, state: '' }],
+			['Get Lines', { operation: 'getLines', artifactId: id, returnAll: false, limit: 50 }],
+		] as const;
+
+		it.each(ops)('%s names an unknown source or artifact as not-found', async (_, params) => {
+			const httpRequest = vi.fn(async () => {
+				throw refusal(404, 'not-found', 'No such source.', 'No source pim in this environment.');
+			});
+			await expect(run({ params, httpRequest })).rejects.toMatchObject({
+				message: 'No such source. (not-found)',
+				description: 'No source pim in this environment.',
+			});
+		});
+
+		it('Get Many names an invalid State or cursor as invalid-listing', async () => {
+			const httpRequest = vi.fn(async () => {
+				throw refusal(400, 'invalid-listing', 'The listing is not valid.', 'cursor is not one a listing answers. Start again without it.');
+			});
+			await expect(run({ params: ops[1][1], httpRequest })).rejects.toMatchObject({
+				message: 'The listing is not valid. (invalid-listing)',
+			});
+		});
+
+		it.each(ops)('%s names a missing key (401) and a key without write scope (403)', async (_, params) => {
+			for (const [status, message] of [
+				[401, 'The API key was rejected by the Ingest URL.'],
+				[403, "The API key isn't allowed to write to this Context Graph."],
+			] as const) {
+				const httpRequest = vi.fn(async () => {
+					throw n8nFailure(status);
+				});
+				await expect(run({ params, httpRequest })).rejects.toMatchObject({ message, httpCode: String(status) });
+			}
+		});
+
+		it('with Continue On Fail, outputs { source, id, error, description } and goes on with the next item', async () => {
+			const httpRequest = vi.fn(async (req: IHttpRequestOptions) => {
+				if (req.url.endsWith('-000000000000')) throw refusal(404, 'not-found', 'No such artifact.', 'No artifact with this id under pim.');
+				return drained;
+			});
+			const { out } = await run({
+				params: { operation: 'get', artifactId: (i: number) => `00000000-0000-0000-0000-00000000000${i}` },
+				httpRequest,
+				items: 2,
+				continueOnFail: true,
+			});
+			expect(out).toEqual([
+				{
+					json: {
+						source: 'pim',
+						id: '00000000-0000-0000-0000-000000000000',
+						error: 'No such artifact. (not-found)',
+						description: 'No artifact with this id under pim.',
+					},
+					pairedItem: { item: 0 },
+				},
+				{ json: drained, pairedItem: { item: 1 } },
+			]);
+		});
+
+		it('with Continue On Fail, Get Many outputs { source, error } without an id', async () => {
+			const httpRequest = vi.fn(async () => {
+				throw n8nFailure(401);
+			});
+			const { out } = await run({ params: ops[1][1], httpRequest, continueOnFail: true });
+			expect(out).toEqual([
+				{ json: { source: 'pim', error: 'The API key was rejected by the Ingest URL.' }, pairedItem: { item: 0 } },
+			]);
+		});
+	});
+});
+
+describe('EnterspeedContextGraph — Artifact reads: Continue On Fail and IDs', () => {
+	const id = '0b8a3c2e-6f51-4d0a-9a4e-3f1c2b7d9e10';
+	const artifact = { id, source: 'pim', state: 'drained' };
+
+	it('keeps going when Source is an expression that throws, with Continue On Fail on', async () => {
+		const httpRequest = vi.fn(async () => artifact);
+		const ctx = createContextGraphExecuteMock({
+			params: {
+				resource: 'artifact',
+				operation: 'get',
+				artifactId: id,
+				sourceAlias: (i: number) => {
+					if (i === 0) throw new Error("Cannot read properties of undefined (reading 'b')");
+					return 'pim';
+				},
+			},
+			items: [{}, {}],
+			httpRequest,
+			continueOnFail: true,
+		});
+		const [out] = (await node.execute.call(ctx)) as INodeExecutionData[][];
+		expect(out).toEqual([
+			{ json: { error: "Cannot read properties of undefined (reading 'b')", id }, pairedItem: { item: 0 } },
+			{ json: artifact, pairedItem: { item: 1 } },
+		]);
+	});
+
+	it.each(['get', 'getLines'])('%s fails an Artifact ID that is not a GUID before anything is sent', async (operation) => {
+		const httpRequest = vi.fn();
+		const ctx = createContextGraphExecuteMock({
+			params: { resource: 'artifact', operation, sourceAlias: 'pim', artifactId: 'P-81', returnAll: true },
+			httpRequest,
+		});
+		await expect(node.execute.call(ctx)).rejects.toMatchObject({
+			message: 'Item 0 has an Artifact ID that is not an artifact ID (a GUID).',
+		});
+		expect(httpRequest).not.toHaveBeenCalled();
+	});
+});

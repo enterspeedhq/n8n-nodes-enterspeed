@@ -105,6 +105,9 @@ Testing the credential reads `GET {Delivery URL}/schema/msd/v1/{Manifest Version
 | Resource › Operation | Request | Input → requests |
 |---|---|---|
 | [Artifact › Upload](#artifact--upload) | `POST {Ingest URL}/v1/sources/{Source}/artifacts`, the file to its signed URL, then `…/{id}/commit` | One export file per item |
+| [Artifact › Get](#artifact--get-get-many-and-get-lines) | `GET {Ingest URL}/v1/sources/{Source}/artifacts/{Artifact ID}` | One artifact per item |
+| [Artifact › Get Many](#artifact--get-get-many-and-get-lines) | `GET {Ingest URL}/v1/sources/{Source}/artifacts` | One source's listing per item |
+| [Artifact › Get Lines](#artifact--get-get-many-and-get-lines) | `GET {Ingest URL}/v1/sources/{Source}/artifacts/{Artifact ID}?after=…` | One artifact's refused lines per item |
 | [Entity › Push](#entity--push-and-push-many) | `POST {Ingest URL}/v1/entities` | One record per item, one request per item |
 | [Entity › Push Many](#entity--push-and-push-many) | `POST {Ingest URL}/v1/entities` | One item holding a list, one request |
 | [Shape › Get](#shape--get-and-get-many) | `GET {Delivery URL}/shapes/v1/{Manifest Version}/{key}` | One key per item |
@@ -140,6 +143,15 @@ What the node does, per item:
 - **Size limit: under 2 GB.** The file is held in memory while it is sent, so it must be under 2 GB, which is also the Context Graph's limit, and n8n needs that much memory free. A file of 2 GiB or more fails the item before anything is sent. In queue mode n8n keeps binary data in its database, which caps a file at 512 MiB by default (`N8N_BINARY_DATA_DATABASE_MAX_FILE_SIZE`, at most 1 GiB). The node shows the limit in its notice.
 - **From Docker n8n against the local Context Graph stack:** the stack's storage signs the upload URL for `localhost`, which inside the n8n container is the container itself, so the upload can't reach it. Run n8n on the host network there, or publish the storage endpoint under a name the container can reach. The SDK dev-server doesn't have this problem (see [Against the local dev-server](#against-the-local-dev-server)).
 - **Errors:** a refusal fails the item with the Context Graph's own title and reason, e.g. *A push source takes no artifacts. (push-source)*, *asOf is not later than the source's latest artifact. (as-of-not-later)* or *A CSV artifact needs a field map. (field-map-required)*, with the explanation as its description. An item with no file, *Source*, *As Of* or *Row Count* fails before anything is sent. A failed upload names the storage host only, never the signed URL. With *Continue On Fail* it comes out as `{ source, asOf, error, description? }`.
+
+### Artifact › Get, Get Many and Get Lines
+
+Read what became of an upload, with the Ingest API Key. The node doesn't wait for a drain: on a deployed graph it can take hours (a 4-hour target), so a scheduled workflow waits with n8n's **Wait** node, e.g. *Upload → Wait → Artifact › Get → IF `state` is `drained`*.
+
+- **Get** reads one artifact per item (*Source*, *Artifact ID*, which defaults to the item's `id`, so it follows an Upload directly) and outputs it as returned: `state`, and once committed its `drain` (counts by outcome), `deletions`, and the first page of `lines` with `nextAfter`.
+- **Get Many** lists a source's artifacts, newest reservation first, one item per artifact as returned. *State* keeps only artifacts in that state (`reserved`, `committed`, `superseded`, `draining`, `drained`, `failed`, `expired`). *Return All* follows `nextCursor`, sending the same state each time; otherwise up to *Limit* (1–200, default 50). A listing never carries the signed upload URL, nor lines.
+- **Get Lines** outputs each record of one artifact that didn't land (refused, failed or unparseable) as its own item, `{ number, outcome, type, id, reason }` as returned. *Return All* follows `nextAfter` to the end; otherwise it stops at *Limit*. The Context Graph pages 1,000 at a time; that isn't a setting. An artifact not committed yet has no lines and outputs nothing.
+- **Errors:** an *Artifact ID* that isn't a GUID fails the item before anything is sent. An unknown source or artifact fails the item as *not-found*, an invalid state or cursor as *invalid-listing*, a missing or rejected key as `401`, a key without write scope, or one whose scope leaves the source out, as `403`. With *Continue On Fail* it comes out as `{ source, id?, error, description? }`.
 
 ### Entity › Push and Push Many
 
@@ -337,7 +349,7 @@ Where the dev-server differs from a deployed Context Graph:
 | API keys | Not checked | — |
 | Processing | A pushed record is processed at once, so a read straight after a push sees it | On a deployed graph, read again if it isn't there yet |
 | Partial representations | Only for a slot the server's `budgetCut` option names. Tonevik's representations are never partial | Start a dev-server with `budgetCut` to try Resume Partial Answers (the test workflow `workflows/fixtures/Context-Graph-Resume-Partial-Answers.json` says how) |
-| Entity › Push, Artifact › Upload | The node sends ingest's `/v1` routes. `@enterspeed/dev-server@0.2.0-alpha.3`, the current published `alpha`, still serves only the unversioned ones and answers `404`, so use the next alpha, or run the dev-server from the Context Graph SDK's `master` (the Tonevik demo does). `latest` (0.2.0-alpha.0) has no upload. A source takes uploads only when the server declares it a snapshot source (`createDevServer(schema, { sources: { pim: { mode: "snapshot" } } })`); Tonevik declares none. The file drains at commit, so `state` is `drained` at once. No size limit, URL expiry or key check, and the upload URL names no headers. It signs the upload URL with the request's host, so `host.docker.internal` works from Docker n8n | — |
+| Entity › Push, Artifact | The node sends ingest's `/v1` routes. `@enterspeed/dev-server@0.2.0-alpha.3`, the current published `alpha`, still serves only the unversioned ones and answers `404`, so use the next alpha, or run the dev-server from the Context Graph SDK's `master` (the Tonevik demo does). `latest` (0.2.0-alpha.0) has no upload. A source takes uploads only when the server declares it a snapshot source (`createDevServer(schema, { sources: { pim: { mode: "snapshot" } } })`); Tonevik declares none. The file drains at commit, so `state` is `drained` at once, and Get, Get Many and Get Lines read it straight after. An unknown source lists as empty rather than `not-found`. No size limit, URL expiry or key check, and the upload URL names no headers. It signs the upload URL with the request's host, so `host.docker.internal` works from Docker n8n | — |
 
 ---
 
@@ -345,7 +357,6 @@ Where the dev-server differs from a deployed Context Graph:
 
 The Context Graph serves these; the node doesn't use them yet.
 
-- **Reading an upload later**: its status and drain result, a source's uploads, and the records that didn't land. Until then, Artifact › Upload's output is the artifact as committed.
 - **Releasing or discarding held deletions**, and reading a source's mirror status.
 - **Uploading in blocks.** Artifact › Upload sends the file in one request, so a failed transfer starts again.
 - **Following `next` automatically** (Return All) on Index › Query. Use `page` or `cursor` yourself.
