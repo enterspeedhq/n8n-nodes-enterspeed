@@ -74,6 +74,7 @@ The Context Graph node moves data; it doesn't model it.
 ```bash
 npm run build        # n8n-node build → dist/ (also copies **/*.{png,svg})
 npm run lint         # n8n-node lint: eslint.config.mjs, the rules n8n's verification scanner runs
+npm run scan         # n8n's community package scanner on what npm would publish (build first)
 npm test             # vitest run
 npm run dev          # n8n-node dev
 ```
@@ -89,10 +90,11 @@ request helper (`asN8nFullResponse`), so anything that depends on n8n itself (it
 pairing, expression evaluation) is proven in Docker n8n.
 
 **The Context Graph end to end** (`e2e/`, Node 26, CI's e2e job): `npm install` in `e2e/`, run
-`setup.mjs` with `N8N_WORKFLOW_DIRS=workflows/templates,e2e/workflows`, then
-`node e2e/context-graph.mjs`. It runs the round-trip template, the delivery checks and the
-enrichment template (its trigger fed by the dev-server's signed webhook, its LLM step by a
-stand-in chat model) against an empty dev-server and checks each node's output. Add a check there when a behaviour depends on n8n
+`setup.mjs` with `N8N_WORKFLOW_DIRS=workflows/templates,e2e/workflows` and the credential env
+CONTRIBUTING.md gives (Ingest on `:5201`, a key per service), then `node e2e/context-graph.mjs`. It
+runs the round-trip template, the delivery checks and the enrichment template (its trigger fed by
+the dev-server's signed webhook, its LLM step by a stand-in chat model) against an empty dev-server
+behind Ingest, Delivery and storage hosts laid out as a deployed Context Graph's, and checks each node's output. Add a check there when a behaviour depends on n8n
 itself (its request helper, errors, expressions).
 
 **The Context Graph locally** runs against the SDK dev-server (semantic-graph-sdk,
@@ -114,9 +116,9 @@ from deployed Delivery in places (no index point read, no cursor paging on publi
 - **Types:** `strict: true`, `noUnusedLocals: true`. Don't reach for `any` or an `as` cast to route
   around a type error.
 - **Every node parameter has a `description`**; lint fails otherwise.
-- **Fix lint and type errors; don't suppress them.** The exceptions are documented where they are
-  suppressed: `usableAsTool` on the triggers (ARCHITECTURE.md §8.7) and the `$id` wording in Push's
-  and Push Many's descriptions (`node-param-description-miscased-id`).
+- **Fix lint and type errors; don't suppress them.** The one exception is `usableAsTool` on the
+  triggers (ARCHITECTURE.md §8.7), switched off in `eslint.config.mjs`. n8n's scanner ignores
+  inline `eslint-disable` comments, so one in `nodes/` or `credentials/` fails `npm run scan`.
 - **Never hand-edit `dist/`.** It is build output and gitignored.
 - **Branches:** `feature|fix|chore/sc-XXXX/description`, from `main` or, for a stacked PR, from the
   previous story's branch.
@@ -199,6 +201,7 @@ tests or templates. Use the placeholders above, and keys from environment variab
 - [`CLAUDE.md`](CLAUDE.md) — Claude Code commands and tool preferences.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — the Docker setup and authoring templates.
 - [`docs/context-graph-demo/GUIDE.md`](docs/context-graph-demo/GUIDE.md) — internal notes on how the Tonevik demo is built.
+- [`docs/decisions/`](docs/decisions/) — design notes, e.g. where the Context Graph node takes its manifest from.
 - semantic-graph `contracts/spec/` and `contracts/docs/adr/` — the Context Graph's contracts and
   decisions.
 - n8n's docs, for anything not covered here:

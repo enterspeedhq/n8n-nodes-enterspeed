@@ -12,6 +12,8 @@ import type {
 import { NodeApiError } from 'n8n-workflow';
 import { EnterspeedContextGraph } from '../nodes/EnterspeedContextGraph/EnterspeedContextGraph.node';
 import {
+	INGEST_FORBIDDEN_DESCRIPTION,
+	INGEST_FORBIDDEN_MESSAGE,
 	MAX_REQUEST_BYTES,
 	MAX_THROTTLE_RETRIES,
 } from '../nodes/EnterspeedContextGraph/actions/entity/shared';
@@ -343,7 +345,7 @@ describe('EnterspeedContextGraph — Entity › Push', () => {
 	describe('failed requests', () => {
 		it.each([
 			[401, 'The API key was rejected by the Ingest URL.'],
-			[403, "The API key isn't allowed to write to this Context Graph."],
+			[403, INGEST_FORBIDDEN_MESSAGE],
 			[413, 'The Ingest URL refused the request as too large.'],
 			[429, 'The Ingest URL is still throttling requests after retrying. Try again later.'],
 			[500, 'The Ingest URL answered with status 500.'],
@@ -356,7 +358,7 @@ describe('EnterspeedContextGraph — Entity › Push', () => {
 
 		it.each([
 			[401, 'The API key was rejected by the Ingest URL.'],
-			[403, "The API key isn't allowed to write to this Context Graph."],
+			[403, INGEST_FORBIDDEN_MESSAGE],
 		])('keeps its own message for %i when n8n hands the failure over as a NodeApiError', async (status, message) => {
 			const httpRequest = vi.fn(async () => {
 				throw n8nFailure(status);
@@ -364,6 +366,19 @@ describe('EnterspeedContextGraph — Entity › Push', () => {
 			const error = (await push({ httpRequest }).catch((e: Error) => e)) as NodeApiError;
 			expect(error.message).toBe(message);
 			expect(error.httpCode).toBe(String(status));
+		});
+
+		it("says a 403 is a key without write scope or an address a deployed Ingest URL doesn't admit", async () => {
+			// A deployed Ingest URL that admits only listed addresses answers a
+			// bare 403 to any other before the key is read, as a key without
+			// Write scope does.
+			const httpRequest = vi.fn(async () => {
+				throw n8nFailure(403);
+			});
+			const error = (await push({ httpRequest }).catch((e: Error) => e)) as NodeApiError;
+			expect(error.message).toBe(INGEST_FORBIDDEN_MESSAGE);
+			expect(error.message).toContain("this n8n's address");
+			expect(error.description).toBe(INGEST_FORBIDDEN_DESCRIPTION);
 		});
 
 		it('fails with a clear message when the Ingest URL cannot be reached', async () => {
@@ -2658,6 +2673,13 @@ describe('EnterspeedContextGraphApi credential', () => {
 		expect(codes).toEqual([401, 404]);
 	});
 
+	it("says a deployed Context Graph takes the manifest's ID, the dev-server its version", () => {
+		expect(field('manifestVersion')?.description).toContain("On a deployed Context Graph it is the manifest's ID");
+		expect(field('manifestVersion')?.description).toContain('On the SDK dev-server it is the version');
+		const notFound = (credential.test.rules ?? []).find((r) => r.type === 'responseCode' && r.properties.value === 404);
+		expect(notFound?.properties.message).toContain("a deployed Context Graph takes the manifest's ID");
+	});
+
 	it('does not reuse the Core credential name', () => {
 		expect(credential.name).not.toBe('enterspeedApi');
 	});
@@ -3138,13 +3160,33 @@ describe('EnterspeedContextGraph — Artifact › Get, Get Many, Get Lines', () 
 		it.each(ops)('%s names a missing key (401) and a key without write scope (403)', async (_, params) => {
 			for (const [status, message] of [
 				[401, 'The API key was rejected by the Ingest URL.'],
-				[403, "The API key isn't allowed to write to this Context Graph."],
+				[403, INGEST_FORBIDDEN_MESSAGE],
 			] as const) {
 				const httpRequest = vi.fn(async () => {
 					throw n8nFailure(status);
 				});
 				await expect(run({ params, httpRequest })).rejects.toMatchObject({ message, httpCode: String(status) });
 			}
+		});
+
+		it.each(ops)("%s gives a bare 403 the description that names a deployed Ingest URL's address list", async (_, params) => {
+			const httpRequest = vi.fn(async () => {
+				throw n8nFailure(403);
+			});
+			await expect(run({ params, httpRequest })).rejects.toMatchObject({
+				message: INGEST_FORBIDDEN_MESSAGE,
+				description: INGEST_FORBIDDEN_DESCRIPTION,
+			});
+		});
+
+		it.each(ops)("%s keeps a 403 problem's own title and detail", async (_, params) => {
+			const httpRequest = vi.fn(async () => {
+				throw refusal(403, 'policy-forbids', 'The access policy forbids this.', 'The key may never write to pim.');
+			});
+			await expect(run({ params, httpRequest })).rejects.toMatchObject({
+				message: 'The access policy forbids this. (policy-forbids)',
+				description: 'The key may never write to pim.',
+			});
 		});
 
 		it('with Continue On Fail, outputs { source, id, error, description } and goes on with the next item', async () => {

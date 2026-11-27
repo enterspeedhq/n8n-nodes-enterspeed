@@ -16,15 +16,19 @@
 //   N8N_EXECUTION_OUT  a file to write the finished execution to, as
 //                      { status, error, nodes: { [node]: run data } }, so a
 //                      caller can check what each node output
+//   N8N_AUTH_COOKIE_FILE  a file to keep the sign-in cookie in between runs.
+//                      n8n limits sign-ins per minute, so a caller that runs
+//                      many workflows in a row passes one file to them all
 
 import { execSync } from 'child_process';
-import { writeFileSync } from 'fs';
-import { signIn, summarise } from './n8n-api.mjs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { signIn as n8nSignIn, summarise } from './n8n-api.mjs';
 
 const N8N_URL = process.env.N8N_URL ?? 'http://localhost:5678';
 const CONTAINER = process.env.N8N_CONTAINER ?? 'n8n-nodes-enterspeed-n8n-1';
 const WORKFLOW_NAME = process.env.N8N_WORKFLOW_NAME ?? 'Fetch, Transform and Re-ingest';
 const EXECUTION_OUT = process.env.N8N_EXECUTION_OUT;
+const COOKIE_FILE = process.env.N8N_AUTH_COOKIE_FILE;
 
 async function post(path, body, headers = {}) {
   const res = await fetch(`${N8N_URL}${path}`, {
@@ -55,21 +59,33 @@ const workflowId = workflow.id;
 console.log(`Triggering workflow: ${workflow.name} (${workflowId})`);
 
 // Set up the owner account on a fresh instance (no-op if it exists) and sign in.
-console.log('Signing in...');
-let authHeader;
-try {
-  authHeader = await signIn(N8N_URL);
-} catch (error) {
-  console.error(error.message);
-  process.exit(1);
+async function signIn() {
+  console.log('Signing in...');
+  let cookie;
+  try {
+    ({ Cookie: cookie } = await n8nSignIn(N8N_URL));
+  } catch (error) {
+    console.error(error.message);
+    process.exit(1);
+  }
+  if (COOKIE_FILE) writeFileSync(COOKIE_FILE, cookie);
+  return cookie;
 }
 
-// Trigger execution.
-const runRes = await post(
-  `/rest/workflows/${workflowId}/run`,
-  { runData: {}, startNodes: [], destinationNode: '' },
-  authHeader,
-);
+const trigger = (cookie) =>
+  post(`/rest/workflows/${workflowId}/run`, { runData: {}, startNodes: [], destinationNode: '' }, { Cookie: cookie });
+
+// Reuse a kept cookie; sign in when there is none or n8n no longer takes it.
+let cookie = COOKIE_FILE && existsSync(COOKIE_FILE) ? readFileSync(COOKIE_FILE, 'utf-8').trim() : await signIn();
+let runRes = await trigger(cookie);
+if (runRes.status === 401 && COOKIE_FILE) {
+  rmSync(COOKIE_FILE, { force: true });
+  cookie = await signIn();
+  runRes = await trigger(cookie);
+}
+const authHeader = { Cookie: cookie };
+
+// The execution the run started.
 const runBody = await runRes.json();
 const execId = runBody.data?.executionId;
 if (!execId) {

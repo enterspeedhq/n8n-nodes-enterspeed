@@ -2,17 +2,25 @@
 // The Context Graph end to end: a real n8n (docker compose) against the SDK
 // dev-server, with the workflows imported by scripts/setup.mjs.
 //
-// Starts, on the host:
-//   :5200  the graph, as the credential setup.mjs creates expects it. A small
-//          proxy in front of the dev-server, which can answer a delivery read
-//          503 once (to prove the node's retry through n8n's real errors).
+// Starts, on the host, small proxies in front of the dev-server laid out as a
+// deployed Context Graph is: Ingest, Delivery and storage on hosts of their
+// own, and each key checked by its own service.
+//   :5200  Delivery. Checks the Delivery API Key and can answer a read 503
+//          once (to prove the node's retry through n8n's real errors).
+//   :5201  Ingest. Checks the Ingest API Key, and signs the upload URL for
+//          the storage host with the header Azure Blob Storage requires.
+//   :5202  storage, the signed upload URL's host. Refuses an upload with an
+//          API key, without the reservation's headers or without a fixed
+//          length, as Azure Blob Storage does.
 //   :5500  the "source system": the export the round-trip template fetches.
 //   :5600  a stand-in chat model (OpenAI's chat completions), so the enrichment
 //          template runs without calling a real model.
 // The dev-server itself listens on loopback only, with an empty graph each run.
-// Its outbound webhook goes to a relay on loopback, which passes a delivery on
-// to the enrichment template's trigger only while a case listens, unchanged
-// (headers and bytes, so its signature still verifies).
+// Its outbound webhook goes to a relay on loopback (:5203), which passes a
+// delivery on to the enrichment template's trigger only while a case listens,
+// unchanged (headers and bytes, so its signature still verifies).
+// With --serve, :5200 also serves Ingest and checks no key, as the dev-server
+// does, for running the templates by hand with setup.mjs's defaults.
 //
 // Then runs each case with scripts/execute-workflow.mjs and checks the
 // execution it reports. Exits non-zero on the first failed check.
@@ -21,10 +29,16 @@
 //   node e2e/context-graph.mjs           run every case, then stop
 //   node e2e/context-graph.mjs --serve   only serve the graph and the export
 //
+// The credential must point at this layout: run setup.mjs with
+//   CONTEXT_GRAPH_INGEST_URL=http://host.docker.internal:5201
+//   CONTEXT_GRAPH_INGEST_API_KEY=e2e-ingest-key
+//   CONTEXT_GRAPH_DELIVERY_API_KEY=e2e-delivery-key
+// (these key values are the defaults here; set the same env vars for both).
+//
 // Optional env vars:
 //   N8N_CONTAINER, N8N_URL  passed on to execute-workflow.mjs, and used to
 //                           read the trigger's signing secret and the runs
-//   E2E_HOST                where :5200, :5500 and :5600 listen (default 0.0.0.0, so
+//   E2E_HOST                where :5200-:5202, :5500 and :5600 listen (default 0.0.0.0, so
 //                           the n8n container reaches them). No authentication:
 //                           test data only, on a network you trust.
 
@@ -42,12 +56,23 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
 const HOST = process.env.E2E_HOST ?? '0.0.0.0';
 const GRAPH_PORT = 5200;
+const INGEST_PORT = 5201;
+const STORAGE_PORT = 5202;
 const EXPORT_PORT = 5500;
 const DEV_SERVER_PORT = 5199;
-const RELAY_PORT = 5201;
+const RELAY_PORT = 5203;
 const MODEL_PORT = 5600;
 const N8N_URL = process.env.N8N_URL ?? 'http://localhost:5678';
 const CONTAINER = process.env.N8N_CONTAINER ?? 'n8n-nodes-enterspeed-n8n-1';
+const SERVE = process.argv.includes('--serve');
+
+// Test values, not secrets: the keys the e2e credential carries.
+const INGEST_KEY = process.env.CONTEXT_GRAPH_INGEST_API_KEY || 'e2e-ingest-key';
+const DELIVERY_KEY = process.env.CONTEXT_GRAPH_DELIVERY_API_KEY || 'e2e-delivery-key';
+if (!SERVE && INGEST_KEY === DELIVERY_KEY) {
+	console.error('The Ingest and Delivery API Keys must differ, so the run proves each goes only to its own service.');
+	process.exit(2);
+}
 
 const ROUND_TRIP = 'Context Graph · Round trip (upload an export, read it back)';
 const DELIVERY = 'Context Graph · E2E delivery reads';
@@ -92,8 +117,8 @@ const relay = createServer((req, res) => {
 	req.on('data', (chunk) => chunks.push(chunk));
 	req.on('end', async () => {
 		const body = Buffer.concat(chunks);
-		const delivery = { envelope: JSON.parse(body.toString('utf-8')), forwarded: listening, status: 200 };
-		deliveries.push(delivery);
+		const received = { envelope: JSON.parse(body.toString('utf-8')), forwarded: listening, status: 200 };
+		deliveries.push(received);
 		if (listening) {
 			const headers = Object.fromEntries(
 				['content-type', 'webhook-id', 'webhook-timestamp', 'webhook-signature']
@@ -102,12 +127,12 @@ const relay = createServer((req, res) => {
 			);
 			try {
 				const forwarded = await fetch(ENRICH_WEBHOOK, { method: 'POST', headers, body });
-				delivery.status = forwarded.status;
+				received.status = forwarded.status;
 			} catch {
-				delivery.status = 502;
+				received.status = 502;
 			}
 		}
-		res.writeHead(delivery.status);
+		res.writeHead(received.status);
 		res.end();
 	});
 });
@@ -154,27 +179,54 @@ const model = createServer((req, res) => {
 	});
 });
 
-// The proxy keeps the Host header, so the upload URL the dev-server signs names
-// the address n8n used (host.docker.internal:5200), which n8n can reach.
+// The proxies keep the Host header, so the upload URL the dev-server signs
+// names the address n8n used (host.docker.internal:5201), which n8n can reach.
 let shedNext = null; // headers for the next delivery read's 503, or null
-const seen = []; // every request through the proxy: { method, path, status }
+let ingestKey = INGEST_KEY; // the key Ingest accepts; a case changes it to reject the credential's
+let forbidIngest = false; // answer every Ingest request a bare 403, as an Ingest URL that doesn't admit the address
+const seen = []; // every request through the proxies: { at, method, path, status, key, ... }
 const DELIVERY_READ = /^\/(v1\/[^/]+\/|query\/v1\/|shapes\/v1\/)/;
+const INGEST_ROUTE = /^\/v1\/(entities$|sources\/)/;
+const UPLOAD_ROUTE = /^\/_artifacts\//;
 
-const proxy = createServer((req, res) => {
-	if (shedNext && DELIVERY_READ.test(req.url) && !req.url.startsWith('/v1/sources/') && req.url !== '/v1/entities') {
-		const headers = shedNext;
-		shedNext = null;
-		seen.push({ method: req.method, path: req.url, status: 503 });
-		res.writeHead(503, { 'content-type': 'application/problem+json', ...headers });
-		res.end(JSON.stringify({ title: 'Service Unavailable', status: 503, detail: 'Shed by the e2e proxy.' }));
-		return;
-	}
+/** Answers with a problem body, as the platform's services do. */
+function problem(res, status, title, detail, headers = {}) {
+	res.writeHead(status, { 'content-type': 'application/problem+json', ...headers });
+	res.end(JSON.stringify({ title, status, detail }));
+}
+
+/**
+ * Sends the request on to the dev-server. `rewrite`, when given, gets the
+ * parsed JSON body of the answer and returns the body to send instead.
+ */
+function forward(req, res, entry, rewrite) {
 	const upstream = request(
 		{ host: '127.0.0.1', port: DEV_SERVER_PORT, method: req.method, path: req.url, headers: req.headers },
 		(up) => {
-			seen.push({ method: req.method, path: req.url, status: up.statusCode });
-			res.writeHead(up.statusCode, up.headers);
-			up.pipe(res);
+			entry.status = up.statusCode;
+			seen.push(entry);
+			const json = String(up.headers['content-type'] ?? '').includes('json');
+			if (!rewrite || !json) {
+				res.writeHead(up.statusCode, up.headers);
+				up.pipe(res);
+				return;
+			}
+			const chunks = [];
+			up.on('data', (chunk) => chunks.push(chunk));
+			up.on('end', () => {
+				const raw = Buffer.concat(chunks).toString('utf-8');
+				let body = raw;
+				try {
+					body = JSON.stringify(rewrite(JSON.parse(raw)));
+				} catch {
+					// Not JSON after all: sent as it came.
+				}
+				const headers = { ...up.headers };
+				delete headers['content-length'];
+				delete headers['transfer-encoding'];
+				res.writeHead(up.statusCode, { ...headers, 'content-length': Buffer.byteLength(body) });
+				res.end(body);
+			});
 		},
 	);
 	upstream.on('error', (error) => {
@@ -182,6 +234,79 @@ const proxy = createServer((req, res) => {
 		res.end(String(error));
 	});
 	req.pipe(upstream);
+}
+
+const keyOf = (req) => req.headers['x-api-key'];
+
+// Delivery. Deployed Delivery answers 401 to a key it doesn't know, before the route.
+const delivery = createServer((req, res) => {
+	const entry = { at: 'delivery', method: req.method, path: req.url, key: keyOf(req) };
+	if (SERVE) return forward(req, res, entry);
+	if (INGEST_ROUTE.test(req.url) || UPLOAD_ROUTE.test(req.url)) {
+		seen.push({ ...entry, status: 404 });
+		return problem(res, 404, `Not an Ingest URL: the e2e serves Ingest on :${INGEST_PORT}`, 'Run scripts/setup.mjs with CONTEXT_GRAPH_INGEST_URL set as e2e/context-graph.mjs says.');
+	}
+	if (entry.key !== DELIVERY_KEY) {
+		seen.push({ ...entry, status: 401 });
+		return problem(res, 401, 'Unauthorized', 'Not the Delivery API Key.', { 'www-authenticate': 'ApiKey' });
+	}
+	if (shedNext && DELIVERY_READ.test(req.url)) {
+		const headers = shedNext;
+		shedNext = null;
+		seen.push({ ...entry, status: 503 });
+		return problem(res, 503, 'Service Unavailable', 'Shed by the e2e proxy.', headers);
+	}
+	forward(req, res, entry);
+});
+
+// Ingest. The upload URL in a reservation is moved to the storage host, with
+// the header Azure Blob Storage requires on it (deployed ingest names it).
+const ingest = createServer((req, res) => {
+	const entry = { at: 'ingest', method: req.method, path: req.url, key: keyOf(req) };
+	if (!INGEST_ROUTE.test(req.url)) {
+		seen.push({ ...entry, status: 404 });
+		return problem(res, 404, 'Not Found', 'Not an Ingest route.');
+	}
+	if (forbidIngest) {
+		seen.push({ ...entry, status: 403 });
+		res.writeHead(403, { 'content-type': 'text/plain' });
+		return res.end('Forbidden');
+	}
+	if (entry.key !== ingestKey) {
+		seen.push({ ...entry, status: 401 });
+		res.writeHead(401);
+		return res.end();
+	}
+	forward(req, res, entry, (body) => {
+		if (typeof body?.upload?.url !== 'string') return body;
+		const url = new URL(body.upload.url);
+		url.port = String(STORAGE_PORT);
+		return { ...body, upload: { ...body.upload, url: url.toString(), headers: { ...body.upload.headers, 'x-ms-blob-type': 'BlockBlob' } } };
+	});
+});
+
+// Storage: what Azure Blob Storage refuses on a signed Put Blob, refused here too.
+const storage = createServer((req, res) => {
+	const entry = {
+		at: 'storage',
+		method: req.method,
+		path: req.url.replace(/token=[^&]*/, 'token=…'),
+		key: keyOf(req),
+		blobType: req.headers['x-ms-blob-type'],
+		length: req.headers['content-length'],
+		chunked: /chunked/i.test(String(req.headers['transfer-encoding'] ?? '')),
+	};
+	const refuse = (status, why) => {
+		seen.push({ ...entry, status, why });
+		res.writeHead(status, { 'content-type': 'application/xml' });
+		res.end(`<?xml version="1.0" encoding="utf-8"?><Error><Code>${why}</Code></Error>`);
+	};
+	if (req.method !== 'PUT' || !UPLOAD_ROUTE.test(req.url)) return refuse(404, 'ResourceNotFound');
+	// The signature is the credential; a key on a request to storage has leaked.
+	if (entry.key !== undefined) return refuse(403, 'ApiKeySentToStorage');
+	if (entry.blobType !== 'BlockBlob') return refuse(400, 'MissingRequiredHeader');
+	if (entry.chunked || entry.length === undefined) return refuse(411, 'MissingContentLengthHeader');
+	forward(req, res, entry);
 });
 
 // --- The source system -------------------------------------------------------
@@ -214,22 +339,27 @@ const exportsServer = createServer((req, res) => {
 	}
 });
 
-await new Promise((resolve) => proxy.listen(GRAPH_PORT, HOST, resolve));
-await new Promise((resolve) => exportsServer.listen(EXPORT_PORT, HOST, resolve));
+const servers = [
+	[delivery, GRAPH_PORT],
+	[ingest, INGEST_PORT],
+	[storage, STORAGE_PORT],
+	[exportsServer, EXPORT_PORT],
+	[model, MODEL_PORT],
+];
+for (const [server, port] of servers) await new Promise((resolve) => server.listen(port, HOST, resolve));
 await new Promise((resolve) => relay.listen(RELAY_PORT, '127.0.0.1', resolve));
-await new Promise((resolve) => model.listen(MODEL_PORT, HOST, resolve));
-console.log(`Graph on ${HOST}:${GRAPH_PORT}, exports on ${HOST}:${EXPORT_PORT}, chat model on ${HOST}:${MODEL_PORT}`);
+console.log(
+	`Delivery on ${HOST}:${GRAPH_PORT}${SERVE ? ' (Ingest too, no key check)' : ''}, Ingest on :${INGEST_PORT}, storage on :${STORAGE_PORT}, exports on :${EXPORT_PORT}, chat model on :${MODEL_PORT}`,
+);
 
 async function stop() {
-	proxy.close();
-	exportsServer.close();
+	for (const [server] of servers) server.close();
 	relay.close();
-	model.close();
 	await devServer.stop();
 	rmSync(dataDir, { recursive: true, force: true });
 }
 
-if (process.argv.includes('--serve')) {
+if (SERVE) {
 	publish('complete');
 	listening = true;
 	console.log('Serving the "complete" export. Ctrl+C to stop.');
@@ -265,7 +395,8 @@ async function runWorkflow(name) {
 	// A failed run exits non-zero and is reported in the execution file, checked below.
 	await new Promise((resolve, reject) => {
 		const child = spawn(process.execPath, [join(ROOT, 'scripts', 'execute-workflow.mjs')], {
-			env: { ...process.env, N8N_WORKFLOW_NAME: name, N8N_EXECUTION_OUT: out },
+			// One sign-in for every run: n8n refuses more than a few a minute.
+			env: { ...process.env, N8N_WORKFLOW_NAME: name, N8N_EXECUTION_OUT: out, N8N_AUTH_COOKIE_FILE: join(dataDir, 'n8n-cookie') },
 			stdio: 'inherit',
 		});
 		child.on('error', reject);
@@ -302,6 +433,7 @@ function check(condition, message) {
 async function runCases() {
 	// 1. A complete export: the upload lands and the read-out returns it.
 	console.log('\n[round trip] a complete export');
+	seen.length = 0;
 	const complete = publish('complete');
 	const sent = complete.body
 		.toString('utf-8')
@@ -317,6 +449,15 @@ async function runCases() {
 	const ids = (readBack?.items ?? []).map((item) => item.$rawId).sort();
 	check(ids.length > 0, `the read-out returns records (${ids.length})`);
 	check(JSON.stringify(ids) === JSON.stringify([...sent].sort()), `the read-out returns exactly the uploaded records (${ids.join(', ')})`);
+	// Laid out as a deployed Context Graph: each key to its own service only,
+	// and the file to storage with the signed URL alone.
+	const at = (where) => seen.filter((r) => r.at === where);
+	const ingestCalls = at('ingest').map((r) => `${r.method} ${r.path} ${r.status}`);
+	check(at('ingest').length >= 3 && at('ingest').every((r) => r.key === INGEST_KEY && r.status < 300), `reserve, commit and status went to the Ingest URL with the Ingest API Key (${ingestCalls.join('; ')})`);
+	const [put, ...morePuts] = at('storage');
+	check(put?.method === 'PUT' && put.status < 300 && morePuts.length === 0, `the file went once to the storage host (${put?.method} ${put?.path} ${put?.status}${put?.why ? ` ${put.why}` : ''})`);
+	check(put.key === undefined && put.blobType === 'BlockBlob' && put.length === String(complete.body.length) && !put.chunked, `with the reservation's x-ms-blob-type, a fixed Content-Length (${put.length}) and no API key`);
+	check(at('delivery').length >= 1 && at('delivery').every((r) => r.key === DELIVERY_KEY && r.status === 200), `the read-out went to the Delivery URL with the Delivery API Key (${at('delivery').map((r) => r.path).join('; ')})`);
 
 	// 2. A file with a malformed line: the platform's reason fails the run.
 	console.log('\n[round trip] an export with a malformed line');
@@ -353,6 +494,34 @@ async function runCases() {
 		check(retried?.path === seen[shed].path && retried.status === 200, `the same read was sent again and answered 200 (${retried?.path} ${retried?.status})`);
 	}
 
+	// 5. A key the deployed Ingest URL doesn't accept (wrong or revoked): the
+	// run fails at the reservation with the node's own words, nothing uploaded.
+	console.log('\n[deployed] Ingest rejects the Ingest API Key');
+	publish('complete');
+	seen.length = 0;
+	ingestKey = 'another-key';
+	try {
+		run = await runWorkflow(ROUND_TRIP);
+	} finally {
+		ingestKey = INGEST_KEY;
+	}
+	check(run.status === 'error', `the run fails (status ${run.status})`);
+	check(run.error?.includes('The API key was rejected by the Ingest URL.'), `the run's error says the Ingest URL rejected the key (${run.error})`);
+	check(!seen.some((r) => r.at === 'storage'), 'nothing reached storage');
+
+	// 6. An Ingest URL that admits only listed addresses answers any other a
+	// bare 403 before the key is read. The error names that as well as scope.
+	console.log("\n[deployed] Ingest doesn't admit n8n's address");
+	publish('complete');
+	forbidIngest = true;
+	try {
+		run = await runWorkflow(ROUND_TRIP);
+	} finally {
+		forbidIngest = false;
+	}
+	check(run.status === 'error', `the run fails (status ${run.status})`);
+	check(run.error?.includes("doesn't accept requests from this n8n's address"), `the run's error names the address as well as the key's scope (${run.error})`);
+
 	await runEnrichmentCases();
 }
 
@@ -363,7 +532,7 @@ function sleep(ms) {
 }
 
 /** Pushes records straight to the graph, as a source system would: one ingest, one commit. */
-async function ingest(records) {
+async function ingestRecords(records) {
 	const res = await fetch(`http://127.0.0.1:${DEV_SERVER_PORT}/v1/entities`, {
 		method: 'POST',
 		headers: { 'content-type': 'application/x-ndjson' },
@@ -447,7 +616,7 @@ async function enrichmentCases(auth, workflowId) {
 	// 5. One edit: one run enriches it, and the enrichment's own commit starts a
 	// run that ends at the loop guard.
 	console.log('\n[enrichment] one edit to a product');
-	await ingest([{ $id: 'p-1', $type: 'product', $source: 'catalogue', id: 'p-1', name: 'Trail Runner Pro' }]);
+	await ingestRecords([{ $id: 'p-1', $type: 'product', $source: 'catalogue', id: 'p-1', name: 'Trail Runner Pro' }]);
 	let runs = await settle(auth, workflowId, after, 2);
 	check(deliveries.length === 2 && deliveries.every((d) => d.status === 200), `two deliveries reached the trigger, each answered 200 (${deliveries.map((d) => d.status).join(', ')})`);
 	check(runs.length === 2 && runs.every((r) => r.status === 'success'), `two runs, both succeed (${runs.map((r) => r.status).join(', ')}${runs.find((r) => r.error) ? `: ${runs.find((r) => r.error).error}` : ''})`);
@@ -475,7 +644,7 @@ async function enrichmentCases(auth, workflowId) {
 	deliveries.length = 0;
 	prompts.length = 0;
 	after = await lastExecutionId(auth);
-	await ingest([
+	await ingestRecords([
 		{ $id: 'p-4', $type: 'product', $source: 'catalogue', id: 'p-4', name: 'Harbour Loafer' },
 		{ $id: 'p-5', $type: 'product', $source: 'catalogue', id: 'p-5', name: 'Unenrichable Boot' },
 	]);
@@ -496,7 +665,7 @@ async function enrichmentCases(auth, workflowId) {
 	prompts.length = 0;
 	after = await lastExecutionId(auth);
 	shedNext = {};
-	await ingest([
+	await ingestRecords([
 		{ $id: 'p-6', $type: 'product', $source: 'catalogue', id: 'p-6', name: 'Meadow Sandal' },
 		{ $id: 'p-7', $type: 'product', $source: 'catalogue', id: 'p-7', name: 'Summit Hiker' },
 	]);

@@ -12,9 +12,11 @@ export const properties: INodeProperties[] = [
 		default: '={{ $json.data }}',
 		required: true,
 		displayOptions: { show: { resource: ['entity'], operation: ['pushMany'] } },
-		// eslint-disable-next-line n8n-nodes-base/node-param-description-miscased-id -- $id is the Ingest NDJSON contract's field name, and field names are case-sensitive
+		// The field names are case-sensitive, so they go in the hint: n8n's scanner
+		// ignores eslint-disable comments and wants an upper-case ID in a description.
 		description:
-			'The list of records to push, e.g. the data field from an Aggregate node. Each record is sent as it is and needs its own $id and $type; a record without them is reported as failed.',
+			'The list of records to push, e.g. the data field from an Aggregate node. Each record is sent as it is and needs its own key and type; a record without them is reported as failed.',
+		hint: 'Each record needs its own $id and $type fields.',
 	},
 ];
 

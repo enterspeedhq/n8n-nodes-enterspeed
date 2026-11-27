@@ -76,11 +76,13 @@ CI runs the round-trip template (`Context-Graph-Round-Trip.json`) in this Docker
 
 ```bash
 cd e2e && npm install && cd ..   # the dev-server version pinned in e2e/package.json
-N8N_WORKFLOW_DIRS=workflows/templates,e2e/workflows node scripts/setup.mjs
+export CONTEXT_GRAPH_INGEST_API_KEY=e2e-ingest-key CONTEXT_GRAPH_DELIVERY_API_KEY=e2e-delivery-key
+CONTEXT_GRAPH_INGEST_URL=http://host.docker.internal:5201 \
+  N8N_WORKFLOW_DIRS=workflows/templates,e2e/workflows node scripts/setup.mjs
 node e2e/context-graph.mjs
 ```
 
-It starts the dev-server (graph on `:5200`), serves the export the template fetches (`:5500`) and a stand-in chat model (`:5600`), runs each case with `scripts/execute-workflow.mjs` and checks what each node output, then publishes the enrichment template and checks the runs the dev-server's webhook starts, then stops. The enrichment template's chat model credential (*OpenAI account*) points at the stand-in by default; to try it with a real model, set `OPENAI_API_KEY` and `OPENAI_BASE_URL=https://api.openai.com/v1` before `setup.mjs` (the e2e's checks expect the stand-in's answer, so run the template by hand then). The e2e signs in to n8n once per case, and n8n allows five sign-ins a minute, so expect it to wait a minute once. `node e2e/context-graph.mjs --serve` only serves the graph, the export and the stand-in chat model, for running the templates by hand. It reads the trigger's signing secret from n8n, so start n8n and run `setup.mjs` first; it then passes every webhook delivery on to the enrichment template's production URL, which listens once you publish the workflow. On Linux the n8n container reaches the host through `host.docker.internal`, which `docker-compose.yml` maps.
+It starts the dev-server behind three small proxies laid out as a deployed Context Graph: Delivery on `:5200` and Ingest on `:5201`, each checking its own key, and storage on `:5202`, where the signed upload URL points and which refuses an upload that carries an API key, lacks the `x-ms-blob-type` header the reservation names or has no fixed length, as Azure Blob Storage does. It serves the export the template fetches (`:5500`) and a stand-in chat model (`:5600`), runs each case with `scripts/execute-workflow.mjs` and checks what each node output, then publishes the enrichment template and checks the runs the dev-server's webhook starts, then stops. Two cases fail the round trip on purpose: Ingest rejecting the key, and Ingest answering a bare `403` as it does to an address it doesn't admit. The credential has to point at this layout, hence the variables above (the key values are test values). The enrichment template's chat model credential (*OpenAI account*) points at the stand-in by default; to try it with a real model, set `OPENAI_API_KEY` and `OPENAI_BASE_URL=https://api.openai.com/v1` before `setup.mjs` (the e2e's checks expect the stand-in's answer, so run the template by hand then). The enrichment cases sign in to n8n themselves, and n8n allows five sign-ins a minute, so expect it to wait a minute at most once. `node e2e/context-graph.mjs --serve` only serves the graph, the export and the stand-in chat model, for running the templates by hand; there `:5200` serves Ingest too and checks no key, so `setup.mjs`'s dev-server defaults work. It reads the trigger's signing secret from n8n, so start n8n and run `setup.mjs` first; it then passes every webhook delivery on to the enrichment template's production URL, which listens once you publish the workflow. On Linux the n8n container reaches the host through `host.docker.internal`, which `docker-compose.yml` maps.
 
 Until the pinned dev-server version is published, install it from a build of the Context Graph SDK's `master` instead: `pnpm pack` its `core` and `dev-server` packages, then `npm install --no-save <core.tgz> <dev-server.tgz>` in `e2e/`.
 
@@ -164,8 +166,9 @@ ESLint is configured with `eslint-plugin-n8n-nodes-base`. Run `npm run lintfix` 
 ## Status & next steps
 
 Starter implementation, verified against the public Enterspeed OpenAPI spec
-(v0.4.0). Before publishing: run in a local n8n against a real tenant, run
-`npm run lint`, then `npm publish` and submit for n8n's verified-node program.
+(v0.4.0). Before a release: run in a local n8n against a real tenant, run
+`npm run lint` and `npm run scan`, then release as below and submit for n8n's
+verified-node program.
 
 ## Releasing
 
@@ -175,6 +178,7 @@ Starter implementation, verified against the public Enterspeed OpenAPI spec
 - [ ] `npm run lint` passes with no errors
 - [ ] `npm test` passes
 - [ ] `npm run build` succeeds and `dist/` is populated
+- [ ] `npm run scan` passes (n8n's community package scanner)
 - [ ] `package.json` version is bumped appropriately (see below)
 
 ### Versioning
@@ -189,41 +193,30 @@ Follow [semver](https://semver.org):
 
 ### Release
 
-Releasing is done with `@n8n/node-cli`'s release command, not manual
-`npm publish` — n8n requires verified community nodes to be published via
-GitHub Actions with an npm provenance attestation (mandatory from 1 May
-2026), and a raw local `npm publish` can't produce that attestation.
+Run `npm run build && npm run scan` first: it runs n8n's community package
+scanner on the files `npm publish` would ship, as CI does on every pull
+request into `main`. Then, on an up-to-date `main`:
 
 ```bash
 npm run release
 ```
 
 This lints, builds, prompts for a version bump, updates the changelog,
-commits, tags, and pushes. The pushed tag (matching `*.*.*`) triggers
-`.github/workflows/publish.yml` in CI, which runs `npm run release` again in
-the Actions runner — this time it performs the actual `npm publish` with a
-signed provenance attestation via GitHub's OIDC token.
+commits, tags (the bare version, e.g. `0.2.0`) and pushes. It doesn't publish.
+The tag starts `.github/workflows/publish.yml`, which checks the tag equals
+`package.json`'s version and is on `main`, runs the tests and the build, packs
+the tarball, runs the scanner, and publishes that tarball with a provenance
+statement from a job that installs nothing. npm publishes only from that workflow: never run
+`npm publish` or `npm run release -- --publish` from your machine.
 
 After publishing, users who installed the package via n8n's Community Nodes UI
 can update through **Settings → Community Nodes** once the new version is live
 on npm (usually within a few minutes).
 
-### Automated releases (GitHub Actions)
+### Publishing setup (npm trusted publishing)
 
-`.github/workflows/publish.yml` publishes to npm whenever a version tag
-(`*.*.*`) is pushed. It requests `id-token: write` (to mint the OIDC token
-for provenance) and `contents: read` — scoped down from the default write
-permissions — then runs `npm run release` inside the job.
-
-Authentication is one of:
-
-- **OIDC Trusted Publishing (recommended)** — on npmjs.com, open the
-  package's settings → **Publish access** → **Trusted Publishers** → add a
-  GitHub Actions publisher pointing at this repo and workflow name
-  `publish.yml`. No secret is needed; leave `NPM_TOKEN` unset.
-- **`NPM_TOKEN` fallback** — a granular npm access token scoped to
-  `@enterspeed/n8n-nodes-enterspeed` with publish permission, added as a
-  GitHub repo secret (**Settings → Secrets and variables → Actions**).
-
-Either way, once the npm-side setup is done, `npm run release` (see above)
-is the only manual step needed to ship a release.
+The workflow requests `id-token: write` and `contents: read` and stores no npm
+token: npm exchanges the job's GitHub OIDC token for a short-lived publish
+token. The one-time setup on npmjs.com is in the README's
+[Releasing](README.md#releasing) section: register `publish.yml` as the
+package's trusted publisher, disallow tokens, and revoke any old one.
