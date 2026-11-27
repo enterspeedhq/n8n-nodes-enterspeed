@@ -3,7 +3,16 @@ import type {
 	IExecuteFunctions,
 	IWebhookFunctions,
 	IDataObject,
+	ICredentialDataDecryptedObject,
+	IHttpRequestOptions,
 } from 'n8n-workflow';
+import { EnterspeedContextGraphApi } from '../credentials/EnterspeedContextGraphApi.credentials';
+
+/** The Context Graph credential's own `authenticate`, run by the Context Graph mock. */
+const authenticate = new EnterspeedContextGraphApi().authenticate as (
+	credentials: ICredentialDataDecryptedObject,
+	requestOptions: IHttpRequestOptions,
+) => Promise<IHttpRequestOptions>;
 
 type ParamMap = Record<string, unknown>;
 
@@ -84,4 +93,64 @@ export const defaultCreds: IDataObject = {
 	ingestHost: 'https://api.enterspeed.com',
 	deliveryHost: 'https://delivery.enterspeed.com',
 	queryHost: 'https://query.enterspeed.com',
+};
+
+/**
+ * Builds a minimal IExecuteFunctions stand-in for the Context Graph node.
+ * A parameter may be a function of the item index, for per-item expressions
+ * (e.g. `delete: (i) => i === 1`). `httpRequestWithAuthentication` mirrors the
+ * `enterspeedContextGraphApi` credential by running its own `authenticate`
+ * (the Ingest or Delivery API Key as `X-Api-Key`), as the real n8n runtime does.
+ */
+export function createContextGraphExecuteMock(opts: {
+	params: Record<string, unknown | ((itemIndex: number) => unknown)>;
+	items?: IDataObject[];
+	/** Each item's binary data, by field name, as the bytes n8n would hand over. */
+	binaries?: Array<Record<string, Buffer> | undefined>;
+	creds?: IDataObject;
+	httpRequest: Mock;
+	continueOnFail?: boolean;
+}): IExecuteFunctions {
+	const creds = opts.creds ?? defaultContextGraphCreds;
+	const items = (opts.items ?? [{}]).map((json, i) => {
+		const files = opts.binaries?.[i];
+		if (!files) return { json };
+		const binary = Object.fromEntries(
+			Object.entries(files).map(([name, bytes]) => [
+				name,
+				{ data: bytes.toString('base64'), mimeType: 'application/octet-stream', fileName: name },
+			]),
+		);
+		return { json, binary };
+	});
+	return {
+		getInputData: () => items,
+		getCredentials: vi.fn(async () => creds),
+		getNodeParameter: (name: string, i: number, fallback?: unknown) => {
+			if (!(name in opts.params)) return fallback;
+			const value = opts.params[name];
+			return typeof value === 'function' ? (value as (i: number) => unknown)(i) : value;
+		},
+		getNode: () => ({ name: 'Enterspeed Context Graph' }),
+		continueOnFail: () => opts.continueOnFail ?? false,
+		helpers: {
+			httpRequestWithAuthentication: async (_credentialType: string, requestOptions: IHttpRequestOptions) =>
+				opts.httpRequest(await authenticate(creds, requestOptions)),
+			// A request without the credential (the signed upload URL), sent as given.
+			httpRequest: async (requestOptions: IHttpRequestOptions) => opts.httpRequest(requestOptions),
+			getBinaryDataBuffer: async (itemIndex: number, name: string) => {
+				const bytes = opts.binaries?.[itemIndex]?.[name];
+				if (!bytes) throw new Error(`No binary data "${name}" on item ${itemIndex}`);
+				return bytes;
+			},
+		},
+	} as unknown as IExecuteFunctions;
+}
+
+export const defaultContextGraphCreds: IDataObject = {
+	ingestUrl: 'http://localhost:5090/',
+	ingestApiKey: 'cg-ingest-key',
+	deliveryUrl: 'http://localhost:5200',
+	deliveryApiKey: 'cg-key',
+	manifestVersion: '1.0.0',
 };
