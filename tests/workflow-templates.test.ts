@@ -5,7 +5,8 @@ import { runInNewContext } from 'vm';
 import { MAX_BULK_ENTITIES } from '../nodes/Enterspeed/actions/entity/shared';
 
 // The example templates, and the test workflows that need more than n8n (workflows/fixtures).
-const WORKFLOW_DIRS = [join(__dirname, '../workflows/templates'), join(__dirname, '../workflows/fixtures')];
+const TEMPLATES_DIR = join(__dirname, '../workflows/templates');
+const WORKFLOW_DIRS = [TEMPLATES_DIR, join(__dirname, '../workflows/fixtures')];
 // Templates reference credentials via placeholders like
 // __ENTERSPEED_CREDENTIAL_ID__ or __CONTENTFUL_CREDENTIAL_ID__. Discovering
 // them by pattern (rather than an enumerated list) means a template can
