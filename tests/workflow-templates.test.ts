@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
+import { runInNewContext } from 'vm';
 import { MAX_BULK_ENTITIES } from '../nodes/Enterspeed/actions/entity/shared';
 
 const TEMPLATES_DIR = join(__dirname, '../workflows/templates');
@@ -99,5 +100,59 @@ describe('bulk-save-and-delete.json', () => {
 		const node = workflow.nodes.find((n: { name: string }) => n.name === 'Build Over-Limit Origin IDs');
 		const overLimit = Number(/const OVER_LIMIT = (\d+);/.exec(node.parameters.jsCode)?.[1]);
 		expect(overLimit).toBe(MAX_BULK_ENTITIES + 1);
+	});
+});
+
+describe('bulk-save-and-delete.json: the deleted check', () => {
+	const workflow = JSON.parse(readFileSync(join(TEMPLATES_DIR, 'bulk-save-and-delete.json'), 'utf-8'));
+	const code = (name: string): string =>
+		workflow.nodes.find((n: { name: string }) => n.name === name).parameters.jsCode;
+	const expected = { originId: 'o-1', url: 'https://test.example/p-1', sku: 'SKU-1' };
+	const notFound = { meta: { status: 404 }, route: null };
+	const failedRequest = { error: 'Request failed with status code 503', description: 'Service Unavailable' };
+	const liveRoute = { route: { sku: 'SKU-1' } };
+
+	/** Runs a Code node's body the way n8n does: a function body with n8n's globals in scope. */
+	const runNode = (jsCode: string, globals: Record<string, unknown>): unknown =>
+		runInNewContext(`(() => {\n${jsCode}\n})()`, { ...globals, JSON });
+
+	/** Runs `Check Entities Deleted` on one Get Content answer, as poll number `attempt`. */
+	function checkDeleted(response: unknown, attempt: number) {
+		const items = (values: unknown[]) => ({ all: () => values.map((json) => ({ json })) });
+		const [item] = runNode(code('Check Entities Deleted'), {
+			$runIndex: attempt - 1,
+			$: () => items([expected]),
+			$input: items([response]),
+		}) as Array<{ json: Record<string, unknown> }>;
+		return item.json;
+	}
+
+	/** Runs `Verify Entities Deleted` on what the check settled on. */
+	function verifyDeleted(response: unknown) {
+		const verdict = runNode(code('Verify Entities Deleted'), {
+			$json: { ...expected, response, attempt: 18 },
+		}) as { json: Record<string, unknown> };
+		return verdict.json;
+	}
+
+	it('counts a route: null answer as gone', () => {
+		expect(checkDeleted(notFound, 1).settled).toBe(true);
+		expect(verifyDeleted(notFound).deleted).toBe(true);
+	});
+
+	it('keeps polling when Get Content failed, instead of counting the entity as gone', () => {
+		expect(checkDeleted(failedRequest, 1).settled).toBe(false);
+	});
+
+	it('fails the check when Get Content still fails at the last poll', () => {
+		expect(checkDeleted(failedRequest, 18).settled).toBe(true);
+		const verdict = verifyDeleted(failedRequest);
+		expect(verdict.deleted).toBe(false);
+		expect(verdict.failure).toContain('Request failed with status code 503');
+	});
+
+	it('fails the check when the entity is still served', () => {
+		expect(checkDeleted(liveRoute, 1).settled).toBe(false);
+		expect(verifyDeleted(liveRoute).deleted).toBe(false);
 	});
 });
