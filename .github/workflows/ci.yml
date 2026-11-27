@@ -134,6 +134,8 @@ jobs:
       # export and reads it back, a malformed line must fail the run with the
       # graph's reason, Delivery's 304 and 503 go through n8n's real errors, and
       # a rejected key or an unlisted address fails the run with a clear message.
+      # Then the enrichment template runs from the dev-server's signed webhook,
+      # with a stand-in chat model (no real model, no key).
       - name: Context Graph end to end
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         env:

@@ -22,14 +22,13 @@
 
 import { execSync } from 'child_process';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { signIn as n8nSignIn, summarise } from './n8n-api.mjs';
 
 const N8N_URL = process.env.N8N_URL ?? 'http://localhost:5678';
 const CONTAINER = process.env.N8N_CONTAINER ?? 'n8n-nodes-enterspeed-n8n-1';
 const WORKFLOW_NAME = process.env.N8N_WORKFLOW_NAME ?? 'Fetch, Transform and Re-ingest';
 const EXECUTION_OUT = process.env.N8N_EXECUTION_OUT;
 const COOKIE_FILE = process.env.N8N_AUTH_COOKIE_FILE;
-const EMAIL = 'runner@n8n.local';
-const PASSWORD = 'N8nRunner99!';
 
 async function post(path, body, headers = {}) {
   const res = await fetch(`${N8N_URL}${path}`, {
@@ -59,20 +58,14 @@ if (!workflow) {
 const workflowId = workflow.id;
 console.log(`Triggering workflow: ${workflow.name} (${workflowId})`);
 
+// Set up the owner account on a fresh instance (no-op if it exists) and sign in.
 async function signIn() {
-  // Set up owner account on a fresh instance (no-op if already exists).
-  console.log('Setting up n8n owner account...');
-  await post('/rest/owner/setup', { email: EMAIL, password: PASSWORD, firstName: 'CI', lastName: 'Runner' });
-
   console.log('Signing in...');
-  const loginRes = await post('/rest/login', { emailOrLdapLoginId: EMAIL, password: PASSWORD });
-  if (!loginRes.ok) {
-    console.error('Login failed:', await loginRes.text());
-    process.exit(1);
-  }
-  const cookie = loginRes.headers.get('set-cookie')?.match(/n8n-auth=[^;]+/)?.[0];
-  if (!cookie) {
-    console.error('No auth cookie in login response');
+  let cookie;
+  try {
+    ({ Cookie: cookie } = await n8nSignIn(N8N_URL));
+  } catch (error) {
+    console.error(error.message);
     process.exit(1);
   }
   if (COOKIE_FILE) writeFileSync(COOKIE_FILE, cookie);
@@ -101,44 +94,9 @@ if (!execId) {
 }
 console.log(`Execution ID: ${execId}`);
 
-// n8n stores an execution's data in `flatted` form: a JSON array whose first
-// entry is the root, with every string and object replaced by the index (as a
-// string) of the entry holding it.
-function unflatten(text) {
-  const entries = JSON.parse(text);
-  const revived = new Map();
-  const revive = (value) => {
-    if (typeof value === 'string') {
-      const entry = entries[Number(value)];
-      if (typeof entry !== 'object' || entry === null) return entry;
-      if (revived.has(value)) return revived.get(value);
-      const copy = Array.isArray(entry) ? [] : {};
-      revived.set(value, copy);
-      for (const [key, inner] of Object.entries(entry)) copy[key] = revive(inner);
-      return copy;
-    }
-    if (typeof value === 'object' && value !== null) {
-      const copy = Array.isArray(value) ? [] : {};
-      for (const [key, inner] of Object.entries(value)) copy[key] = revive(inner);
-      return copy;
-    }
-    return value;
-  };
-  return revive('0');
-}
-
 function writeExecution(status, execution) {
   if (!EXECUTION_OUT) return;
-  const data = typeof execution?.data === 'string' ? unflatten(execution.data) : execution?.data;
-  const error = data?.resultData?.error;
-  writeFileSync(
-    EXECUTION_OUT,
-    JSON.stringify({
-      status,
-      error: error ? [error.message, error.description].filter(Boolean).join(' ') : null,
-      nodes: data?.resultData?.runData ?? {},
-    }),
-  );
+  writeFileSync(EXECUTION_OUT, JSON.stringify(summarise(status, execution)));
 }
 
 // Poll until done.
