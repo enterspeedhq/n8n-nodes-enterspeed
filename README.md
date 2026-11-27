@@ -112,7 +112,7 @@ Testing the credential reads `GET {Delivery URL}/schema/msd/v1/{Manifest Version
 | [Entity › Push Many](#entity--push-and-push-many) | `POST {Ingest URL}/v1/entities` | One item holding a list, one request |
 | [Shape › Get](#shape--get-and-get-many) | `GET {Delivery URL}/shapes/v1/{Manifest Version}/{key}` | One key per item |
 | [Shape › Get Many](#shape--get-and-get-many) | `POST {Delivery URL}/shapes/v1/{Manifest Version}` | One item holding a list of keys, one request |
-| [Index › Query](#index--query) | `POST {Delivery URL}/query/v1/{Manifest Version}` | One query per item, all in one request (several only past the 32 KiB request limit) |
+| [Index › Query](#index--query) | `POST {Delivery URL}/query/v1/{Manifest Version}` | One query per item, all in one request (several only past the 32 KiB request limit); Return All follows `next` |
 | [Index › Get](#index--get) | `GET {Delivery URL}/query/v1/{Manifest Version}/{Index Name}/{Document ID}` | One document per item |
 | [Representation › Get](#representation--get) | `GET {Delivery URL}/v1/{Manifest Version}{Route}` | One route per item |
 | [Schema › Get](#schema--get) | `GET {Delivery URL}/schema/{Kind}/v1/{Manifest Version}[/{Prefix}]` | Once per run |
@@ -215,7 +215,7 @@ Finds documents in an **index** the schema declares, with filters, sorting and p
 | Query From | How |
 |---|---|
 | **JSON** (default) | The *Query* field takes the query as a JSON object, sent as written. It starts with a working example to edit. |
-| **Builder** | Pick the *Index* from the schema (see [Fields filled from the schema](#fields-filled-from-the-schema)), then add *Search* text, *Filters* (field, operator, value) and *Sort* (field, Ascending/Descending, sent as `direction` `asc`/`desc`), with *Results Per Page* (1 to 100, the Context Graph's maximum), *Page* and an optional *Query ID*. |
+| **Builder** | Pick the *Index* from the schema (see [Fields filled from the schema](#fields-filled-from-the-schema)), then add *Search* text, *Filters* (field, operator, value) and *Sort* (field, Ascending/Descending, sent as `direction` `asc`/`desc`), with *Results Per Page* (1 to 100, the Context Graph's maximum), *Page* (hidden under *Return All*) and an optional *Query ID*. |
 
 In the Builder, the field lists show only the fields the chosen index can filter on, and the operators the schema lists. *Sort* offers only the fields the schema lists as sortable for the index, as delivery refuses a sort on any other field; when the index lists none, the list says *This index lists no sortable fields*. Filters are all combined with `and`; for `or` or nesting, use JSON. A value is sent as the field's type: a number for a numeric field, `true`/`false` for a boolean one, text otherwise. For `in`, separate the values with commas. Aggregations, `cursor` and `args` are JSON-only.
 
@@ -252,7 +252,8 @@ Operators: `equals`, `notEquals`, `greaterThan`, `greaterThanOrEquals`, `lessTha
 
 - **Output:** each input item is one query. All items' queries are sent in one request, or in several when they'd pass the Context Graph's 32 KiB request limit, and each item gets back its result exactly as returned: `{ id, index, items, totalCount, next }`. A query that matches nothing returns `items: []`; it doesn't fail.
 - **Ids:** a query's `id` is its own, else its position among the queries sent. When the queries are split, the node sends that position as the query's `id`, so each result still finds its item. Two queries in one run can't share an id: in one request the Context Graph rejects it with its own message, and in a split run the node refuses it before sending; either way every query fails. A single query over the limit fails before anything is sent.
-- **Paging:** `totalCount` counts all matches. For the next page, raise `page`, or set `cursor` to the previous result's `next`, e.g. `"cursor": "{{ $json.next }}"`. The local dev-server hands out no cursors (`next` is always `null`), so use `page` there.
+- **Paging:** `totalCount` counts all matches. For the next page, raise `page`, or set `cursor` to the previous result's `next`, e.g. `"cursor": "{{ $json.next }}"`. A full page has a `next` even when it holds the last matches; the page after it is then empty, with `next: null`. A `semantic` or `hybrid` query never has a `next`: a `semantic` one pages with `page` (only its first page on an index with more than one semantic field), and a `hybrid` one serves only its first page.
+- **Return All** (off by default) fetches every page: the node sends each query again with `cursor` set to its last `next` until `next` is `null`, in rounds that hold only the queries still going, each with its `id`, split at the request limit the same way. Each item still gets one result: its first page's `id`, `index`, `totalCount` (and any `aggregations`), with every page's matches in `items` and `next: null`. *Results Per Page* or `limit` sets the size of each page, not a total. A query that sets `page` (other than 0) fails before sending, as `page` and `cursor` are two ways of paging; a query's own `cursor` is where it starts. So does a `semantic` or `hybrid` query, which never has a `next`, so Return All would stop after the first page and look complete. Turn Return All off for those: page a `semantic` query with `page`, and raise `limit` (up to 100) for a `hybrid` one, which has only one page. If the Context Graph hands back a `next` it has already been sent for that query, the query fails rather than loop. A failed round fails the queries in it, with *Continue On Fail* as for the first request; queries that already finished keep their result.
 - **Errors:** an invalid query, such as a filter on a field the index doesn't allow, fails with the Context Graph's own message. The Context Graph then rejects the whole request, so with *Continue On Fail* every query in it comes out with `error`. When search can't answer, the Context Graph answers `503` and the node retries once (see *Common errors*); if it still can't, the request fails as busy, with the Context Graph's own reason, e.g. *Search could not answer this batch…*, as the description. A `500` means a retry would fail the same way, and fails with the Context Graph's own message.
 - **With an AI Agent:** the node can be an agent's tool. Click ✨ on *Query* to let the model write the query; it reads the field's description, which states the format above. Tell the agent which indexes and fields exist, in its prompt or the `$fromAI` description, or give it the output of *Schema › Get*.
 
@@ -346,7 +347,7 @@ Where the dev-server differs from a deployed Context Graph:
 | Area | Dev-server | Use instead |
 |---|---|---|
 | Index › Get | Not served (404) | Index › Query |
-| Query paging | No cursors (`next` is always `null`) | `page` |
+| Query paging | Run from the Context Graph SDK's `master`, both tiers hand out a real `next`, as delivery does. `@enterspeed/dev-server@0.2.0-alpha.3` and earlier answer `next: null` on the default in-memory tier, so Return All reads one page there | `page`, on those versions |
 | Text filtering | Exact and in memory, not like Elasticsearch | Expect some queries to match differently in production |
 | API keys | Not checked | — |
 | Processing | A pushed record is processed at once, so a read straight after a push sees it | On a deployed graph, read again if it isn't there yet |
@@ -361,7 +362,6 @@ The Context Graph serves these; the node doesn't use them yet.
 
 - **Releasing or discarding held deletions**, and reading a source's mirror status.
 - **Uploading in blocks.** Artifact › Upload sends the file in one request, so a failed transfer starts again.
-- **Following `next` automatically** (Return All) on Index › Query. Use `page` or `cursor` yourself.
 
 ## Not included (deliberately)
 

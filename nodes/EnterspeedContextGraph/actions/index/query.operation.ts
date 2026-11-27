@@ -172,7 +172,8 @@ export const properties: INodeProperties[] = [
 		typeOptions: { minValue: 0 },
 		default: 0,
 		description: 'Which page of matches, from 0',
-		displayOptions: { show: fromBuilder },
+		// Return All pages with the cursor instead.
+		displayOptions: { show: fromBuilder, hide: { returnAll: [true] } },
 	},
 	{
 		displayName: 'Query ID',
@@ -184,7 +185,7 @@ export const properties: INodeProperties[] = [
 	},
 	{
 		displayName:
-			'Each input item is one query. All items are sent together, split into more requests only at the 32 KiB request limit, and each item gets back its result unchanged: items, totalCount and next. Edit the example below to fit your index.',
+			'Each input item is one query. All items are sent together, split into more requests only at the 32 KiB request limit, and each item gets back its result unchanged: items, totalCount and next. With Return All on, the items of every page come back in one result. Edit the example below to fit your index.',
 		name: 'queryNotice',
 		type: 'notice',
 		default: '',
@@ -201,6 +202,14 @@ export const properties: INodeProperties[] = [
 		// Also what an AI Agent reads when it fills this field ($fromAI), so it states the whole format.
 		description:
 			'A Context Graph query as a JSON object, sent as written. "index" (required): the index shape name. "filters": { "field", "operator", "value" } or { "and": [...] } / { "or": [...] }, nested freely; operators: equals, notEquals, greaterThan, greaterThanOrEquals, lessThan, lessThanOrEquals, contains, in (value is a list). "sort": [{ "field", "direction": "asc" | "desc" }]. "limit": results per page, up to 100 (default 20). "page": from 0. "cursor": the previous result\'s "next". "search": { "query", "literal"?, "fields"?, "language"? }. "aggregations": [{ "type": "values" | "metrics" | "range", "name", "field", "size"?, "ranges"? }]. "args": values for ${token} placeholders. Only fields the index declares as filterable or sortable can be filtered or sorted on.',
+	},
+	{
+		displayName: 'Return All',
+		name: 'returnAll',
+		type: 'boolean',
+		default: false,
+		description: 'Whether to return all results or only up to a given limit',
+		displayOptions: { show },
 	},
 ];
 
@@ -290,7 +299,8 @@ function fromBuilderFields(this: IExecuteFunctions, itemIndex: number): IDataObj
 		filters,
 		sort,
 		limit,
-		page: this.getNodeParameter('page', itemIndex, 0) as number,
+		// The field is hidden under Return All, which pages with the cursor.
+		page: this.getNodeParameter('returnAll', itemIndex, false) ? 0 : (this.getNodeParameter('page', itemIndex, 0) as number),
 		id: this.getNodeParameter('queryId', itemIndex, '') as string,
 	});
 }
@@ -368,6 +378,17 @@ interface PendingQuery {
 	bytes: number;
 }
 
+/** A Return All query's pages so far. */
+interface Walk {
+	/** The first page, whose id, index and totalCount the merged result keeps. */
+	first?: IDataObject;
+	items: unknown[];
+	/** Every cursor sent for the query, so a repeated `next` fails it instead of looping. */
+	cursors: Set<string>;
+}
+
+const queryBytes = (query: IDataObject) => byteLength(JSON.stringify(query)) + 1;
+
 /** Groups queries into requests whose bodies stay under MAX_BODY_BYTES. */
 function toRequests(queries: PendingQuery[]): PendingQuery[][] {
 	const requests: PendingQuery[][] = [];
@@ -410,6 +431,12 @@ function duplicateId(queries: PendingQuery[]): string | undefined {
  * refused when two derived ids repeat, as one request would be. The platform rejects a whole
  * request when one query in it is invalid, so a failed request fails every
  * query in it.
+ *
+ * With Return All, a query whose result has a `next` is sent again with that
+ * `next` as its `cursor`, in rounds: each round holds only the queries that
+ * still have a `next`, each with its explicit id, split the same way. The
+ * query's output is then its first page with every page's `items` and
+ * `next: null`. A failed round fails its queries as a failed first request does.
  */
 export async function execute(
 	this: IExecuteFunctions,
@@ -418,78 +445,143 @@ export async function execute(
 	const items = this.getInputData();
 	const results: INodeExecutionData[] = [];
 	const queries: PendingQuery[] = [];
+	const walks = new Map<number, Walk>();
+
+	const fail = (itemIndex: number, message: string) => {
+		if (!this.continueOnFail()) throw new NodeOperationError(this.getNode(), message, { itemIndex });
+		results[itemIndex] = { json: { error: message }, pairedItem: { item: itemIndex } };
+	};
 
 	for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 		try {
 			const query = buildQuery.call(this, itemIndex);
+			const returnAll = this.getNodeParameter('returnAll', itemIndex, false) as boolean;
+			// A cursor takes precedence over page (query-envelope contract), so page 0 is harmless.
+			if (returnAll && query.page !== undefined && query.page !== null && query.page !== 0) {
+				throw new NodeOperationError(
+					this.getNode(),
+					'Query sets page, but Return All pages with the cursor. Remove page, or turn Return All off.',
+				);
+			}
+			// Delivery never sets `next` on a semantic or hybrid search (query-envelope contract,
+			// `next`; delivery's QueryExecutor): a semantic one is paged with `page` over its top k,
+			// a hybrid one serves its first page only. Following next would stop after the first
+			// page and look complete, so it is refused, as delivery refuses a cursor there.
+			const mode = isObject(query.search) ? query.search.mode : undefined;
+			if (returnAll && mode === 'semantic') {
+				throw new NodeOperationError(
+					this.getNode(),
+					'Query uses search mode "semantic", which the Delivery URL pages with page and never with next, so Return All would stop after the first page. Turn Return All off and send each page you want with page.',
+				);
+			}
+			if (returnAll && mode === 'hybrid') {
+				throw new NodeOperationError(
+					this.getNode(),
+					'Query uses search mode "hybrid", which the Delivery URL serves only one page of, with no next, so Return All would stop after it. Turn Return All off and raise limit (up to 100) instead.',
+				);
+			}
 			// The platform's own rule: the query's id if it has one, else its position.
 			const id = query.id === undefined || query.id === null ? String(queries.length) : String(query.id);
-			const bytes = byteLength(JSON.stringify({ ...query, id })) + 1;
+			const bytes = queryBytes({ ...query, id });
 			if (BODY_OVERHEAD_BYTES + bytes > MAX_BODY_BYTES) {
 				throw new NodeOperationError(this.getNode(), 'Query is larger than the Delivery URL accepts in one request.');
 			}
 			queries.push({ itemIndex, id, query, bytes });
+			if (returnAll) {
+				walks.set(itemIndex, { items: [], cursors: new Set(typeof query.cursor === 'string' ? [query.cursor] : []) });
+			}
 		} catch (error) {
-			const message = `Item ${itemIndex}: ${(error as Error).message}`;
-			if (!this.continueOnFail()) throw new NodeOperationError(this.getNode(), message, { itemIndex });
-			results[itemIndex] = { json: { error: message }, pairedItem: { item: itemIndex } };
+			fail(itemIndex, `Item ${itemIndex}: ${(error as Error).message}`);
 		}
 	}
 
 	const url = `${creds.deliveryUrl}/query/v1/${encodeURIComponent(creds.manifestVersion)}`;
-	const requests = toRequests(queries);
-	// One request is sent exactly as written; positions in it are the run's.
-	const split = requests.length > 1;
 
-	// Delivery refuses a request whose derived ids repeat, failing every query in it. Split, two
-	// queries sharing an id could land in different requests, so the node refuses the run the same way.
-	const duplicate = split ? duplicateId(queries) : undefined;
-	if (duplicate) {
-		const nodeError = new NodeOperationError(this.getNode(), duplicate);
-		if (!this.continueOnFail()) throw nodeError;
-		for (const { itemIndex } of queries) {
-			results[itemIndex] = { json: { error: nodeError.message }, pairedItem: { item: itemIndex } };
+	/** The query to send for the page after `answer`, or undefined when the query is done. */
+	const nextPage = ({ itemIndex, id, query }: PendingQuery, walk: Walk, answer: IDataObject): PendingQuery | undefined => {
+		walk.first ??= answer;
+		if (Array.isArray(answer.items)) walk.items.push(...(answer.items as unknown[]));
+		const next = answer.next;
+		if (typeof next !== 'string' || next === '') {
+			results[itemIndex] = { json: { ...walk.first, items: walk.items as IDataObject[], next: null }, pairedItem: { item: itemIndex } };
+			return undefined;
 		}
-		return results.filter(Boolean);
-	}
+		if (walk.cursors.has(next)) {
+			fail(itemIndex, `Item ${itemIndex}: the Delivery URL returned the same next cursor twice for this query, so Return All stopped instead of looping.`);
+			return undefined;
+		}
+		walk.cursors.add(next);
+		const following = { ...query, id, cursor: next };
+		const bytes = queryBytes(following);
+		if (BODY_OVERHEAD_BYTES + bytes > MAX_BODY_BYTES) {
+			fail(itemIndex, `Item ${itemIndex}: Query with its cursor is larger than the Delivery URL accepts in one request.`);
+			return undefined;
+		}
+		return { itemIndex, id, query: following, bytes };
+	};
 
-	for (const request of requests) {
-		let response: unknown;
-		try {
-			response = await deliveryReadRequest.call(this, {
-				method: 'POST',
-				url,
-				body: request.map((q) =>
-					split && (q.query.id === undefined || q.query.id === null) ? { ...q.query, id: q.id } : q.query,
-				),
-				json: true,
-			});
-		} catch (error) {
-			// Two queries sharing an id is the platform's to refuse: it answers the request 400.
-			const nodeError = requestError.call(this, error, url);
+	let round = queries;
+	for (let firstRound = true; round.length; firstRound = false) {
+		const requests = toRequests(round);
+		// One request is sent exactly as written; positions in it are the run's.
+		const split = requests.length > 1;
+
+		// Delivery refuses a request whose derived ids repeat, failing every query in it. Split, two
+		// queries sharing an id could land in different requests, so the node refuses the run the same way.
+		// A later round holds only queries the first answered; delivery refuses a first round whose ids repeat.
+		const duplicate = firstRound && split ? duplicateId(queries) : undefined;
+		if (duplicate) {
+			const nodeError = new NodeOperationError(this.getNode(), duplicate);
 			if (!this.continueOnFail()) throw nodeError;
-			for (const { itemIndex } of request) {
-				results[itemIndex] = {
-					json: { error: nodeError.message, description: nodeError.description ?? undefined },
-					pairedItem: { item: itemIndex },
-				};
+			for (const { itemIndex } of queries) {
+				results[itemIndex] = { json: { error: nodeError.message }, pairedItem: { item: itemIndex } };
 			}
-			continue;
+			return results.filter(Boolean);
 		}
 
-		const answers = new Map<string, IDataObject>();
-		for (const answer of Array.isArray(response) ? response : []) {
-			if (isObject(answer)) answers.set(String(answer.id), answer);
-		}
-		for (const { itemIndex, id } of request) {
-			const answer = answers.get(id);
-			if (answer) results[itemIndex] = { json: answer, pairedItem: { item: itemIndex } };
-			else {
-				const message = `Item ${itemIndex}: the Delivery URL returned no result for this query.`;
-				if (!this.continueOnFail()) throw new NodeOperationError(this.getNode(), message, { itemIndex });
-				results[itemIndex] = { json: { error: message }, pairedItem: { item: itemIndex } };
+		const following: PendingQuery[] = [];
+		for (const request of requests) {
+			let response: unknown;
+			try {
+				response = await deliveryReadRequest.call(this, {
+					method: 'POST',
+					url,
+					// A later round's queries carry their id already.
+					body: request.map((q) =>
+						split && (q.query.id === undefined || q.query.id === null) ? { ...q.query, id: q.id } : q.query,
+					),
+					json: true,
+				});
+			} catch (error) {
+				// Two queries sharing an id is the platform's to refuse: it answers the request 400.
+				const nodeError = requestError.call(this, error, url);
+				if (!this.continueOnFail()) throw nodeError;
+				for (const { itemIndex } of request) {
+					results[itemIndex] = {
+						json: { error: nodeError.message, description: nodeError.description ?? undefined },
+						pairedItem: { item: itemIndex },
+					};
+				}
+				continue;
+			}
+
+			const answers = new Map<string, IDataObject>();
+			for (const answer of Array.isArray(response) ? response : []) {
+				if (isObject(answer)) answers.set(String(answer.id), answer);
+			}
+			for (const pending of request) {
+				const { itemIndex } = pending;
+				const answer = answers.get(pending.id);
+				const walk = walks.get(itemIndex);
+				if (!answer) fail(itemIndex, `Item ${itemIndex}: the Delivery URL returned no result for this query.`);
+				else if (!walk) results[itemIndex] = { json: answer, pairedItem: { item: itemIndex } };
+				else {
+					const next = nextPage(pending, walk, answer);
+					if (next) following.push(next);
+				}
 			}
 		}
+		round = following;
 	}
 
 	return results.filter(Boolean);

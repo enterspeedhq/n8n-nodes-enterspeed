@@ -325,10 +325,13 @@ Each item gets back its own result.
 
 **Paging.** `limit` (up to 100, default 20) sets how many matches each
 page holds, and `totalCount` is the number of matches across all pages. For
-the next page, set `cursor` to the result's `next`. The dev-server doesn't
-hand out cursors (`next` is always `null` there), so against it raise
-`page` instead: 0, 1, 2 and so on, until a page holds fewer matches than
-`limit`.
+the next page, set `cursor` to the result's `next`, or raise `page`: 0, 1,
+2 and so on, until a page holds fewer matches than `limit`. Turn on
+**Return All** to have the node follow `next` for you and output every
+match in one result. A dev-server run from the SDK's `master` hands out
+`next` as delivery does; the published `0.2.0-alpha.3` answers
+`next: null` on its default tier, so there Return All reads one page and
+`page` is the way to page.
 
 ## Step 5 · Reading the product representation
 
