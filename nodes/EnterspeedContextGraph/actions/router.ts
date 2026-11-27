@@ -2,6 +2,7 @@ import type { IExecuteFunctions, INodeExecutionData } from 'n8n-workflow';
 import * as entity from './entity';
 import * as shape from './shape';
 import * as index from './index/index';
+import * as representation from './representation';
 import type { ContextGraphCredentials } from './types';
 
 /**
@@ -17,6 +18,7 @@ const resources: Record<string, { operations: Record<string, OperationHandler> }
 	entity,
 	shape,
 	index,
+	representation,
 };
 
 const trimSlash = (url: string) => url.replace(/\/+$/, '');

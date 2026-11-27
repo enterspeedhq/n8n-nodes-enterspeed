@@ -1167,6 +1167,170 @@ describe('EnterspeedContextGraph — Index › Query', () => {
 	});
 });
 
+/**
+ * Representation › Get reads one route per item from
+ * `GET {deliveryUrl}/v1/{manifest}{route}` and outputs the body as it is:
+ * each slot at its name, plus `$metadata` (Representation envelope contract).
+ */
+describe('EnterspeedContextGraph — Representation › Get', () => {
+	// Tonevik's ProductPage for p-1001, as a stage 1 dev-server serves it.
+	const productPage = {
+		product: { categoryId: 'cat-headphones', id: 'productmodel:p-1001', name: 'Aurora H100 Over-Ear Headphones', price: 2700 },
+		category: { id: 'categorymodel:cat-headphones', name: 'Headphones' },
+		related: { id: 'related', index: 'ProductIndex', items: [], totalCount: 5, next: null },
+		$metadata: { product: { $state: 'fresh' }, category: { $state: 'fresh' }, related: { $state: 'fresh' } },
+	};
+	// A slot that didn't resolve is null, and says so in $metadata.
+	const partial = {
+		product: productPage.product,
+		category: null,
+		$metadata: { product: { $state: 'fresh' }, category: { $state: 'missing' } },
+	};
+
+	async function readRepresentations(opts: {
+		routes: unknown[];
+		httpRequest: ReturnType<typeof vi.fn>;
+		continueOnFail?: boolean;
+	}) {
+		const ctx = createContextGraphExecuteMock({
+			params: { resource: 'representation', operation: 'get', route: (i: number) => opts.routes[i] },
+			items: opts.routes.map((route) => ({ route }) as IDataObject),
+			httpRequest: opts.httpRequest,
+			continueOnFail: opts.continueOnFail,
+		});
+		const [out] = (await node.execute.call(ctx)) as INodeExecutionData[][];
+		return out;
+	}
+
+	it('shows a Route field defaulting to the item\'s route', () => {
+		const route = node.description.properties.find((p) => p.name === 'route');
+		expect(route?.default).toBe('={{ $json.route }}');
+		expect(route?.displayOptions?.show).toEqual({ resource: ['representation'], operation: ['get'] });
+	});
+
+	it('reads {deliveryUrl}/v1/{manifest}{route} with the API key', async () => {
+		const httpRequest = vi.fn(async () => productPage);
+		await readRepresentations({ routes: ['/products/p-1001'], httpRequest });
+		const req = httpRequest.mock.calls[0][0] as IDataObject;
+		expect(req.method).toBe('GET');
+		expect(req.url).toBe('http://localhost:5200/v1/1.0.0/products/p-1001');
+		expect((req.headers as IDataObject)['X-Api-Key']).toBe('cg-key');
+	});
+
+	it('outputs the representation exactly as delivered, $metadata included, paired to its item', async () => {
+		const out = await readRepresentations({ routes: ['/products/p-1001'], httpRequest: vi.fn(async () => productPage) });
+		expect(out).toEqual([{ json: productPage, pairedItem: { item: 0 } }]);
+	});
+
+	it('outputs a partly resolved representation as a success, with the missing slot null', async () => {
+		const out = await readRepresentations({ routes: ['/products/p-1001'], httpRequest: vi.fn(async () => partial) });
+		expect(out[0].json).toEqual(partial);
+	});
+
+	it('sends one request per item and keeps the output in item order', async () => {
+		const httpRequest = vi.fn(async (req: IDataObject) => ({ route: String(req.url).split('/').pop(), $metadata: {} }));
+		const out = await readRepresentations({ routes: ['/products/p-1001', '/products/p-1002'], httpRequest });
+		expect(httpRequest).toHaveBeenCalledTimes(2);
+		expect(out.map((o) => o.json.route)).toEqual(['p-1001', 'p-1002']);
+		expect(out.map((o) => o.pairedItem)).toEqual([{ item: 0 }, { item: 1 }]);
+	});
+
+	it('percent-encodes each segment and keeps the slashes', async () => {
+		const httpRequest = vi.fn(async () => ({ $metadata: {} }));
+		await readRepresentations({ routes: ['/da/søg/a b?c#d'], httpRequest });
+		expect((httpRequest.mock.calls[0][0] as IDataObject).url).toBe(
+			'http://localhost:5200/v1/1.0.0/da/s%C3%B8g/a%20b%3Fc%23d',
+		);
+	});
+
+	it('parses a representation that arrives as a string', async () => {
+		const out = await readRepresentations({
+			routes: ['/products/p-1001'],
+			httpRequest: vi.fn(async () => JSON.stringify(productPage)),
+		});
+		expect(out[0].json).toEqual(productPage);
+	});
+
+	describe('a route that is not sent', () => {
+		it.each([
+			['', 'Item 0 has no Route.'],
+			[undefined, 'Item 0 has no Route.'],
+			[42, 'Item 0 has a Route that is not text.'],
+			['products/p-1001', 'Item 0 has a Route that doesn\'t start with "/" ("products/p-1001").'],
+		])('%j fails before anything is sent', async (route, message) => {
+			const httpRequest = vi.fn();
+			await expect(readRepresentations({ routes: [route], httpRequest })).rejects.toThrow(message);
+			expect(httpRequest).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('no representation (404)', () => {
+		it("uses the service's own message, e.g. an unresolved required slot", async () => {
+			const httpRequest = vi.fn(async () => {
+				throw n8nError(404, { error: 'not_found', message: 'Required slot "product" could not be resolved.' });
+			});
+			await expect(readRepresentations({ routes: ['/products/p-1010'], httpRequest })).rejects.toThrow(
+				'Required slot "product" could not be resolved.',
+			);
+		});
+
+		it('names the route when the 404 has no body', async () => {
+			const httpRequest = vi.fn(async () => {
+				throw httpError(404);
+			});
+			await expect(readRepresentations({ routes: ['/nothing/here'], httpRequest })).rejects.toThrow(
+				'No representation for route "/nothing/here".',
+			);
+		});
+	});
+
+	it("passes an invalid request's message through (400)", async () => {
+		const httpRequest = vi.fn(async () => {
+			throw n8nError(400, { message: 'Route value "x" is not a valid productId.' });
+		});
+		await expect(readRepresentations({ routes: ['/products/x'], httpRequest })).rejects.toThrow(
+			'Route value "x" is not a valid productId.',
+		);
+	});
+
+	it('words a rejected key (401) without the service body', async () => {
+		const httpRequest = vi.fn(async () => {
+			throw n8nError(401);
+		});
+		await expect(readRepresentations({ routes: ['/products/p-1001'], httpRequest })).rejects.toThrow(
+			'The API key was rejected by the Delivery URL.',
+		);
+	});
+
+	it('reports an unreachable Delivery URL', async () => {
+		const httpRequest = vi.fn(async () => {
+			throw new Error('connect ECONNREFUSED');
+		});
+		await expect(readRepresentations({ routes: ['/products/p-1001'], httpRequest })).rejects.toThrow(
+			"Couldn't reach the Delivery URL (http://localhost:5200).",
+		);
+	});
+
+	it('with Continue On Fail, reports the failed route and reads the next', async () => {
+		const httpRequest = vi
+			.fn()
+			.mockRejectedValueOnce(n8nError(404, { message: 'Required slot "product" could not be resolved.' }))
+			.mockResolvedValueOnce(productPage);
+		const out = await readRepresentations({
+			routes: ['/products/p-1010', '/products/p-1001'],
+			httpRequest,
+			continueOnFail: true,
+		});
+		expect(out).toEqual([
+			{
+				json: { route: '/products/p-1010', error: 'Required slot "product" could not be resolved.' },
+				pairedItem: { item: 0 },
+			},
+			{ json: productPage, pairedItem: { item: 1 } },
+		]);
+	});
+});
+
 describe('EnterspeedContextGraphApi credential', () => {
 	const field = (name: string) => credential.properties.find((p) => p.name === name);
 
