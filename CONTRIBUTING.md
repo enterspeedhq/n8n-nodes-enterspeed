@@ -166,8 +166,9 @@ ESLint is configured with `eslint-plugin-n8n-nodes-base`. Run `npm run lintfix` 
 ## Status & next steps
 
 Starter implementation, verified against the public Enterspeed OpenAPI spec
-(v0.4.0). Before publishing: run in a local n8n against a real tenant, run
-`npm run lint`, then `npm publish` and submit for n8n's verified-node program.
+(v0.4.0). Before a release: run in a local n8n against a real tenant, run
+`npm run lint` and `npm run scan`, then release as below and submit for n8n's
+verified-node program.
 
 ## Releasing
 
@@ -177,6 +178,7 @@ Starter implementation, verified against the public Enterspeed OpenAPI spec
 - [ ] `npm run lint` passes with no errors
 - [ ] `npm test` passes
 - [ ] `npm run build` succeeds and `dist/` is populated
+- [ ] `npm run scan` passes (n8n's community package scanner)
 - [ ] `package.json` version is bumped appropriately (see below)
 
 ### Versioning
@@ -191,41 +193,30 @@ Follow [semver](https://semver.org):
 
 ### Release
 
-Releasing is done with `@n8n/node-cli`'s release command, not manual
-`npm publish` — n8n requires verified community nodes to be published via
-GitHub Actions with an npm provenance attestation (mandatory from 1 May
-2026), and a raw local `npm publish` can't produce that attestation.
+Run `npm run build && npm run scan` first: it runs n8n's community package
+scanner on the files `npm publish` would ship, as CI does on every pull
+request into `main`. Then, on an up-to-date `main`:
 
 ```bash
 npm run release
 ```
 
 This lints, builds, prompts for a version bump, updates the changelog,
-commits, tags, and pushes. The pushed tag (matching `*.*.*`) triggers
-`.github/workflows/publish.yml` in CI, which runs `npm run release` again in
-the Actions runner — this time it performs the actual `npm publish` with a
-signed provenance attestation via GitHub's OIDC token.
+commits, tags (the bare version, e.g. `0.2.0`) and pushes. It doesn't publish.
+The tag starts `.github/workflows/publish.yml`, which checks the tag equals
+`package.json`'s version and is on `main`, runs the tests and the build, packs
+the tarball, runs the scanner, and publishes that tarball with a provenance
+statement from a job that installs nothing. npm publishes only from that workflow: never run
+`npm publish` or `npm run release -- --publish` from your machine.
 
 After publishing, users who installed the package via n8n's Community Nodes UI
 can update through **Settings → Community Nodes** once the new version is live
 on npm (usually within a few minutes).
 
-### Automated releases (GitHub Actions)
+### Publishing setup (npm trusted publishing)
 
-`.github/workflows/publish.yml` publishes to npm whenever a version tag
-(`*.*.*`) is pushed. It requests `id-token: write` (to mint the OIDC token
-for provenance) and `contents: read` — scoped down from the default write
-permissions — then runs `npm run release` inside the job.
-
-Authentication is one of:
-
-- **OIDC Trusted Publishing (recommended)** — on npmjs.com, open the
-  package's settings → **Publish access** → **Trusted Publishers** → add a
-  GitHub Actions publisher pointing at this repo and workflow name
-  `publish.yml`. No secret is needed; leave `NPM_TOKEN` unset.
-- **`NPM_TOKEN` fallback** — a granular npm access token scoped to
-  `@enterspeed/n8n-nodes-enterspeed` with publish permission, added as a
-  GitHub repo secret (**Settings → Secrets and variables → Actions**).
-
-Either way, once the npm-side setup is done, `npm run release` (see above)
-is the only manual step needed to ship a release.
+The workflow requests `id-token: write` and `contents: read` and stores no npm
+token: npm exchanges the job's GitHub OIDC token for a short-lived publish
+token. The one-time setup on npmjs.com is in the README's
+[Releasing](README.md#releasing) section: register `publish.yml` as the
+package's trusted publisher, disallow tokens, and revoke any old one.
