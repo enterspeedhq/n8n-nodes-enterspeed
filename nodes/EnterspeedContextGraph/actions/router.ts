@@ -1,11 +1,12 @@
 import type { IExecuteFunctions, INodeExecutionData } from 'n8n-workflow';
 import * as entity from './entity';
+import * as shape from './shape';
 import type { ContextGraphCredentials } from './types';
 
 /**
  * Unlike Core's router, handlers receive every input item at once: Push Many
- * outputs one result per record, not per item, so it can't run one item at a
- * time.
+ * and Get Many output one result per record or key, not per item, so
+ * they can't run one item at a time.
  */
 interface OperationHandler {
 	execute(this: IExecuteFunctions, creds: ContextGraphCredentials): Promise<INodeExecutionData[]>;
@@ -13,6 +14,7 @@ interface OperationHandler {
 
 const resources: Record<string, { operations: Record<string, OperationHandler> }> = {
 	entity,
+	shape,
 };
 
 const trimSlash = (url: string) => url.replace(/\/+$/, '');
