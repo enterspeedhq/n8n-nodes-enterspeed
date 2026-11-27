@@ -17,7 +17,7 @@ repository. This is the canonical agent context; Claude Code reads it via the `@
 | `nodes/Enterspeed/Enterspeed.node.ts` | **Enterspeed Core** action node — resources `entity`, `delivery`, `query`, `route`. Released. |
 | `nodes/Enterspeed/EnterspeedTrigger.node.ts` | **Enterspeed Core Webhook Trigger** — reacts to view deploy/remove webhooks, optionally fetching the full view. Released. |
 | `credentials/EnterspeedApi.credentials.ts` | **Enterspeed Core API** — two keys, three overridable hosts; shared by both Core nodes. |
-| `nodes/EnterspeedContextGraph/EnterspeedContextGraph.node.ts` | **Enterspeed Context Graph** action node — Entity › Push / Push Many, Shape › Get / Get Many, Index › Get / Query, Representation › Get, Schema › Get. Several read fields are filled from the manifest's schema while editing (`actions/schema/msd.ts`). Unreleased (epic sc-13858). |
+| `nodes/EnterspeedContextGraph/EnterspeedContextGraph.node.ts` | **Enterspeed Context Graph** action node — Artifact › Upload, Entity › Push / Push Many, Shape › Get / Get Many, Index › Get / Query, Representation › Get, Schema › Get. Several read fields are filled from the manifest's schema while editing (`actions/schema/msd.ts`). Unreleased (epic sc-13858). |
 | `credentials/EnterspeedContextGraphApi.credentials.ts` | **Enterspeed Context Graph API** — ingest URL + Ingest API Key, delivery URL + Delivery API Key, manifest version. Never shared with Core. |
 | `workflows/templates/` | Example workflows, including the Tonevik demo (`Context-Graph-Tonevik-Demo.json`) |
 | `workflows/fixtures/` | Test workflows that need something outside n8n, such as a dev-server option; never imported by `setup.mjs` |
@@ -41,6 +41,7 @@ This repo implements a client of those contracts; it doesn't own them.
 | **index** / **document** | What Index › Query searches and Index › Get reads by its `$id` | a Core "index alias" |
 | **representation** | What delivery composes from **slots** (shapes, queries) and serves for a **route** | a "page" (routes are API resources, sdk/ADR-003) |
 | **manifest** | The published schema every Delivery route is scoped to; its **MSD** is delivery's materialised schema document | a Core "environment" |
+| **artifact** | A snapshot source's complete export, uploaded as one CSV or NDJSON file: reserved, uploaded, committed, then drained (*Ingest artifact*) | a "bulk push" |
 
 "Entity" is ingest-side vocabulary: the node pushes records that become **source entities**; what
 comes back out is shapes, documents and representations. Core's views, origin IDs and index aliases

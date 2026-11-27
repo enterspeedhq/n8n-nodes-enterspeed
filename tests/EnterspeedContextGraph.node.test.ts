@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { createHash } from 'crypto';
 import type { ICredentialDataDecryptedObject, IDataObject, IHttpRequestOptions, INode, INodeExecutionData, JsonObject } from 'n8n-workflow';
 import { NodeApiError } from 'n8n-workflow';
 import { EnterspeedContextGraph } from '../nodes/EnterspeedContextGraph/EnterspeedContextGraph.node';
@@ -1859,5 +1860,269 @@ describe('EnterspeedContextGraphApi credential', () => {
 
 	it('does not reuse the Core credential name', () => {
 		expect(credential.name).not.toBe('enterspeedApi');
+	});
+});
+
+/**
+ * Artifact › Upload sends a snapshot source's complete export through the
+ * artifact drop (*Ingest artifact* spec; ingest/ADR-017 D1): reserve with the
+ * four declared facts, PUT the bytes to the signed URL with exactly the
+ * headers the reservation names, commit, and output the artifact unchanged.
+ */
+describe('EnterspeedContextGraph — Artifact › Upload', () => {
+	// Two of Tonevik's PIM lines, verbatim, as the export file's bytes.
+	const exportFile = Buffer.from(
+		'{"$id":"pim-cat-dd34d4","$type":"category","$source":"pim","id":"cat-speakers","name":"Speakers"}\n' +
+			'{"$id":"pim-cat-1f0e9a","$type":"category","$source":"pim","id":"cat-headphones","name":"Headphones"}\n',
+	);
+	const ingest = 'http://localhost:5090';
+	const signedUrl = 'https://storage.example/artifacts/a-1?sig=SECRET-SIGNATURE';
+	const reservation = {
+		id: 'a-1',
+		source: 'pim',
+		state: 'reserved',
+		asOf: '2026-11-19T02:00:00Z',
+		rowCount: 2,
+		upload: { url: signedUrl, method: 'PUT', headers: { 'x-ms-blob-type': 'BlockBlob' }, expiresAt: '2026-11-19T03:00:00Z' },
+	};
+	const committed = { ...reservation, state: 'committed', upload: null, committedAt: '2026-11-19T02:01:00Z', sizeBytes: exportFile.length };
+
+	const params = {
+		resource: 'artifact',
+		operation: 'upload',
+		sourceAlias: 'pim',
+		binaryPropertyName: 'data',
+		contentType: 'ndjson',
+		asOf: '2026-11-19T02:00:00Z',
+		rowCount: '2',
+	};
+
+	/** Answers reserve, upload and commit as the artifact drop does. */
+	function drop(reserve: IDataObject = reservation) {
+		return vi.fn(async (req: IHttpRequestOptions) => {
+			if (req.url === `${ingest}/sources/pim/artifacts`) return reserve;
+			if (req.url === signedUrl) return '';
+			if (req.url === `${ingest}/sources/pim/artifacts/a-1/commit`) return committed;
+			throw new Error(`Unexpected request to ${req.url}`);
+		});
+	}
+
+	/** A refusal as n8n hands it over: problem details in the HTTP error's body. */
+	const refusal = (status: number, reason: string, title: string, detail: string) =>
+		Object.assign(new NodeApiError(httpNode, { httpCode: String(status) }), {
+			cause: {
+				response: {
+					status,
+					data: { type: `urn:enterspeed:problem:artifact:${reason}`, title, status, detail },
+				},
+			},
+		});
+
+	async function upload(
+		opts: {
+			params?: Record<string, unknown>;
+			binaries?: Array<Record<string, Buffer> | undefined>;
+			httpRequest?: ReturnType<typeof vi.fn>;
+			continueOnFail?: boolean;
+		} = {},
+	) {
+		const binaries = opts.binaries ?? [{ data: exportFile }];
+		const httpRequest = opts.httpRequest ?? drop();
+		const ctx = createContextGraphExecuteMock({
+			params: { ...params, ...opts.params },
+			items: binaries.map(() => ({})),
+			binaries,
+			httpRequest,
+			continueOnFail: opts.continueOnFail,
+		});
+		const [out] = (await node.execute.call(ctx)) as INodeExecutionData[][];
+		const calls = httpRequest.mock.calls.map((c) => c[0] as IHttpRequestOptions);
+		return { out, calls };
+	}
+
+	describe('reserve, upload, commit (ingest/ADR-017 D1)', () => {
+		it('reserves with the four declared facts, with the Ingest API Key', async () => {
+			const { calls } = await upload();
+			expect(calls[0]).toMatchObject({
+				method: 'POST',
+				url: `${ingest}/sources/pim/artifacts`,
+				headers: { 'X-Api-Key': 'cg-ingest-key' },
+				body: {
+					asOf: '2026-11-19T02:00:00Z',
+					rowCount: 2,
+					contentType: 'application/x-ndjson',
+					contentHash: createHash('sha256').update(exportFile).digest('hex'),
+				},
+			});
+		});
+
+		it('sends CSV as text/csv', async () => {
+			const { calls } = await upload({ params: { contentType: 'csv' } });
+			expect((calls[0].body as IDataObject).contentType).toBe('text/csv');
+		});
+
+		it('takes Row Count as given, as a number or as text, never counting the file', async () => {
+			const { calls } = await upload({ params: { rowCount: 1250000 } });
+			expect((calls[0].body as IDataObject).rowCount).toBe(1250000);
+		});
+
+		it('uploads the bytes unchanged to the signed URL, with exactly its headers and no API key', async () => {
+			const { calls } = await upload();
+			expect(calls[1]).toEqual({
+				method: 'PUT',
+				url: signedUrl,
+				headers: { 'x-ms-blob-type': 'BlockBlob' },
+				body: exportFile,
+				json: false,
+			});
+		});
+
+		it('commits, and outputs the committed artifact unchanged, paired to its item', async () => {
+			const { out, calls } = await upload();
+			expect(calls[2]).toMatchObject({
+				method: 'POST',
+				url: `${ingest}/sources/pim/artifacts/a-1/commit`,
+				headers: { 'X-Api-Key': 'cg-ingest-key' },
+			});
+			expect(calls).toHaveLength(3);
+			expect(out).toEqual([{ json: committed, pairedItem: { item: 0 } }]);
+		});
+
+		it('uploads one file per item, in order', async () => {
+			const { out, calls } = await upload({ binaries: [{ data: exportFile }, { data: exportFile }] });
+			expect(calls.map((c) => c.url)).toEqual([
+				`${ingest}/sources/pim/artifacts`,
+				signedUrl,
+				`${ingest}/sources/pim/artifacts/a-1/commit`,
+				`${ingest}/sources/pim/artifacts`,
+				signedUrl,
+				`${ingest}/sources/pim/artifacts/a-1/commit`,
+			]);
+			expect(out.map((o) => o.pairedItem)).toEqual([{ item: 0 }, { item: 1 }]);
+		});
+
+		it('reads the file from the Input Binary Field', async () => {
+			const { calls } = await upload({ params: { binaryPropertyName: 'export' }, binaries: [{ export: exportFile }] });
+			expect(calls[1].body).toBe(exportFile);
+		});
+	});
+
+	describe('a retry (ingest/ADR-017 D3)', () => {
+		it('outputs an already committed artifact as answered, uploading and committing nothing', async () => {
+			const { out, calls } = await upload({ httpRequest: drop(committed) });
+			expect(calls).toHaveLength(1);
+			expect(out).toEqual([{ json: committed, pairedItem: { item: 0 } }]);
+		});
+
+		it('uploads and commits again when the retried reservation is not committed yet', async () => {
+			const { calls } = await upload({ httpRequest: drop({ ...reservation }) });
+			expect(calls.map((c) => c.url)).toEqual([
+				`${ingest}/sources/pim/artifacts`,
+				signedUrl,
+				`${ingest}/sources/pim/artifacts/a-1/commit`,
+			]);
+		});
+	});
+
+	describe('refusals (Ingest artifact spec: problem details)', () => {
+		it('names a refusal by its problem type, with the platform title and detail', async () => {
+			const httpRequest = vi.fn(async () => {
+				throw refusal(
+					409,
+					'push-source',
+					'A push source takes no artifacts.',
+					"Only a snapshot source accepts an upload. Push the rows to POST /entities, or change the source's mode.",
+				);
+			});
+			await expect(upload({ httpRequest })).rejects.toMatchObject({
+				message: 'A push source takes no artifacts. (push-source)',
+				description: "Only a snapshot source accepts an upload. Push the rows to POST /entities, or change the source's mode.",
+			});
+			expect(httpRequest).toHaveBeenCalledTimes(1);
+		});
+
+		it('names a refusal at commit too', async () => {
+			const httpRequest = vi.fn(async (req: IHttpRequestOptions) => {
+				if (req.url.endsWith('/commit')) throw refusal(409, 'not-uploaded', 'Nothing was uploaded.', 'Upload the file first.');
+				return req.url === signedUrl ? '' : reservation;
+			});
+			await expect(upload({ httpRequest })).rejects.toMatchObject({ message: 'Nothing was uploaded. (not-uploaded)' });
+		});
+
+		it('says the Ingest URL was unreachable when nothing answered', async () => {
+			const httpRequest = vi.fn(async () => {
+				throw new Error('connect ECONNREFUSED');
+			});
+			await expect(upload({ httpRequest })).rejects.toMatchObject({
+				message: `Couldn't reach the Ingest URL (${ingest}).`,
+			});
+		});
+
+		it("names a failed upload by the storage's origin only, never the signed URL", async () => {
+			const httpRequest = vi.fn(async (req: IHttpRequestOptions) => {
+				if (req.url === signedUrl) throw n8nFailure(403);
+				return reservation;
+			});
+			const error = await upload({ httpRequest }).catch((e: Error) => e);
+			expect(error).toMatchObject({ message: 'The upload to https://storage.example failed with status 403.' });
+			expect(JSON.stringify(error)).not.toContain('SECRET-SIGNATURE');
+			expect(httpRequest).toHaveBeenCalledTimes(2);
+		});
+	});
+
+	describe('checked before anything is sent', () => {
+		it.each([
+			['no Source', { sourceAlias: '' }, 'Item 0 has no Source.'],
+			['no As Of', { asOf: ' ' }, 'Item 0 has no As Of.'],
+			['no Row Count', { rowCount: '' }, 'Item 0 has no Row Count.'],
+			['a negative Row Count', { rowCount: '-1' }, 'Item 0 has a Row Count that is not a whole number of 0 or more.'],
+			['a fractional Row Count', { rowCount: 1.5 }, 'Item 0 has a Row Count that is not a whole number of 0 or more.'],
+			['a Row Count that is not a number', { rowCount: 'many' }, 'Item 0 has a Row Count that is not a whole number of 0 or more.'],
+		])('fails an item with %s', async (_, override, message) => {
+			const httpRequest = drop();
+			await expect(upload({ params: override, httpRequest })).rejects.toMatchObject({ message });
+			expect(httpRequest).not.toHaveBeenCalled();
+		});
+
+		it('fails an item whose file n8n cannot hold in memory, naming the limit', async () => {
+			const httpRequest = drop();
+			const ctx = createContextGraphExecuteMock({
+				params,
+				binaries: [{ data: exportFile }],
+				httpRequest,
+			});
+			ctx.helpers.getBinaryDataBuffer = async () => {
+				throw Object.assign(new RangeError('File size (2147483648) is greater than 2 GiB'), { code: 'ERR_FS_FILE_TOO_LARGE' });
+			};
+			await expect(node.execute.call(ctx)).rejects.toMatchObject({
+				message: 'Item 0 has a file too large for n8n to hold in memory (2 GiB or more); the limit is 2 GB.',
+			});
+			expect(httpRequest).not.toHaveBeenCalled();
+		});
+
+		it('fails an item with no binary data in the Input Binary Field', async () => {
+			const httpRequest = drop();
+			await expect(upload({ binaries: [undefined], httpRequest })).rejects.toMatchObject({
+				message: 'Item 0 has no binary data in "data".',
+			});
+			expect(httpRequest).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('Continue On Fail', () => {
+		it('outputs a failed item as its source, as-of and error, and goes on with the next', async () => {
+			const { out } = await upload({
+				params: { rowCount: (i: number) => (i === 0 ? '' : '2') },
+				binaries: [{ data: exportFile }, { data: exportFile }],
+				continueOnFail: true,
+			});
+			expect(out).toEqual([
+				{
+					json: { source: 'pim', asOf: '2026-11-19T02:00:00Z', error: 'Item 0 has no Row Count.' },
+					pairedItem: { item: 0 },
+				},
+				{ json: committed, pairedItem: { item: 1 } },
+			]);
+		});
 	});
 });

@@ -45,7 +45,7 @@ The package is an **integration**: it moves data between n8n workflows and Enter
 | `Enterspeed` ("Enterspeed Core") | `nodes/Enterspeed/Enterspeed.node.ts` | Action node for Enterspeed Core: resources `entity`, `delivery`, `query`, `route` |
 | `EnterspeedTrigger` ("Enterspeed Core Webhook Trigger") | `nodes/Enterspeed/EnterspeedTrigger.node.ts` | Push trigger for view deploy/remove webhooks |
 | `EnterspeedApi` ("Enterspeed Core API") | `credentials/EnterspeedApi.credentials.ts` | Shared by both Core nodes |
-| `EnterspeedContextGraph` ("Enterspeed Context Graph") | `nodes/EnterspeedContextGraph/EnterspeedContextGraph.node.ts` | Action node for the Context Graph: resources `entity`, `index`, `representation`, `schema`, `shape` |
+| `EnterspeedContextGraph` ("Enterspeed Context Graph") | `nodes/EnterspeedContextGraph/EnterspeedContextGraph.node.ts` | Action node for the Context Graph: resources `artifact`, `entity`, `index`, `representation`, `schema`, `shape` |
 | `EnterspeedContextGraphApi` | `credentials/EnterspeedContextGraphApi.credentials.ts` | The Context Graph's own credential; never shared with Core |
 
 Both action nodes have the same shape: the node class holds only its description and a one-line `execute()` that delegates to `actions/router.ts`, which picks the operation module from the `resource` and `operation` parameters. All real logic lives in `actions/<resource>/*.operation.ts`.
@@ -113,6 +113,7 @@ Every resource follows one rule: **output the service's answer unchanged**. The 
 
 | Resource › Operation | Request | Items → requests | Contract / ADR |
 |---|---|---|---|
+| Artifact › Upload | `POST {ingestUrl}/sources/{alias}/artifacts`, the bytes to `upload.url` without the credential, then `POST …/artifacts/{id}/commit` | One export file per item | *Ingest artifact*, *Ingest artifact format*; ingest/ADR-017, 018, 019; cross/ADR-022 |
 | Entity › Push | `POST {ingestUrl}/entities` | One record per item, one request per item | *Ingest NDJSON*, *Ingest bulk result*; ingest/ADR-005, 013, 020 |
 | Entity › Push Many | `POST {ingestUrl}/entities` | One item holding a list, split only at the body limit | as Push; cross/ADR-022 |
 | Shape › Get | `GET {deliveryUrl}/shapes/v1/{manifest}/{key…}` | One key per item | *Shape key*; delivery/ADR-030 §3 |
@@ -129,7 +130,7 @@ Records follow the *Ingest NDJSON* contract and are sent unchanged as NDJSON lin
 - **Push** takes one record per item. Its five parameters set `$id`, `$type`, `$source`, `$action` and `$modifiedAt`, each defaulting to the record's own (`={{ $json.$id }}` and so on).
 - **Push Many** takes one item holding a list of records (`={{ $json.data }}`, as an Aggregate node makes it); each record keeps its own `$` fields.
 - **Values are sent as given.** A non-string `$id` or `$type` is reported as failed without being sent, because the contract makes it a parse error. `$source` is required by ingest (cross/ADR-010 retired the source derived from the key); a record without one is sent as it is, and the service's per-record rejection is its result. A delete line carries only the `$` fields. `$modifiedAt` is passed as given, on saves and deletes (ingest/ADR-013).
-- **Not the bulk path.** A source's complete export is an artifact upload (cross/ADR-022, ingest/ADR-017, *Ingest artifact* contract): reserve, signed upload, commit, then a paced drain. Ingest and the SDK dev-server serve it; the node's Upload operation isn't built yet (sc-13877, sc-13882). Push Many splits a list only at the body limit: a request closes before 29,000,000 bytes, well under ingest's 32 MiB write body limit (ingest/ADR-020 D5), and requests are sent one at a time.
+- **Not the bulk path.** A source's complete export is an artifact upload (cross/ADR-022, ingest/ADR-017, *Ingest artifact* contract): reserve, signed upload, commit, then a paced drain. Ingest and the SDK dev-server serve it; the node sends it with Artifact › Upload (section 3.9). Push Many splits a list only at the body limit: a request closes before 29,000,000 bytes, well under ingest's 32 MiB write body limit (ingest/ADR-020 D5), and requests are sent one at a time.
 - **Throttling.** A `429` is retried after its `Retry-After`, up to 3 times, as ingest/ADR-020 requires of workflow-tool integrations.
 - **Result.** The service answers a per-line `{ id, accepted, error?, statusCode }` array in line order (`200` all accepted, `207` otherwise), zipped back onto the records.
 
@@ -174,7 +175,7 @@ Reads the manifest's schema, `kind` being `msd`, `openapi` or `jsonschema`, opti
 
 | Field | Used for |
 |---|---|
-| `ingestUrl`, `ingestApiKey` | Uploads (`POST /entities`) |
+| `ingestUrl`, `ingestApiKey` | Writes: `POST /entities`, and the artifact routes (reserve, commit) |
 | `deliveryUrl`, `deliveryApiKey` | Every read, the schema and the credential test |
 | `manifestVersion` | The `{manifest}` segment of every Delivery route. For an SDK-published schema, the manifest id, a content hash (sdk/ADR-016) |
 
@@ -187,6 +188,19 @@ The test request reads `GET {deliveryUrl}/schema/msd/v1/{manifestVersion}`, whic
 ### 3.8 Errors
 
 n8n hands a failed request over as a `NodeApiError` with the HTTP error as its `cause`. `transport.ts`'s `httpFailure` reads the status and body from either form. Each resource turns that into a message that says what failed (`401` rejected key, `404` not found, `410` retired API version, unreachable URL), passing the platform's own message through when it has one; the Delivery resources share `deliveryError` (`actions/shape/shared.ts`). The `NodeApiError` is built from a plain object, because its constructor returns an existing `NodeApiError` unchanged and would drop the message. With *Continue On Fail* a failed item comes out as what identifies it (e.g. `{ key, … }`, `{ route, … }`, a Push result with `accepted: false`) plus `error` and, when there is one, `description`.
+
+### 3.9 Artifact: Upload
+
+A snapshot source's complete export goes in as one artifact (cross/ADR-022 D1, ingest/ADR-017 D1, *Ingest artifact* spec), one file per input item, through `actions/artifact/`:
+
+- **Declared facts.** The reservation sends `asOf`, `rowCount`, `contentType` and `contentHash` (ingest/ADR-017 D2). *As Of* and *Row Count* are the source's and sent as given: `asOf` is when the export started, which nothing on the platform can check (ingest/ADR-019 D2), and `rowCount` exists to catch a cut-off file, so counting the file in n8n would defeat it (a mismatch voids the deletions, ingest/ADR-018 D2). Only a missing value, or a *Row Count* that isn't a whole number, fails the item before sending. *Content Type* is chosen on the node (NDJSON or CSV, ingest/ADR-019 D1), never taken from the binary's MIME type. `contentHash` is the SHA-256 of exactly the bytes sent.
+- **The file is not read.** It is hashed and sent as it is; never parsed, mapped or counted. A CSV is read by the source's field map (ingest/ADR-019 D2), which is the source contract's, not the node's.
+- **The upload carries no credential.** The bytes go to `upload.url` with `upload.method` and exactly `upload.headers` through plain `this.helpers.httpRequest`: the credential's `authenticate` would add a key to any URL (the Delivery key to anything outside the Ingest URL). The signed URL is access in itself, so an error names only its origin.
+- **In memory.** n8n's `httpRequest` takes a `Buffer` body, not a stream, so the file is held in memory while sent. Measured in the Docker n8n (2.27.4, Node 24, filesystem binary mode): a 2,000,000,000-byte file (ingest/ADR-017 D1's 2 GB) reads and sends whole; one of exactly 2 GiB fails Node's `fs.readFile`. In queue mode n8n's database binary mode caps a file at 512 MiB by default (1 GiB at most). Block upload (resumable) isn't possible through one request and isn't built.
+- **Retries.** A reservation with the same `asOf` and `contentHash` is a retry (ingest/ADR-017 D3). For one already committed the answer has `upload: null`, and the node outputs it without uploading or committing; one not committed comes with a fresh URL and is uploaded and committed again. So n8n's *Retry On Fail* is safe.
+- **Output.** The artifact as the commit answered, unchanged. The node doesn't wait for the drain: deployed ingest drains later against a 4-hour target (ingest/ADR-017 D7), so a workflow reads the status later; the dev-server drains at commit.
+- **Errors.** Refusals are problem details whose `type` is `urn:enterspeed:problem:artifact:{reason}`; `ingestError` (`actions/artifact/shared.ts`) words them as the platform's `title` plus the reason, with `detail` as the description. The artifact routes don't count against the write throttle (*Ingest artifact* spec; ingest/ADR-020 D6), so there is no `429` retry. With *Continue On Fail* an item comes out as `{ source, asOf, error, description? }`.
+- **Not built:** the status read, listing and refused lines (sc-14787); releasing or discarding a held deletion set and the mirror status.
 
 ---
 
@@ -290,7 +304,7 @@ The trigger receives Enterspeed's view webhooks and, with *Fetch Full View*, cal
 
 ### 6.2 Context Graph Node → Ingest
 
-Writes only, `POST {ingestUrl}/entities` with the Ingest API Key. Ingest is the platform's only write path; the node relies on its per-line result and its throttle (section 3.2).
+Writes only, `POST {ingestUrl}/entities` with the Ingest API Key. Ingest is the platform's only write path; the node relies on its per-line result and its throttle (section 3.2). An export goes through ingest's artifact routes with the same key; only its bytes go elsewhere, to the storage URL ingest signs (section 3.9).
 
 ### 6.3 Context Graph Node → Delivery
 
@@ -347,7 +361,7 @@ Schema-driven fields read the schema while editing and save their choices in the
 
 ### 9.1 Push vs Upload
 
-Push and Push Many send records as they change. A complete export belongs in an artifact upload (cross/ADR-022, ingest/ADR-017), which the platform serves and the node will get as its own operation, so Push Many is deliberately not tuned for bulk: no batch-size setting, sequential requests, a split only at the body limit.
+Push and Push Many send records as they change. A complete export belongs in an artifact upload (cross/ADR-022, ingest/ADR-017), which the platform serves and the node sends with Artifact › Upload (section 3.9), so Push Many is deliberately not tuned for bulk: no batch-size setting, sequential requests, a split only at the body limit.
 
 ### 9.2 No Schema Cache
 

@@ -105,12 +105,24 @@ export const defaultCreds: IDataObject = {
 export function createContextGraphExecuteMock(opts: {
 	params: Record<string, unknown | ((itemIndex: number) => unknown)>;
 	items?: IDataObject[];
+	/** Each item's binary data, by field name, as the bytes n8n would hand over. */
+	binaries?: Array<Record<string, Buffer> | undefined>;
 	creds?: IDataObject;
 	httpRequest: Mock;
 	continueOnFail?: boolean;
 }): IExecuteFunctions {
 	const creds = opts.creds ?? defaultContextGraphCreds;
-	const items = (opts.items ?? [{}]).map((json) => ({ json }));
+	const items = (opts.items ?? [{}]).map((json, i) => {
+		const files = opts.binaries?.[i];
+		if (!files) return { json };
+		const binary = Object.fromEntries(
+			Object.entries(files).map(([name, bytes]) => [
+				name,
+				{ data: bytes.toString('base64'), mimeType: 'application/octet-stream', fileName: name },
+			]),
+		);
+		return { json, binary };
+	});
 	return {
 		getInputData: () => items,
 		getCredentials: vi.fn(async () => creds),
@@ -124,6 +136,13 @@ export function createContextGraphExecuteMock(opts: {
 		helpers: {
 			httpRequestWithAuthentication: async (_credentialType: string, requestOptions: IHttpRequestOptions) =>
 				opts.httpRequest(await authenticate(creds, requestOptions)),
+			// A request without the credential (the signed upload URL), sent as given.
+			httpRequest: async (requestOptions: IHttpRequestOptions) => opts.httpRequest(requestOptions),
+			getBinaryDataBuffer: async (itemIndex: number, name: string) => {
+				const bytes = opts.binaries?.[itemIndex]?.[name];
+				if (!bytes) throw new Error(`No binary data "${name}" on item ${itemIndex}`);
+				return bytes;
+			},
 		},
 	} as unknown as IExecuteFunctions;
 }

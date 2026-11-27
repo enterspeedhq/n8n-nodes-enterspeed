@@ -1,6 +1,7 @@
 import type { IExecuteFunctions, INodeExecutionData, INodeProperties, INodeType, INodeTypeDescription } from 'n8n-workflow';
 import { NodeConnectionTypes } from 'n8n-workflow';
 import { router } from './actions/router';
+import * as artifact from './actions/artifact';
 import * as entity from './actions/entity';
 import * as shape from './actions/shape';
 import * as index from './actions/index/index';
@@ -14,6 +15,7 @@ const resourceSelector: INodeProperties = {
 	type: 'options',
 	noDataExpression: true,
 	options: [
+		{ name: 'Artifact', value: 'artifact' },
 		{ name: 'Entity', value: 'entity' },
 		{ name: 'Index', value: 'index' },
 		{ name: 'Representation', value: 'representation' },
@@ -29,6 +31,8 @@ const resourceSelector: INodeProperties = {
  * Uses its own credential (`enterspeedContextGraphApi`).
  *
  * Resources:
+ *  - Artifact (Ingest): upload a snapshot source's complete export file, as
+ *                       it is, one file per item (reserve, upload, commit)
  *  - Entity (Ingest)  : push records as source entities (save or delete), one
  *                       per item (Push) or a list in one item (Push Many)
  *  - Shape (Delivery) : read shapes by key, one per item (Get) or a list
@@ -64,7 +68,7 @@ export class EnterspeedContextGraph implements INodeType {
 				primaryDocumentation: [{ url: 'https://docs.enterspeed.com' }],
 			},
 		},
-		properties: [resourceSelector, ...entity.description, ...shape.description, ...index.description, ...representation.description, ...schema.description],
+		properties: [resourceSelector, ...artifact.description, ...entity.description, ...shape.description, ...index.description, ...representation.description, ...schema.description],
 	};
 
 	methods = {
