@@ -31,6 +31,19 @@ const MAX_RETRY_AFTER_MS = 5 * 60 * 1000;
  */
 export const MAX_REQUEST_BYTES = 29_000_000;
 
+/**
+ * A 403 with no reason in its body. Ingest answers one to a key without Write
+ * scope (ingest ADR 011), and so does a deployed Context Graph whose Ingest
+ * URL admits only listed addresses, to any other address, before the key is
+ * read. The two look the same from here, so the message names both.
+ */
+export const INGEST_FORBIDDEN_MESSAGE =
+	"The API key isn't allowed to write to this Context Graph, or the Ingest URL doesn't accept requests from this n8n's address.";
+
+/** The description that goes with INGEST_FORBIDDEN_MESSAGE. */
+export const INGEST_FORBIDDEN_DESCRIPTION =
+	"Check that the Ingest API Key has Write scope for the source. A deployed Context Graph can also admit only listed addresses to its Ingest URL: if the key is right, ask for the address this n8n sends from to be added.";
+
 /** The five $ fields of one record, as resolved for sending. */
 export interface RecordFields {
 	id: unknown;
@@ -165,16 +178,18 @@ function requestError(this: IExecuteFunctions, error: unknown, ingestUrl: string
 		});
 	}
 	let message: string;
+	let description: string | undefined;
 	if (status === 401) message = 'The API key was rejected by the Ingest URL.';
-	// A whole-request 403 is a key without Write scope (ingest ADR 011).
-	else if (status === 403) message = "The API key isn't allowed to write to this Context Graph.";
-	else if (status === 413) message = 'The Ingest URL refused the request as too large.';
+	else if (status === 403) {
+		message = INGEST_FORBIDDEN_MESSAGE;
+		description = INGEST_FORBIDDEN_DESCRIPTION;
+	} else if (status === 413) message = 'The Ingest URL refused the request as too large.';
 	else if (status === 429) message = 'The Ingest URL is still throttling requests after retrying. Try again later.';
 	else message = `The Ingest URL answered with status ${status}.`;
 	const httpCode = String(status);
 	// A plain object, not the request's own error: NodeApiError hands back an
 	// existing NodeApiError unchanged, which would drop this message.
-	return new NodeApiError(this.getNode(), { httpCode }, { message, httpCode });
+	return new NodeApiError(this.getNode(), { httpCode }, { message, description, httpCode });
 }
 
 /**

@@ -76,11 +76,13 @@ CI runs the round-trip template (`Context-Graph-Round-Trip.json`) in this Docker
 
 ```bash
 cd e2e && npm install && cd ..   # the dev-server version pinned in e2e/package.json
-N8N_WORKFLOW_DIRS=workflows/templates,e2e/workflows node scripts/setup.mjs
+export CONTEXT_GRAPH_INGEST_API_KEY=e2e-ingest-key CONTEXT_GRAPH_DELIVERY_API_KEY=e2e-delivery-key
+CONTEXT_GRAPH_INGEST_URL=http://host.docker.internal:5201 \
+  N8N_WORKFLOW_DIRS=workflows/templates,e2e/workflows node scripts/setup.mjs
 node e2e/context-graph.mjs
 ```
 
-It starts the dev-server (graph on `:5200`), serves the export the template fetches (`:5500`), runs each case with `scripts/execute-workflow.mjs` and checks what each node output, then stops. `node e2e/context-graph.mjs --serve` only serves the graph and the export, for running the template by hand. On Linux the n8n container reaches the host through `host.docker.internal`, which `docker-compose.yml` maps.
+It starts the dev-server behind three small proxies laid out as a deployed Context Graph: Delivery on `:5200` and Ingest on `:5201`, each checking its own key, and storage on `:5202`, where the signed upload URL points and which refuses an upload that carries an API key, lacks the `x-ms-blob-type` header the reservation names or has no fixed length, as Azure Blob Storage does. It serves the export the template fetches (`:5500`), runs each case with `scripts/execute-workflow.mjs` and checks what each node output, then stops. Two cases fail the round trip on purpose: Ingest rejecting the key, and Ingest answering a bare `403` as it does to an address it doesn't admit. The credential has to point at this layout, hence the variables above (the key values are test values). `node e2e/context-graph.mjs --serve` only serves the graph and the export, for running the template by hand; there `:5200` serves Ingest too and checks no key, so `setup.mjs`'s dev-server defaults work. On Linux the n8n container reaches the host through `host.docker.internal`, which `docker-compose.yml` maps.
 
 Until the pinned dev-server version is published, install it from a build of the Context Graph SDK's `master` instead: `pnpm pack` its `core` and `dev-server` packages, then `npm install --no-save <core.tgz> <dev-server.tgz>` in `e2e/`.
 

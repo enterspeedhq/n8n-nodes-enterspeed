@@ -73,6 +73,11 @@ jobs:
           N8N_CONTAINER: n8n-nodes-enterspeed-n8n-1
           # The templates, plus the Context Graph end-to-end checks' own workflows.
           N8N_WORKFLOW_DIRS: workflows/templates,e2e/workflows
+          # The Context Graph credential as for a deployed graph: Ingest on a
+          # host of its own, and a key per service (test values, not secrets).
+          CONTEXT_GRAPH_INGEST_URL: http://host.docker.internal:5201
+          CONTEXT_GRAPH_INGEST_API_KEY: e2e-ingest-key
+          CONTEXT_GRAPH_DELIVERY_API_KEY: e2e-delivery-key
         run: node scripts/setup.mjs
 
       - name: Execute workflow
@@ -96,13 +101,17 @@ jobs:
         working-directory: e2e
         run: npm install --no-package-lock
 
-      # An empty graph on the dev-server; the round-trip template uploads an
+      # An empty graph on the dev-server, behind Ingest, Delivery and storage
+      # hosts laid out as a deployed graph's; the round-trip template uploads an
       # export and reads it back, a malformed line must fail the run with the
-      # graph's reason, and Delivery's 304 and 503 go through n8n's real errors.
+      # graph's reason, Delivery's 304 and 503 go through n8n's real errors, and
+      # a rejected key or an unlisted address fails the run with a clear message.
       - name: Context Graph end to end
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         env:
           N8N_CONTAINER: n8n-nodes-enterspeed-n8n-1
+          CONTEXT_GRAPH_INGEST_API_KEY: e2e-ingest-key
+          CONTEXT_GRAPH_DELIVERY_API_KEY: e2e-delivery-key
         run: node e2e/context-graph.mjs
 
       - name: Stop n8n
