@@ -322,26 +322,6 @@ function parseOrUndefined(text: string): unknown {
 	}
 }
 
-/**
- * Fails the batch, before sending, when two queries would get the same id.
- * The platform rejects such a batch with a 400 (query-envelope contract,
- * "Response ids are unique across the batch"); the dev-server doesn't check
- * yet, so the node does, to fail the same way against both.
- */
-function checkDistinctIds(this: IExecuteFunctions, queries: Array<{ itemIndex: number; id: string }>): void {
-	const seen = new Map<string, number>();
-	for (const { itemIndex, id } of queries) {
-		const first = seen.get(id);
-		if (first !== undefined) {
-			throw new NodeOperationError(
-				this.getNode(),
-				`Items ${first} and ${itemIndex} both have the query id "${id}". Each query in a run needs its own id.`,
-			);
-		}
-		seen.set(id, itemIndex);
-	}
-}
-
 function requestError(this: IExecuteFunctions, error: unknown, url: string): NodeApiError | NodeOperationError {
 	const { status, data } = httpFailure(error);
 	if (status === undefined) {
@@ -352,7 +332,8 @@ function requestError(this: IExecuteFunctions, error: unknown, url: string): Nod
 	const own = platformMessage(data);
 	let message: string;
 	if (status === 401) message = 'The API key was rejected by the Delivery URL.';
-	// An invalid query, unknown index or unknown manifest: the platform says which.
+	// An invalid query or unknown manifest: the platform says which. An unknown
+	// index isn't an error: delivery answers it with an empty result.
 	else if (own) message = own;
 	else message = `The Delivery URL answered with status ${status}.`;
 	const httpCode = String(status);
@@ -393,7 +374,6 @@ export async function execute(
 		const url = `${creds.deliveryUrl}/query/v1/${encodeURIComponent(creds.manifestVersion)}`;
 		let response: unknown;
 		try {
-			checkDistinctIds.call(this, queries);
 			response = await contextGraphApiRequest.call(this, {
 				method: 'POST',
 				url,
@@ -401,8 +381,8 @@ export async function execute(
 				json: true,
 			});
 		} catch (error) {
-			const nodeError =
-				error instanceof NodeOperationError ? error : requestError.call(this, error, url);
+			// Two queries sharing an id is the platform's to refuse: it answers the batch 400.
+			const nodeError = requestError.call(this, error, url);
 			if (!this.continueOnFail()) throw nodeError;
 			for (const { itemIndex } of queries) {
 				results[itemIndex] = {
