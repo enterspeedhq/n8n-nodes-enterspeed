@@ -192,6 +192,7 @@ tests or templates. Use the placeholders above, and keys from environment variab
 - [`CLAUDE.md`](CLAUDE.md) — Claude Code commands and tool preferences.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — the Docker setup and authoring templates.
 - [`docs/context-graph-demo/GUIDE.md`](docs/context-graph-demo/GUIDE.md) — internal notes on how the Tonevik demo is built.
+- [`docs/decisions/`](docs/decisions/) — design notes, e.g. where the Context Graph node takes its manifest from.
 - semantic-graph `contracts/spec/` and `contracts/docs/adr/` — the Context Graph's contracts and
   decisions.
 - n8n's docs, for anything not covered here:
