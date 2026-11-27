@@ -1,0 +1,27 @@
+{
+  "description": "An entry that no longer exists: action deleted, hash null.",
+  "input": {
+    "type": "model-changed",
+    "environmentId": "11111111-2222-3333-4444-555555555555",
+    "deliveryId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "tags": [
+      {
+        "key": "m1:shape:price:productId:p-2",
+        "hash": null,
+        "action": "deleted"
+      }
+    ]
+  },
+  "expected": {
+    "type": "model-changed",
+    "environmentId": "11111111-2222-3333-4444-555555555555",
+    "deliveryId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "tags": [
+      {
+        "key": "m1:shape:price:productId:p-2",
+        "hash": null,
+        "action": "deleted"
+      }
+    ]
+  }
+}

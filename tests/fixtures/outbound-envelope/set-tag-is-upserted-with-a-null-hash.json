@@ -1,0 +1,27 @@
+{
+  "description": "A tag that names a set rather than one entry is upserted with a null hash. The null is emitted, never omitted, and action is what tells it from a removal.",
+  "input": {
+    "type": "model-changed",
+    "environmentId": "11111111-2222-3333-4444-555555555555",
+    "deliveryId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "tags": [
+      {
+        "key": "m1:index-set:products",
+        "hash": null,
+        "action": "upserted"
+      }
+    ]
+  },
+  "expected": {
+    "type": "model-changed",
+    "environmentId": "11111111-2222-3333-4444-555555555555",
+    "deliveryId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "tags": [
+      {
+        "key": "m1:index-set:products",
+        "hash": null,
+        "action": "upserted"
+      }
+    ]
+  }
+}

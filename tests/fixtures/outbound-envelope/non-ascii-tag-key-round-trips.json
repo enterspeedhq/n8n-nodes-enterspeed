@@ -1,0 +1,27 @@
+{
+  "description": "A tag key carrying non-ASCII and HTML-sensitive characters reads back as the same string. A producer may escape them on the wire; compared as JSON, the key is unchanged.",
+  "input": {
+    "type": "model-changed",
+    "environmentId": "11111111-2222-3333-4444-555555555555",
+    "deliveryId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "tags": [
+      {
+        "key": "m1:index-bucket:products:brand=Ægir & Søn",
+        "hash": null,
+        "action": "upserted"
+      }
+    ]
+  },
+  "expected": {
+    "type": "model-changed",
+    "environmentId": "11111111-2222-3333-4444-555555555555",
+    "deliveryId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "tags": [
+      {
+        "key": "m1:index-bucket:products:brand=Ægir & Søn",
+        "hash": null,
+        "action": "upserted"
+      }
+    ]
+  }
+}

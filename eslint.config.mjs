@@ -17,9 +17,12 @@ export default [
 		// trigger node: the real n8n verification scanner forbids `true` here,
 		// and the type has no `false` — see ARCHITECTURE.md "Known lint
 		// inconsistency". Omitting the property is correct; the rule doesn't
-		// know that, so it's suppressed for this file only.
+		// know that, so it's suppressed for the trigger files only.
         // https://github.com/n8n-io/n8n/blob/master/packages/@n8n/eslint-plugin-community-nodes/docs/rules/node-usable-as-tool.md
-		files: ['nodes/Enterspeed/EnterspeedTrigger.node.ts'],
+		files: [
+			'nodes/Enterspeed/EnterspeedTrigger.node.ts',
+			'nodes/EnterspeedContextGraph/EnterspeedContextGraphTrigger.node.ts',
+		],
 		rules: {
 			'@n8n/community-nodes/node-usable-as-tool': 'off',
 		},

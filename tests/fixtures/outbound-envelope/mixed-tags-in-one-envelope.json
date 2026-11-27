@@ -1,0 +1,67 @@
+{
+  "description": "One envelope carries every kind of change at once, each tag with its own action, in the order the producer lists them.",
+  "input": {
+    "type": "model-changed",
+    "environmentId": "11111111-2222-3333-4444-555555555555",
+    "deliveryId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "tags": [
+      {
+        "key": "m1:index-bucket:products:brand=nike",
+        "hash": null,
+        "action": "upserted"
+      },
+      {
+        "key": "m1:index-set:products",
+        "hash": null,
+        "action": "upserted"
+      },
+      {
+        "key": "m1:index:products:id:p1",
+        "hash": "199ab72ef6dced7786dadc0adf670b3ef90d4e8182ecc5ba0f7a8760b5805459",
+        "action": "upserted"
+      },
+      {
+        "key": "m1:shape:price:productId:p-1",
+        "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "action": "upserted"
+      },
+      {
+        "key": "m1:shape:price:productId:p-2",
+        "hash": null,
+        "action": "deleted"
+      }
+    ]
+  },
+  "expected": {
+    "type": "model-changed",
+    "environmentId": "11111111-2222-3333-4444-555555555555",
+    "deliveryId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "tags": [
+      {
+        "key": "m1:index-bucket:products:brand=nike",
+        "hash": null,
+        "action": "upserted"
+      },
+      {
+        "key": "m1:index-set:products",
+        "hash": null,
+        "action": "upserted"
+      },
+      {
+        "key": "m1:index:products:id:p1",
+        "hash": "199ab72ef6dced7786dadc0adf670b3ef90d4e8182ecc5ba0f7a8760b5805459",
+        "action": "upserted"
+      },
+      {
+        "key": "m1:shape:price:productId:p-1",
+        "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "action": "upserted"
+      },
+      {
+        "key": "m1:shape:price:productId:p-2",
+        "hash": null,
+        "action": "deleted"
+      }
+    ]
+  }
+}

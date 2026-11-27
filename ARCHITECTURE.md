@@ -38,7 +38,7 @@ This document defines how the package is built: the nodes and credentials it shi
 
 ## 1. Overview
 
-The package is an **integration**: it moves data between n8n workflows and Enterspeed, and adds no data model of its own. It ships three node types and two credential types:
+The package is an **integration**: it moves data between n8n workflows and Enterspeed, and adds no data model of its own. It ships four node types and three credential types:
 
 | Type | File | What it is |
 |---|---|---|
@@ -47,6 +47,8 @@ The package is an **integration**: it moves data between n8n workflows and Enter
 | `EnterspeedApi` ("Enterspeed Core API") | `credentials/EnterspeedApi.credentials.ts` | Shared by both Core nodes |
 | `EnterspeedContextGraph` ("Enterspeed Context Graph") | `nodes/EnterspeedContextGraph/EnterspeedContextGraph.node.ts` | Action node for the Context Graph: resources `artifact`, `entity`, `index`, `representation`, `schema`, `shape` |
 | `EnterspeedContextGraphApi` | `credentials/EnterspeedContextGraphApi.credentials.ts` | The Context Graph's own credential; never shared with Core |
+| `EnterspeedContextGraphTrigger` ("Enterspeed Context Graph Trigger") | `nodes/EnterspeedContextGraph/EnterspeedContextGraphTrigger.node.ts` | Push trigger for the Context Graph's outbound envelope (section 3.10) |
+| `EnterspeedContextGraphWebhookApi` ("Enterspeed Context Graph Webhook API") | `credentials/EnterspeedContextGraphWebhookApi.credentials.ts` | The trigger's signing secret and optional receiver header; one per webhook subscription |
 
 Both action nodes have the same shape: the node class holds only its description and a one-line `execute()` that delegates to `actions/router.ts`, which picks the operation module from the `resource` and `operation` parameters. All real logic lives in `actions/<resource>/*.operation.ts`.
 
@@ -127,6 +129,7 @@ Every resource follows one rule: **output the service's answer unchanged**. The 
 | Index › Get | `GET {deliveryUrl}/query/v1/{manifest}/{index}/{id}` | One document per item | delivery/ADR-030 §3, ADR-022 |
 | Representation › Get | `GET {deliveryUrl}/v1/{manifest}{route}` (with `If-None-Match` when set), then the same with `X-Resume` per resume round | One route per item | *Representation envelope*, *Representation slot*; delivery/ADR-030 §3, ADR-033, ADR-050 |
 | Schema › Get | `GET {deliveryUrl}/schema/{kind}/v1/{manifest}[/{prefix}]` | Once per run, first item | delivery/ADR-030 §3, ADR-036 |
+| Trigger (inbound) | The Context Graph `POST`s the envelope to the node's webhook URL | One run per verified delivery, one item per entry | *Outbound envelope* (format, signature headers); cross/ADR-024, ADR-026 D5 (section 3.10) |
 
 ### 3.2 Entity: Push and Push Many
 
@@ -223,6 +226,17 @@ A snapshot source's complete export goes in as one artifact (cross/ADR-022 D1, i
 - **Get Lines** pages the status route with `?after={nextAfter}` and outputs each `lines[]` entry unchanged, stopping at `nextAfter: null` (*Return All*) or once *Limit* lines are out, reading no further page than it needs. The page size (1,000) is the platform's. An artifact not committed yet answers no lines, so it outputs nothing. *Artifact ID* must be a GUID, checked before sending: the routes take only a GUID, and anything else answers a bare `404` that names no reason.
 - **Errors.** As Upload: `ingestError` words a refusal by its problem type (`not-found`, `invalid-listing`), and a bare `401`/`403` by status (a bare `403` as a key without Write scope or an address Ingest doesn't admit, section 3.7). With *Continue On Fail* an item comes out as `{ source, id?, error, description? }` (`id` for Get and Get Lines).
 
+### 3.10 Trigger: the Outbound Envelope
+
+The Context Graph posts an **outbound envelope** to each webhook subscription when a commit changes entries (semantic-graph `contracts/spec/outbound-envelope.md`; cross/ADR-024 for the signature, cross/ADR-026 Decision 5 for `type`). The SDK dev-server posts the same envelope to its `webhookUrl`, signed with `webhookSecret` (or its dev key) and with an optional `webhookHeader`, and both run the same `contracts/vectors/outbound-envelope/` and `webhook-signature/` vectors; `tests/fixtures/` holds verbatim copies the unit tests run.
+
+- **Its own credential.** Each subscription has its own signing secret, so `EnterspeedContextGraphWebhookApi` holds it (and the optional receiver header), never the API credential. Nothing in it is sent. There is no request to test it with, so the trigger's `testedBy` method only checks the secret decodes to at least 24 bytes and a header name has a value.
+- **Verified over the raw bytes.** `webhookTrigger/signature.ts` checks Standard Webhooks with Node's `crypto` (allowed on n8n Cloud): HMAC-SHA256 keyed by the secret's base64 after `whsec_`, over `{webhook-id}.{webhook-timestamp}.` and n8n's `rawBody`, compared in constant time. A re-serialised body would not verify: the sender escapes non-ASCII and `&<>`. The Docker n8n run (2.27.4) confirmed `rawBody` holds the bytes as sent. During a rotation `webhook-signature` holds two signatures; either verifying passes. The timestamp tolerance is five minutes either way, the libraries' default the spec names.
+- **Rejected before a run.** A bad or missing signature, a timestamp outside the tolerance or a missing or wrong receiver header is answered `401` with `noWebhookResponse` (the Core trigger rejects the same way, with `403`); a verified body that isn't an envelope (no `tags` array) is answered `400`. Neither starts a run. A message names which check failed, never the secret.
+- **Answered at once.** `responseMode: 'onReceived'`, so a verified delivery is answered `200` before the workflow runs and a slow workflow never makes the sender retry.
+- **Output.** One item per `tags[]` entry, as it came, plus every envelope field but `tags` (`type`, `environmentId`, `deliveryId` and any added later); an envelope field wins over an entry's of the same name. *Event Types* (empty: all) filters by `type`; another type is acknowledged and starts nothing. Unknown types and properties pass through (cross/ADR-026 Decision 5; the spec's *Unknown properties must be tolerated on read*). Redeliveries share a `deliveryId`, which the README's Remove Duplicates recipe uses with each entry's `key`.
+- **Registration is manual.** `webhookMethods` report "already handled": registering on activation would put an operator token in n8n, which is a separate decision.
+
 ---
 
 ## 4. Schema-Driven Fields and Editor State
@@ -289,11 +303,13 @@ A saved workflow keeps sending what was saved. A renamed index or field fails at
 nodes/Enterspeed/                  Core action node, webhook trigger, transport
   actions/{entity,delivery,query,route}/   index.ts, shared.ts, *.operation.ts
   webhookTrigger/                  properties.ts, handler.ts
-nodes/EnterspeedContextGraph/      Context Graph action node, transport
+nodes/EnterspeedContextGraph/      Context Graph action node and trigger, transport
+  webhookTrigger/                  properties.ts, handler.ts, signature.ts (the trigger)
   actions/{entity,shape,index,representation,schema}/
   actions/schema/msd.ts            the MSD reader behind the schema-driven fields
 credentials/                       one file per credential type, plus the icon copy
 tests/                             one test file per node, msd tests, mocks, template checks
+  fixtures/                        semantic-graph's webhook-signature and outbound-envelope vectors, verbatim
 workflows/templates/*.json         example workflows
 workflows/fixtures/*.json          test workflows that need more than n8n (not imported)
 scripts/                           setup.mjs, execute-workflow.mjs (Docker end-to-end)
@@ -333,7 +349,7 @@ Every read and the schema, with the Delivery API Key, scoped to the credential's
 
 ### 6.4 n8n → the Package
 
-n8n loads the package from `dist/`. In the Docker setup (`docker-compose.yml` mounts `./dist` as a custom extension) the nodes register as `CUSTOM.enterspeed` and `CUSTOM.enterspeedContextGraph`; through `npm link` they register as `@enterspeed/n8n-nodes-enterspeed.enterspeed`. Workflow templates are authored against the Docker types, and every credential reference in them is a placeholder (`__ENTERSPEED_CREDENTIAL_ID__`, `__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__`) that `scripts/setup.mjs` replaces in memory.
+n8n loads the package from `dist/`. In the Docker setup (`docker-compose.yml` mounts `./dist` as a custom extension) the nodes register as `CUSTOM.enterspeed`, `CUSTOM.enterspeedTrigger`, `CUSTOM.enterspeedContextGraph` and `CUSTOM.enterspeedContextGraphTrigger`; through `npm link` they register as `@enterspeed/n8n-nodes-enterspeed.enterspeed`. Workflow templates are authored against the Docker types, and every credential reference in them is a placeholder (`__ENTERSPEED_CREDENTIAL_ID__`, `__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__`) that `scripts/setup.mjs` replaces in memory.
 
 ---
 
@@ -374,9 +390,9 @@ Each field, default, limit, retry and error follows a sentence in a semantic-gra
 
 Schema-driven fields read the schema while editing and save their choices in the workflow (section 4). Runs stay one request per item or batch, with no schema dependency, and an imported workflow behaves as it was built.
 
-### 8.7 No `usableAsTool` on the Trigger
+### 8.7 No `usableAsTool` on the Triggers
 
-`n8n-node lint`'s preset flags `EnterspeedTrigger` for not setting `usableAsTool: true`. The type has no `false`, and n8n's verification scanner forbids `true` on triggers (an agent can't invoke a trigger), so the property is omitted and the rule is suppressed for that one file in `eslint.config.mjs`.
+`n8n-node lint`'s preset flags `EnterspeedTrigger` and `EnterspeedContextGraphTrigger` for not setting `usableAsTool: true`. The type has no `false`, and n8n's verification scanner forbids `true` on triggers (an agent can't invoke a trigger), so the property is omitted and the rule is suppressed for those two files in `eslint.config.mjs`.
 
 ---
 

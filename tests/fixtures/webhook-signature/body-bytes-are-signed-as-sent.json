@@ -1,0 +1,14 @@
+{
+  "description": "A body with raw UTF-8 characters is signed over its UTF-8 bytes exactly: the same document as escaped-body-is-signed-as-sent.json, with a different signature, so a receiver must verify the raw body it received, never a re-serialised one. Published test values.",
+  "input": {
+    "secret": "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw",
+    "id": "0b6f2a52-3c1e-4d8a-9f4b-5e7d1c2a8b90",
+    "timestamp": 1793260801,
+    "bodyBase64": "eyJrZXkiOiJicmFuZD3DhmdpciAmIFPDuG4ifQ=="
+  },
+  "expected": {
+    "webhook-id": "0b6f2a52-3c1e-4d8a-9f4b-5e7d1c2a8b90",
+    "webhook-timestamp": "1793260801",
+    "webhook-signature": "v1,6um+M6gGfX3+zmnc5H5HghE7Nv4Oq05oCYVGC2n0fKs="
+  }
+}

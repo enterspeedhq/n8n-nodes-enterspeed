@@ -1,0 +1,27 @@
+{
+  "description": "environmentId and deliveryId are rendered in the lowercase hyphenated form, whatever case the producer holds them in.",
+  "input": {
+    "type": "model-changed",
+    "environmentId": "11111111-2222-3333-4444-555555555555",
+    "deliveryId": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+    "tags": [
+      {
+        "key": "m1:shape:price:productId:p-1",
+        "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "action": "upserted"
+      }
+    ]
+  },
+  "expected": {
+    "type": "model-changed",
+    "environmentId": "11111111-2222-3333-4444-555555555555",
+    "deliveryId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "tags": [
+      {
+        "key": "m1:shape:price:productId:p-1",
+        "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "action": "upserted"
+      }
+    ]
+  }
+}

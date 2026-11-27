@@ -1,0 +1,15 @@
+{
+  "description": "The spec's golden example during a rotation's overlap: the current secret's signature first, then the previous secret's (key bytes 0x20 to 0x3f), separated by one space. Published test values.",
+  "input": {
+    "secret": "whsec_AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+    "previousSecret": "whsec_ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8=",
+    "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "timestamp": 1793260800,
+    "body": "{\"type\":\"model-changed\",\"environmentId\":\"11111111-2222-3333-4444-555555555555\",\"deliveryId\":\"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\",\"tags\":[{\"key\":\"m1:shape:price:productId:p-1\",\"hash\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"action\":\"upserted\"},{\"key\":\"m1:index-set:products\",\"hash\":null,\"action\":\"upserted\"},{\"key\":\"m1:shape:price:productId:p-2\",\"hash\":null,\"action\":\"deleted\"}]}"
+  },
+  "expected": {
+    "webhook-id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "webhook-timestamp": "1793260800",
+    "webhook-signature": "v1,TYdsEr1hCGSn+rGiexWyhDwI7xoRwcHqboiXF0YQafM= v1,RvNdzpFvn4fr+yLreUbPGvkRP8T1AvXIEILqbHXCY20="
+  }
+}

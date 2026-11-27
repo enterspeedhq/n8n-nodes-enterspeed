@@ -19,6 +19,8 @@ repository. This is the canonical agent context; Claude Code reads it via the `@
 | `credentials/EnterspeedApi.credentials.ts` | **Enterspeed Core API** — two keys, three overridable hosts; shared by both Core nodes. |
 | `nodes/EnterspeedContextGraph/EnterspeedContextGraph.node.ts` | **Enterspeed Context Graph** action node — Artifact › Upload / Get / Get Many / Get Lines, Entity › Push / Push Many, Shape › Get / Get Many, Index › Get / Query, Representation › Get, Schema › Get. Several read fields are filled from the manifest's schema while editing (`actions/schema/msd.ts`). Unreleased (epic sc-13858). |
 | `credentials/EnterspeedContextGraphApi.credentials.ts` | **Enterspeed Context Graph API** — ingest URL + Ingest API Key, delivery URL + Delivery API Key, manifest version. Never shared with Core. |
+| `nodes/EnterspeedContextGraph/EnterspeedContextGraphTrigger.node.ts` | **Enterspeed Context Graph Trigger** — starts a workflow on the Context Graph's signed outbound envelope, one item per changed entry. Unreleased (epic sc-13858). |
+| `credentials/EnterspeedContextGraphWebhookApi.credentials.ts` | **Enterspeed Context Graph Webhook API** — the trigger's signing secret and optional receiver header, one per webhook subscription. |
 | `workflows/templates/` | Example workflows, including the Tonevik demo (`Context-Graph-Tonevik-Demo.json`) |
 | `workflows/fixtures/` | Test workflows that need something outside n8n, such as a dev-server option; never imported by `setup.mjs` |
 | `docs/context-graph-demo/GUIDE.md` | Internal notes on how the Tonevik demo is built; what a user needs to run it is in the template's sticky notes |
@@ -114,7 +116,7 @@ from deployed Delivery in places (no index point read, no cursor paging on publi
   around a type error.
 - **Every node parameter has a `description`**; lint fails otherwise.
 - **Fix lint and type errors; don't suppress them.** The one exception is `usableAsTool` on the
-  trigger (ARCHITECTURE.md §8.7), switched off in `eslint.config.mjs`. n8n's scanner ignores
+  triggers (ARCHITECTURE.md §8.7), switched off in `eslint.config.mjs`. n8n's scanner ignores
   inline `eslint-disable` comments, so one in `nodes/` or `credentials/` fails `npm run scan`.
 - **Never hand-edit `dist/`.** It is build output and gitignored.
 - **Branches:** `feature|fix|chore/sc-XXXX/description`, from `main` or, for a stacked PR, from the
@@ -146,13 +148,16 @@ A new node or credential file also needs its compiled path in `package.json`'s `
 that needs anything outside n8n to run (a dev-server option, another system) is a test workflow, not a
 template: it goes in `workflows/fixtures/`, which `setup.mjs` doesn't import, under the same rules.
 
-- IMPORTANT: **node types are `CUSTOM.enterspeed` / `CUSTOM.enterspeedContextGraph`**, the types n8n
+- IMPORTANT: **node types are `CUSTOM.enterspeed` / `CUSTOM.enterspeedContextGraph`** (and the
+  triggers' `CUSTOM.enterspeedTrigger` / `CUSTOM.enterspeedContextGraphTrigger`), the types n8n
   assigns when loading from Docker's custom extensions. A template exported from an `npm link`
   instance (`@enterspeed/n8n-nodes-enterspeed.enterspeed`) shows "unknown node" for everyone else.
   Author and export templates from the Docker setup.
 - IMPORTANT: **never commit a real credential ID.** Use the placeholders
   `__ENTERSPEED_CREDENTIAL_ID__` (Core) and `__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__` (Context
-  Graph); `setup.mjs` substitutes them in memory, never on disk.
+  Graph); `setup.mjs` substitutes them in memory, never on disk. There is no placeholder for the
+  Context Graph Webhook API credential yet: each one holds a subscription's own secret, so no
+  template ships one.
 - **To add one:** build and test it in Docker n8n, export it, strip `id`, `versionId`, `shared`,
   `creatorId`, `projectId`, `workflowId` and any real credential ID, put in the placeholder, then
   commit it.
@@ -170,7 +175,8 @@ Things that break silently, at runtime or in someone else's workflow, when chang
 - **Icons:** `icon: 'file:…'` resolves relative to the compiled file that declares it, so each node
   folder and `credentials/` keep their own copy of the SVG. Keep the copies identical.
 - **Internal names are saved in users' workflows.** `enterspeed`, `enterspeedTrigger`,
-  `enterspeedApi`, `enterspeedContextGraph`, `enterspeedContextGraphApi`, every parameter `name` and
+  `enterspeedApi`, `enterspeedContextGraph`, `enterspeedContextGraphApi`,
+  `enterspeedContextGraphTrigger`, `enterspeedContextGraphWebhookApi`, every parameter `name` and
   every option `value`. Change a display name freely; changing one of these breaks saved workflows.
 - **Saved schema-driven values have a format.** Filter and sort fields are saved as
   `{valueClass}:{field}` and representation context fields as `path:…`, `query:…` or `header:…`
