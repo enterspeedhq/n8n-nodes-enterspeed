@@ -415,6 +415,25 @@ npm test        # vitest
 
 For local end-to-end runs in Docker n8n, including the Context Graph round trip CI runs against the dev-server laid out as a deployed Context Graph, see [CONTRIBUTING.md](CONTRIBUTING.md). How the package is built is in [ARCHITECTURE.md](ARCHITECTURE.md); conventions and rules for contributors and coding agents are in [AGENTS.md](AGENTS.md).
 
+## Releasing
+
+npm gets a new version only from `.github/workflows/publish.yml`, run by a version tag (the bare version, e.g. `0.2.0`; prereleases aren't supported). The workflow signs in to npm with [trusted publishing](https://docs.npmjs.com/trusted-publishers) (GitHub's OIDC token, no npm token stored anywhere) and publishes with a provenance statement, which n8n requires of a verified community node.
+
+```bash
+npm run build && npm run scan   # n8n's community package scanner on what npm would publish
+npm run release                 # on main: bump, changelog, commit, tag (e.g. 0.2.0), push
+```
+
+The pushed tag starts the workflow. It stops unless the tag equals `package.json`'s version and points at a commit on `main`, then lints, tests, builds and packs the package in a job without publish rights, uploads the tarball and only then runs the scanner, so the scanner can't change what ships. A second job, the only one allowed to request GitHub's OIDC token, installs nothing, checks the tarball's SHA-256 against the one packed and publishes it with `npm publish --provenance`. CI runs the same scan on every pull request into `main`. A local scan skips the provenance and attested-source checks; n8n runs those against the published version, which you can do too with `npx @n8n/scan-community-package @enterspeed/n8n-nodes-enterspeed@<version>`.
+
+One-time setup on npmjs.com, by a package owner:
+
+1. Open [`@enterspeed/n8n-nodes-enterspeed`](https://www.npmjs.com/package/@enterspeed/n8n-nodes-enterspeed) › **Settings** › **Trusted Publisher** and pick **GitHub Actions**: organisation `enterspeedhq`, repository `n8n-nodes-enterspeed`, workflow filename `publish.yml`, environment empty.
+2. Under **Publishing access**, choose **Require two-factor authentication and disallow tokens**, so nothing but the workflow can publish.
+3. Revoke any npm automation or granular token that could publish the package, and make sure the repository has no `NPM_TOKEN` secret.
+
+npm trusts the repository and workflow file, not the branch, and the `main` check runs inside the workflow file the tag points at. To stop a tag on an unreviewed branch from publishing, add a tag ruleset in the repository's settings (**Settings** › **Rules** › **Rulesets** › **New ruleset** › **New tag ruleset**: target tags matching `*.*.*`, turn on **Restrict creations**, and add the people who release as bypass actors).
+
 ## Licence
 
 MIT © Enterspeed A/S
