@@ -2,8 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 
-// The example templates, and the test workflows that need more than n8n (workflows/fixtures).
-const WORKFLOW_DIRS = [join(__dirname, '../workflows/templates'), join(__dirname, '../workflows/fixtures')];
+// The example templates, the test workflows that need more than n8n (workflows/fixtures),
+// and the Context Graph end-to-end checks' own workflows, which setup.mjs imports the same way.
+const WORKFLOW_DIRS = [
+	join(__dirname, '../workflows/templates'),
+	join(__dirname, '../workflows/fixtures'),
+	join(__dirname, '../e2e/workflows'),
+];
 // Templates reference credentials via placeholders like
 // __ENTERSPEED_CREDENTIAL_ID__ or __CONTENTFUL_CREDENTIAL_ID__. Discovering
 // them by pattern (rather than an enumerated list) means a template can

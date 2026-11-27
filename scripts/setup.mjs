@@ -19,6 +19,9 @@
 //   CONTEXT_GRAPH_INGEST_URL        (default: http://host.docker.internal:5200, the local dev-server)
 //   CONTEXT_GRAPH_DELIVERY_URL      (default: http://host.docker.internal:5200)
 //   CONTEXT_GRAPH_MANIFEST_VERSION  (default: 1.0.0)
+//   N8N_WORKFLOW_DIRS               (default: workflows/templates) comma-separated
+//                                   folders to import, relative to the repo root;
+//                                   the e2e job adds e2e/workflows
 
 import { execSync } from 'child_process';
 import { readFileSync, readdirSync, existsSync } from 'fs';
@@ -136,11 +139,18 @@ const REQUIRED_ENV_VARS_BY_PLACEHOLDER = {
 const PLACEHOLDER_PATTERN = /__[A-Z0-9_]+_CREDENTIAL_ID__/g;
 
 // Import each template with the placeholder substituted in memory.
-const templatesDir = join(ROOT, 'workflows', 'templates');
-const templates = readdirSync(templatesDir).filter((f) => f.endsWith('.json'));
+const workflowDirs = (process.env.N8N_WORKFLOW_DIRS || 'workflows/templates')
+  .split(',')
+  .map((dir) => dir.trim())
+  .filter(Boolean);
+const templates = workflowDirs.flatMap((dir) =>
+  readdirSync(join(ROOT, dir))
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => join(dir, f)),
+);
 
 for (const file of templates) {
-  let templateContent = readFileSync(join(templatesDir, file), 'utf-8')
+  let templateContent = readFileSync(join(ROOT, file), 'utf-8')
     .replaceAll('__ENTERSPEED_CREDENTIAL_ID__', credentialId)
     .replaceAll('__ENTERSPEED_CONTEXT_GRAPH_CREDENTIAL_ID__', contextGraphCredentialId);
 

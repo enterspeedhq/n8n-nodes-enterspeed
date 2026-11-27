@@ -1,6 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createHash } from 'crypto';
-import type { ICredentialDataDecryptedObject, IDataObject, IHttpRequestOptions, INode, INodeExecutionData, JsonObject } from 'n8n-workflow';
+import type {
+	ICredentialDataDecryptedObject,
+	IDataObject,
+	IExecuteFunctions,
+	IHttpRequestOptions,
+	INode,
+	INodeExecutionData,
+	JsonObject,
+} from 'n8n-workflow';
 import { NodeApiError } from 'n8n-workflow';
 import { EnterspeedContextGraph } from '../nodes/EnterspeedContextGraph/EnterspeedContextGraph.node';
 import {
@@ -11,7 +19,9 @@ import { MAX_BODY_BYTES } from '../nodes/EnterspeedContextGraph/actions/shape/ge
 import {
 	DELIVERY_BUSY_MESSAGE,
 	MAX_RETRY_AFTER_MS,
+	contextGraphApiRequest,
 	deliveryRetryAfterMs,
+	httpFailure,
 	retryDelayMs,
 } from '../nodes/EnterspeedContextGraph/transport';
 import { EnterspeedContextGraphApi } from '../credentials/EnterspeedContextGraphApi.credentials';
@@ -79,8 +89,8 @@ const perRequest = (httpRequest: ReturnType<typeof vi.fn>) =>
 	httpRequest.mock.calls.map((c) => ndjsonLines(c[0] as IDataObject).map((l) => l.$id));
 
 /**
- * A failure as n8n hands it to the node: a NodeApiError, with the HTTP
- * error (status and headers) as its `cause`.
+ * A failed status as contextGraphApiRequest throws it: a NodeApiError, with
+ * the response (status and headers) as its `cause`.
  */
 const httpNode = { id: '1', name: 'HTTP', type: 'n8n-nodes-base.httpRequest', typeVersion: 1, position: [0, 0], parameters: {} } as INode;
 const n8nFailure = (status: number, headers: IDataObject = {}) =>
@@ -2085,10 +2095,12 @@ describe('EnterspeedContextGraph — Representation › Get, revalidating with a
 		expect(node.description.properties.find((p) => p.name === 'includeResponseHeaders')?.default).toBe(false);
 		const httpRequest = vi.fn(async () => page);
 		const out = await read({}, httpRequest);
+		// Every request is read in full (contextGraphApiRequest); the output is the body.
 		expect(sent(httpRequest)).toEqual({
 			method: 'GET',
 			url: 'http://localhost:5200/v1/1.0.0/products/p1',
 			json: true,
+			returnFullResponse: true,
 			headers: { 'X-Api-Key': 'cg-key' },
 		});
 		expect(out).toEqual([{ json: page, pairedItem: { item: 0 } }]);
@@ -2098,8 +2110,6 @@ describe('EnterspeedContextGraph — Representation › Get, revalidating with a
 		const httpRequest = vi.fn(async () => tagged);
 		const out = await read({ ifNoneMatch: `${etag}, "other"` }, httpRequest);
 		expect(sentHeader(httpRequest, 'If-None-Match')).toBe(`${etag}, "other"`);
-		expect(sent(httpRequest).returnFullResponse).toBe(true);
-		expect(sent(httpRequest).ignoreHttpStatusErrors).toBeUndefined();
 		// A changed representation: without headers, the body as before.
 		expect(out).toEqual([{ json: page, pairedItem: { item: 0 } }]);
 	});
@@ -2108,7 +2118,6 @@ describe('EnterspeedContextGraph — Representation › Get, revalidating with a
 		const httpRequest = vi.fn(async () => page);
 		const out = await read({ ifNoneMatch }, httpRequest);
 		expect(sentHeader(httpRequest, 'If-None-Match')).toBeUndefined();
-		expect(sent(httpRequest).returnFullResponse).toBeUndefined();
 		expect(out[0].json).toEqual(page);
 	});
 
@@ -2262,6 +2271,56 @@ describe('EnterspeedContextGraph — Representation › Get, revalidating with a
  * waits that long plus a jitter and sends the same request once more, as
  * Delivery's own clients do.
  */
+/**
+ * n8n's own request helper, when it fails a request, throws a NodeApiError
+ * that keeps only the status code: its `cause` and `errorResponse` are
+ * undefined (n8n 2.27), so neither the body nor the headers reach the node.
+ * contextGraphApiRequest therefore never lets it fail a request: it asks for
+ * the full response with `ignoreHttpStatusErrors` and fails a status outside
+ * 2xx itself. These tests give it a helper that answers as n8n then does.
+ */
+describe('EnterspeedContextGraph — contextGraphApiRequest', () => {
+	const call = (answer: unknown, options: IHttpRequestOptions = { method: 'GET', url: 'http://localhost:5200/x', json: true }) => {
+		const helper = vi.fn(async (...args: [string, IHttpRequestOptions]) => {
+			void args;
+			if (answer instanceof Error) throw answer;
+			return answer;
+		});
+		const ctx = {
+			getNode: () => ({ name: 'Enterspeed Context Graph' }),
+			helpers: { httpRequestWithAuthentication: helper },
+		} as unknown as IExecuteFunctions;
+		return { result: contextGraphApiRequest.call(ctx, options), helper };
+	};
+
+	it('asks n8n for the full response and never to fail the request itself', async () => {
+		const { result, helper } = call({ statusCode: 200, headers: {}, body: { ok: true } });
+		await result;
+		expect(helper.mock.calls[0][0]).toBe('enterspeedContextGraphApi');
+		expect(helper.mock.calls[0][1]).toMatchObject({ ignoreHttpStatusErrors: true, returnFullResponse: true });
+	});
+
+	it('answers a 2xx with the body, or with the full response when that was asked for', async () => {
+		const full = { statusCode: 207, headers: { etag: 'W/"1"' }, body: { a: 1 } };
+		expect(await call(full).result).toEqual({ a: 1 });
+		expect(await call(full, { method: 'GET', url: 'http://localhost:5200/x', returnFullResponse: true }).result).toBe(full);
+	});
+
+	it.each([304, 404, 503])('fails a %i as a NodeApiError that keeps its status, body and headers', async (status) => {
+		const headers = { 'retry-after': '1', etag: 'W/"1"' };
+		const body = { title: 'Service Unavailable', detail: 'Shed.' };
+		const error = await call({ statusCode: status, headers, body }).result.catch((e: unknown) => e);
+		expect(error).toBeInstanceOf(NodeApiError);
+		expect((error as NodeApiError).httpCode).toBe(String(status));
+		expect(httpFailure(error)).toEqual({ status, data: body, headers });
+	});
+
+	it('passes on a failure with no answer at all as n8n threw it', async () => {
+		const refused = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
+		await expect(call(refused).result).rejects.toBe(refused);
+	});
+});
+
 describe('EnterspeedContextGraph — a busy Delivery (503, delivery/ADR-025 D3)', () => {
 	const busy = (headers: IDataObject = { 'Retry-After': '1', 'X-Delivery-Retry-After-Ms': '1000' }, data?: unknown) =>
 		Object.assign(new NodeApiError(httpNode, { httpCode: '503' }), { cause: { response: { status: 503, headers, data } } });

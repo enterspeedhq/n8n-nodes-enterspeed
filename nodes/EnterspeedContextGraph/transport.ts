@@ -1,15 +1,41 @@
-import type { IExecuteFunctions, IHttpRequestOptions, ILoadOptionsFunctions, JsonObject } from 'n8n-workflow';
+import type {
+	IExecuteFunctions,
+	IHttpRequestOptions,
+	ILoadOptionsFunctions,
+	IN8nHttpFullResponse,
+	JsonObject,
+} from 'n8n-workflow';
 import { NodeApiError, sleep } from 'n8n-workflow';
 
 /**
  * Thin wrapper shared by every operation. Authenticates with the
  * `enterspeedContextGraphApi` credential, which adds the X-Api-Key header.
+ *
+ * Every request is sent with `ignoreHttpStatusErrors` and read in full: when
+ * n8n's request helper fails a request itself, the NodeApiError it throws
+ * keeps only the status code, not the body or the headers (seen in n8n
+ * 2.27), and the operations need both: a problem's `detail`, a 503's
+ * Retry-After, a 304's ETag. A status outside 2xx is thrown here instead, as
+ * a NodeApiError whose `cause` holds the response, so httpFailure reads it.
+ * The caller gets the body, or the full response if it asked for one.
  */
 export async function contextGraphApiRequest(
 	this: IExecuteFunctions | ILoadOptionsFunctions,
 	options: IHttpRequestOptions,
 ): Promise<unknown> {
-	return this.helpers.httpRequestWithAuthentication.call(this, 'enterspeedContextGraphApi', options);
+	const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'enterspeedContextGraphApi', {
+		...options,
+		ignoreHttpStatusErrors: true,
+		returnFullResponse: true,
+	})) as IN8nHttpFullResponse;
+	if (response.statusCode >= 200 && response.statusCode < 300) {
+		return options.returnFullResponse ? response : response.body;
+	}
+	const httpCode = String(response.statusCode);
+	const error = new NodeApiError(this.getNode(), { message: `Request failed with status code ${httpCode}`, httpCode }, { httpCode });
+	throw Object.assign(error, {
+		cause: { httpCode, response: { status: response.statusCode, data: response.body, headers: response.headers } },
+	});
 }
 
 interface HttpError {
@@ -20,9 +46,10 @@ interface HttpError {
 }
 
 /**
- * The status, body and headers of a failed request. n8n hands the failure
- * over wrapped in a NodeApiError, with the HTTP error as its `cause`, so both
- * are looked at. No status means there was no answer at all.
+ * The status, body and headers of a failed request: the NodeApiError
+ * contextGraphApiRequest throws holds them in its `cause`; a plain HTTP error
+ * holds them itself, so both are looked at. No status means there was no
+ * answer at all.
  */
 export function httpFailure(error: unknown): {
 	status?: number;
@@ -99,8 +126,8 @@ export async function deliveryReadRequest(this: IExecuteFunctions, options: IHtt
 	} catch (error) {
 		const { status, headers } = httpFailure(error);
 		const waitMs = status === 503 ? deliveryRetryAfterMs(headers) : undefined;
-		// n8n hands the failure over as a NodeApiError already, which this
-		// passes on unchanged; httpFailure reads either form.
+		// contextGraphApiRequest throws a NodeApiError already, which this
+		// passes on unchanged; httpFailure reads it or a plain HTTP error.
 		if (waitMs === undefined) throw new NodeApiError(this.getNode(), error as JsonObject);
 		await sleep(retryDelayMs(waitMs));
 		return await contextGraphApiRequest.call(this, options);

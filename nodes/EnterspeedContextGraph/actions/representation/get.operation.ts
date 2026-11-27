@@ -412,8 +412,8 @@ async function readRepresentation(
 	const failed = (error: unknown) =>
 		deliveryError.call(this, error, creds, { itemIndex, notFound: `No representation for route "${route}".` });
 
-	// The status and headers are read only when asked for, so a plain read
-	// is sent as it always was.
+	// The status and headers are kept only when asked for, so a plain read
+	// outputs what it always did.
 	const fullResponse = revalidate.includeHeaders || revalidate.ifNoneMatch !== undefined;
 	let status: number | undefined;
 	let responseHeaders: Record<string, unknown> | undefined;
@@ -453,7 +453,7 @@ async function readRepresentation(
 	try {
 		answer = await send(undefined, revalidate.ifNoneMatch);
 	} catch (error) {
-		// n8n's request helper fails a 304 like any status outside 2xx; it is
+		// contextGraphApiRequest fails a 304 like any status outside 2xx; it is
 		// read from the failure, so every other status keeps its wording and a
 		// 503 its retry. It counts only when If-None-Match was sent.
 		const failure = httpFailure(error);
