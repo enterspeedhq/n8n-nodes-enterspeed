@@ -87,9 +87,10 @@ request helper (`asN8nFullResponse`), so anything that depends on n8n itself (it
 pairing, expression evaluation) is proven in Docker n8n.
 
 **The Context Graph end to end** (`e2e/`, Node 26, CI's e2e job): `npm install` in `e2e/`, run
-`setup.mjs` with `N8N_WORKFLOW_DIRS=workflows/templates,e2e/workflows`, then
-`node e2e/context-graph.mjs`. It runs the round-trip template and the delivery checks against an
-empty dev-server and checks each node's output. Add a check there when a behaviour depends on n8n
+`setup.mjs` with `N8N_WORKFLOW_DIRS=workflows/templates,e2e/workflows` and the credential env
+CONTRIBUTING.md gives (Ingest on `:5201`, a key per service), then `node e2e/context-graph.mjs`. It
+runs the round-trip template and the delivery checks against an empty dev-server behind Ingest,
+Delivery and storage hosts laid out as a deployed Context Graph's, and checks each node's output. Add a check there when a behaviour depends on n8n
 itself (its request helper, errors, expressions).
 
 **The Context Graph locally** runs against the SDK dev-server (semantic-graph-sdk,
