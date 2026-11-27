@@ -36,6 +36,57 @@ async function get(path, headers = {}) {
   return res;
 }
 
+// n8n returns an execution's run data serialised with `flatted`: a JSON array
+// whose first entry is the root and in which every string inside an object or
+// array is the index of another entry. Rebuild the object graph from it.
+function unflatten(text) {
+  const entries = JSON.parse(text);
+  const revived = new Map();
+  const revive = (index) => {
+    if (revived.has(index)) return revived.get(index);
+    const value = entries[index];
+    if (value === null || typeof value !== 'object') {
+      revived.set(index, value);
+      return value;
+    }
+    const out = Array.isArray(value) ? [] : {};
+    revived.set(index, out);
+    for (const [key, ref] of Object.entries(value)) {
+      out[key] = typeof ref === 'string' ? revive(Number(ref)) : ref;
+    }
+    return out;
+  };
+  return revive(0);
+}
+
+// Prints the node that failed and its error, so a red CI run says why.
+function reportFailure(execution) {
+  let runData;
+  try {
+    const data = typeof execution.data === 'string' ? unflatten(execution.data) : execution.data;
+    runData = data?.resultData;
+  } catch (err) {
+    console.error(`Could not read the execution's run data: ${err.message}`);
+    return;
+  }
+  if (!runData) return;
+  // A Code node's thrown message reaches here split at a colon into `message`
+  // and `description`; the first line of its stack still holds it whole.
+  const describe = (error) => {
+    const thrown = error.stack?.split('\n')[0].replace(/^\w*Error: /, '');
+    const parts = thrown ? [thrown] : [error.message, error.description];
+    if (error.httpCode) parts.push(`HTTP ${error.httpCode}`);
+    return parts.filter(Boolean).join(' | ');
+  };
+  if (runData.lastNodeExecuted) console.error(`Last node executed: ${runData.lastNodeExecuted}`);
+  for (const [node, runs] of Object.entries(runData.runData ?? {})) {
+    for (const run of runs ?? []) {
+      if (run?.error) console.error(`Node "${node}" failed: ${describe(run.error)}`);
+    }
+  }
+  if (runData.error) console.error(`Execution error: ${describe(runData.error)}`);
+}
+
 // Set up owner account on a fresh instance (no-op if already exists).
 console.log('Setting up n8n owner account...');
 await post('/rest/owner/setup', { email: EMAIL, password: PASSWORD, firstName: 'CI', lastName: 'Runner' });
@@ -81,8 +132,10 @@ if (!execId) {
 }
 console.log(`Execution ID: ${execId}`);
 
-// Poll until done.
-for (let i = 0; i < 30; i++) {
+// Poll until done. A workflow can poll Delivery itself (bulk-save-and-delete
+// waits up to 90 s for entities to appear and again for them to disappear), so
+// allow up to 5 minutes.
+for (let i = 0; i < 100; i++) {
   await new Promise((r) => setTimeout(r, 3000));
   const statusRes = await get(`/rest/executions/${execId}`, authHeader);
   const statusBody = await statusRes.json();
@@ -91,6 +144,7 @@ for (let i = 0; i < 30; i++) {
   if (status === 'success') process.exit(0);
   if (status === 'error' || status === 'crashed') {
     console.error('Workflow execution failed');
+    reportFailure(statusBody.data ?? statusBody);
     process.exit(1);
   }
 }

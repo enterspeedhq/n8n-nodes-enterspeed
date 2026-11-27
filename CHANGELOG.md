@@ -32,6 +32,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Added
 
 - Example workflow: Contentful → Enterspeed ingestion (`workflows/templates/ingest-contentful-into-enterspeed.json`), syncing entry and asset publish/unpublish/delete events across locales.
+- Example workflow: Bulk Save and Delete (`workflows/templates/bulk-save-and-delete.json`), exercising `Save Entities (Bulk)` and `Delete Entities (Bulk)` end-to-end and verifying via the Delivery API that entities actually appear and disappear, not just that the calls returned 200, and that a Delete Bulk over `MAX_BULK_ENTITIES` deletes nothing (refused with 422 where the tenant has a bulk limit). A red run still deletes its test products before failing. Run in CI (`e2e` job) alongside `fetch-transform-reingest.json`.
 - Automated npm publishing via GitHub Actions (`.github/workflows/publish.yml`) with npm provenance, ahead of n8n's 1 May 2026 requirement for verified community nodes.
 - **Enterspeed** node is now usable as an AI agent tool (`usableAsTool: true`), so agents can invoke Ingest/Delivery/Query/Route operations directly.
 
