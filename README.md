@@ -117,7 +117,7 @@ Testing the credential reads `GET {Delivery URL}/schema/msd/v1/{Manifest Version
 | [Representation › Get](#representation--get) | `GET {Delivery URL}/v1/{Manifest Version}{Route}` | One route per item |
 | [Schema › Get](#schema--get) | `GET {Delivery URL}/schema/{Kind}/v1/{Manifest Version}[/{Prefix}]` | Once per run |
 
-Every operation outputs the Context Graph's answer exactly as it was returned; the node never reshapes records on the way in or answers on the way out. With *Continue On Fail*, a failed item comes out with `error` and, when there is one, `description`, next to what identifies it (its key, route, query or record).
+Every operation outputs the Context Graph's answer exactly as it was returned; the node never reshapes records on the way in or answers on the way out. The one exception is opt-in: Representation › Get's *Include Response Headers* wraps the answer as `{ status, headers, body }`, and a `304` to its *If-None-Match* comes out as a stand-in, since it has no body. With *Continue On Fail*, a failed item comes out with `error` and, when there is one, `description`, next to what identifies it (its key, route, query or record).
 
 ### Artifact › Upload
 
@@ -293,6 +293,18 @@ With **Schema**, *Context* lists each route placeholder first (`productId (path)
 - **What a round resolves:** a round also sends no policy header, so the Context Graph tries to resolve every open slot, query slots included. A slot it still can't finish stays open, and at *Max Rounds* the item is output as it stands.
 - **The merge:** a resume round answers only the slots that were open; each replaces its slot and its `$metadata` entry. `$metadata.$changedAt` is the newest across rounds.
 - **A refused checkpoint** (`401` *invalid_checkpoint*, `410` *checkpoint_expired*, or `409` for another manifest or route) is answered once by reading the route again without it; that fresh answer replaces the rounds so far. Refused a second time, the item fails. A `404` on a resume round fails the item, as on the first read.
+
+**Skipping unchanged representations.** A complete answer (status `200`) carries a weak `ETag`. Keep it, send it back on the next run, and an unchanged representation answers `304 Not Modified` with no body, so a scheduled workflow processes only what changed. Both fields are off by default, and then the output is as described above.
+
+| Field | What it does |
+|---|---|
+| *If-None-Match* | An expression for the ETag kept from the last run, e.g. `{{ $json.etag }}`, sent as the `If-None-Match` header (a comma-separated list or `*` also works). Empty sends nothing. |
+| *Include Response Headers* | Outputs each item as `{ status, headers, body }`, where `headers` holds whichever of `ETag`, `Cache-Control`, `Cache-Tag` and `Vary` the Context Graph sent: the shape the Context Graph MCP server's `includeHeaders` returns. |
+
+- **Not modified:** a `304` succeeds. With *Include Response Headers* it comes out as `{ status: 304, headers, body: null }`, otherwise as `{ notModified: true }`. Drop those items with an **IF** node.
+- **No ETag, no `304`:** a partial answer, a resume round and an error carry no `ETag`, and the node doesn't add one. With *Continue On Fail* a failed item keeps its `{ route, error }` shape, without `status` or `headers`. With *Resume Partial Answers*, *If-None-Match* goes only on the first read of the route, and `status` and `headers` are those of the last response read.
+- **Keeping the ETag between runs** is the workflow's job: store `headers.ETag` per route in an n8n **Data Table**, and read it back before Representation › Get. Workflow static data isn't saved by manual runs.
+- **Store the tag from the server you read.** Each deployed Context Graph keys its tags, and the dev-server's never match a deployed one's.
 
 ### Schema › Get
 

@@ -2044,6 +2044,219 @@ describe('EnterspeedContextGraph — Representation › Get, resuming a partial 
 });
 
 /**
+ * If-None-Match and Include Response Headers (sc-13417 in delivery's
+ * RepresentationEndpoints): a complete 200 to a fresh GET carries a weak
+ * ETag, and a matching If-None-Match is answered 304 with the same headers
+ * and no body. n8n's request helper fails a 304 like any status outside 2xx,
+ * with the response as the failure's cause.
+ */
+describe('EnterspeedContextGraph — Representation › Get, revalidating with an ETag', () => {
+	const etag = 'W/"5f0c3e"';
+	const page = { product: { sku: 'p1' }, $metadata: { product: { $state: 'fresh' } } };
+	const full = (body: unknown, statusCode = 200, headers: IDataObject = {}) => ({ body, statusCode, statusMessage: 'OK', headers });
+	const tagged = full(page, 200, {
+		etag,
+		'cache-control': 'public, max-age=0, must-revalidate',
+		vary: 'Accept-Encoding',
+		'cache-tag': 'graph:p1',
+		'x-delivery-resolved': '1',
+		'content-type': 'application/json; charset=utf-8',
+	});
+	const notModified = (headers: IDataObject = { etag, 'cache-control': 'public, max-age=0, must-revalidate' }) =>
+		Object.assign(new NodeApiError(httpNode, { httpCode: '304' }), { cause: { response: { status: 304, headers, data: '' } } });
+
+	async function read(params: Record<string, unknown>, httpRequest: ReturnType<typeof vi.fn>, continueOnFail = false) {
+		sleep.mockClear();
+		const ctx = createContextGraphExecuteMock({
+			params: { resource: 'representation', operation: 'get', route: '/products/p1', ...params },
+			items: [{}],
+			httpRequest,
+			continueOnFail,
+		});
+		const [out] = (await node.execute.call(ctx)) as INodeExecutionData[][];
+		return out;
+	}
+	const sent = (httpRequest: ReturnType<typeof vi.fn>, call = 0) => httpRequest.mock.calls[call][0] as IDataObject;
+	const sentHeader = (httpRequest: ReturnType<typeof vi.fn>, name: string, call = 0) =>
+		(sent(httpRequest, call).headers as IDataObject | undefined)?.[name];
+
+	it('defaults both fields to off, and sends and outputs exactly what it did before', async () => {
+		expect(node.description.properties.find((p) => p.name === 'ifNoneMatch')?.default).toBe('');
+		expect(node.description.properties.find((p) => p.name === 'includeResponseHeaders')?.default).toBe(false);
+		const httpRequest = vi.fn(async () => page);
+		const out = await read({}, httpRequest);
+		expect(sent(httpRequest)).toEqual({
+			method: 'GET',
+			url: 'http://localhost:5200/v1/1.0.0/products/p1',
+			json: true,
+			headers: { 'X-Api-Key': 'cg-key' },
+		});
+		expect(out).toEqual([{ json: page, pairedItem: { item: 0 } }]);
+	});
+
+	it('sends If-None-Match as given and reads the full response', async () => {
+		const httpRequest = vi.fn(async () => tagged);
+		const out = await read({ ifNoneMatch: `${etag}, "other"` }, httpRequest);
+		expect(sentHeader(httpRequest, 'If-None-Match')).toBe(`${etag}, "other"`);
+		expect(sent(httpRequest).returnFullResponse).toBe(true);
+		expect(sent(httpRequest).ignoreHttpStatusErrors).toBeUndefined();
+		// A changed representation: without headers, the body as before.
+		expect(out).toEqual([{ json: page, pairedItem: { item: 0 } }]);
+	});
+
+	it.each(['', '   '])('sends no If-None-Match when it is %j', async (ifNoneMatch) => {
+		const httpRequest = vi.fn(async () => page);
+		const out = await read({ ifNoneMatch }, httpRequest);
+		expect(sentHeader(httpRequest, 'If-None-Match')).toBeUndefined();
+		expect(sent(httpRequest).returnFullResponse).toBeUndefined();
+		expect(out[0].json).toEqual(page);
+	});
+
+	it('with Include Response Headers, outputs { status, headers, body } with the ETag and the cache headers only', async () => {
+		const httpRequest = vi.fn(async () => tagged);
+		const out = await read({ includeResponseHeaders: true }, httpRequest);
+		expect(sentHeader(httpRequest, 'If-None-Match')).toBeUndefined();
+		expect(out).toEqual([
+			{
+				json: {
+					status: 200,
+					headers: { 'Cache-Tag': 'graph:p1', ETag: etag, 'Cache-Control': 'public, max-age=0, must-revalidate', Vary: 'Accept-Encoding' },
+					body: page,
+				},
+				pairedItem: { item: 0 },
+			},
+		]);
+	});
+
+	it('a 304 with headers comes out as { status: 304, headers, body: null }', async () => {
+		const httpRequest = vi.fn().mockRejectedValue(notModified());
+		const out = await read({ ifNoneMatch: etag, includeResponseHeaders: true }, httpRequest);
+		expect(httpRequest).toHaveBeenCalledTimes(1);
+		expect(out).toEqual([
+			{
+				json: { status: 304, headers: { ETag: etag, 'Cache-Control': 'public, max-age=0, must-revalidate' }, body: null },
+				pairedItem: { item: 0 },
+			},
+		]);
+	});
+
+	it('a 304 without headers comes out as { notModified: true }', async () => {
+		const out = await read({ ifNoneMatch: etag }, vi.fn().mockRejectedValue(notModified()));
+		expect(out).toEqual([{ json: { notModified: true }, pairedItem: { item: 0 } }]);
+	});
+
+	it('a 304 that answers a retried 503 still counts as not modified', async () => {
+		const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+		try {
+			const busy = Object.assign(new NodeApiError(httpNode, { httpCode: '503' }), {
+				cause: { response: { status: 503, headers: { 'retry-after': '1' } } },
+			});
+			const httpRequest = vi.fn().mockRejectedValueOnce(busy).mockRejectedValueOnce(notModified());
+			const out = await read({ ifNoneMatch: etag }, httpRequest);
+			expect(httpRequest).toHaveBeenCalledTimes(2);
+			expect(sentHeader(httpRequest, 'If-None-Match', 1)).toBe(etag);
+			expect(out[0].json).toEqual({ notModified: true });
+		} finally {
+			random.mockRestore();
+		}
+	});
+
+	it('a 304 to a read that sent no If-None-Match fails the item, as any unexpected status does', async () => {
+		await expect(read({ includeResponseHeaders: true }, vi.fn().mockRejectedValue(notModified()))).rejects.toThrow(
+			'The Delivery URL answered with status 304.',
+		);
+	});
+
+	it('a partial answer carries no ETag, and the node adds none', async () => {
+		const partialPage = { product: null, $metadata: { product: { $state: 'pending', $timeoutMs: 100 } } };
+		const httpRequest = vi.fn(async () => full(partialPage, 207, { 'cache-control': 'private, no-store' }));
+		const out = await read({ ifNoneMatch: etag, includeResponseHeaders: true }, httpRequest);
+		expect(out[0].json).toEqual({ status: 207, headers: { 'Cache-Control': 'private, no-store' }, body: partialPage });
+	});
+
+	it('with Resume Partial Answers, sends If-None-Match only on the first read and outputs the last response\'s headers', async () => {
+		const first = {
+			product: { sku: 'p1' },
+			price: null,
+			$metadata: { product: { $state: 'fresh' }, price: { $state: 'deferred' }, $resume: 'token-1' },
+		};
+		const round = { price: { amount: 129 }, $metadata: { price: { $state: 'fresh' } } };
+		const httpRequest = vi
+			.fn()
+			.mockResolvedValueOnce(full(first, 207, { 'cache-control': 'private, no-store' }))
+			.mockResolvedValueOnce(full(round, 200, { 'cache-control': 'private, no-store', vary: 'X-Resume' }));
+		const out = await read({ ifNoneMatch: etag, includeResponseHeaders: true, resumePartial: true }, httpRequest);
+		expect(httpRequest).toHaveBeenCalledTimes(2);
+		expect(sentHeader(httpRequest, 'If-None-Match', 0)).toBe(etag);
+		expect(sentHeader(httpRequest, 'If-None-Match', 1)).toBeUndefined();
+		expect(sentHeader(httpRequest, 'X-Resume', 1)).toBe('token-1');
+		expect(out[0].json).toEqual({
+			status: 200,
+			headers: { 'Cache-Control': 'private, no-store', Vary: 'X-Resume' },
+			body: {
+				product: { sku: 'p1' },
+				price: { amount: 129 },
+				$metadata: { product: { $state: 'fresh' }, price: { $state: 'fresh' } },
+			},
+		});
+	});
+
+	it('with Resume Partial Answers, a complete tagged first answer is output as it is, with its ETag', async () => {
+		const httpRequest = vi.fn(async () => tagged);
+		const out = await read({ includeResponseHeaders: true, resumePartial: true }, httpRequest);
+		expect(httpRequest).toHaveBeenCalledTimes(1);
+		expect((out[0].json.headers as IDataObject).ETag).toBe(etag);
+	});
+
+	it('after a refused checkpoint, outputs the fresh read\'s own status and ETag, and sends no If-None-Match on it', async () => {
+		const first = {
+			product: { sku: 'p1' },
+			price: null,
+			$metadata: { product: { $state: 'fresh' }, price: { $state: 'deferred' }, $resume: 'token-1' },
+		};
+		const expired = Object.assign(new NodeApiError(httpNode, { httpCode: '410' }), {
+			cause: { response: { status: 410, headers: { 'www-authenticate': 'X-Resume error="checkpoint_expired"' } } },
+		});
+		const httpRequest = vi
+			.fn()
+			.mockResolvedValueOnce(full(first, 207, { 'cache-control': 'private, no-store' }))
+			.mockRejectedValueOnce(expired)
+			.mockResolvedValueOnce(tagged);
+		const out = await read({ ifNoneMatch: '"stale"', includeResponseHeaders: true, resumePartial: true }, httpRequest);
+		expect(httpRequest).toHaveBeenCalledTimes(3);
+		expect(sentHeader(httpRequest, 'If-None-Match', 2)).toBeUndefined();
+		expect(sentHeader(httpRequest, 'X-Resume', 2)).toBeUndefined();
+		expect(out[0].json).toMatchObject({ status: 200, headers: { ETag: etag }, body: page });
+	});
+
+	it('an error carries no ETag: with Continue On Fail it is output as before', async () => {
+		const httpRequest = vi.fn().mockRejectedValue(n8nError(404, { message: 'Required slot "product" could not be resolved.' }));
+		const out = await read({ ifNoneMatch: etag, includeResponseHeaders: true }, httpRequest, true);
+		expect(out).toEqual([
+			{ json: { route: '/products/p1', error: 'Required slot "product" could not be resolved.' }, pairedItem: { item: 0 } },
+		]);
+	});
+
+	it('sends If-None-Match alongside a schema request\'s own headers', async () => {
+		const httpRequest = vi.fn(async () => tagged);
+		await read(
+			{
+				routeFrom: 'schema',
+				representation: 'ProductPage',
+				representationRoute: '/products/{productId}',
+				'context.value': { 'path:productId': 'p1', 'header:market': 'dk' },
+				'context.schema': [{ id: 'path:productId', required: true }, { id: 'header:market' }],
+				ifNoneMatch: etag,
+			},
+			httpRequest,
+		);
+		expect(sent(httpRequest).url).toBe('http://localhost:5200/v1/1.0.0/products/p1');
+		expect(sentHeader(httpRequest, 'If-None-Match')).toBe(etag);
+		expect(sentHeader(httpRequest, 'X-Delivery-market')).toBe('dk');
+	});
+});
+
+/**
  * delivery/ADR-025 Decision 3: a read Delivery can't serve right now is
  * answered 503 + Retry-After + X-Delivery-Retry-After-Ms. Every Delivery read
  * waits that long plus a jitter and sends the same request once more, as
