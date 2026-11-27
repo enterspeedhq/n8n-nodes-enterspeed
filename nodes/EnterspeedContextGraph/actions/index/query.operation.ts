@@ -3,6 +3,7 @@ import { NodeApiError, NodeOperationError } from 'n8n-workflow';
 import { contextGraphApiRequest, httpFailure } from '../../transport';
 import type { ContextGraphCredentials } from '../types';
 import { parseClassedField } from '../schema/msd';
+import { MAX_BODY_BYTES } from '../shape/getMany.operation';
 
 const show = { resource: ['index'], operation: ['query'] };
 const fromBuilder = { ...show, queryFrom: ['builder'] };
@@ -178,12 +179,12 @@ export const properties: INodeProperties[] = [
 		name: 'queryId',
 		type: 'string',
 		default: '',
-		description: "Labels the query's result. Leave empty to use its position in the request.",
+		description: "Labels the query's result. Leave empty to use its position among the queries sent.",
 		displayOptions: { show: fromBuilder },
 	},
 	{
 		displayName:
-			'Each input item is one query. All items are sent in one request, and each item gets back its result unchanged: items, totalCount and next. Edit the example below to fit your index.',
+			'Each input item is one query. All items are sent together, split into more requests only at the 32 KiB request limit, and each item gets back its result unchanged: items, totalCount and next. Edit the example below to fit your index.',
 		name: 'queryNotice',
 		type: 'notice',
 		default: '',
@@ -196,7 +197,7 @@ export const properties: INodeProperties[] = [
 		default: EXAMPLE_QUERY,
 		required: true,
 		displayOptions: { show: fromJson },
-		hint: `Only index is required. Every member (filters, sort, limit, page, cursor, search, aggregations, args), the operators and paging: <a href="${QUERY_REFERENCE_URL}" target="_blank">Query reference</a>. An optional "id" labels the query's result (else its position in the request); two queries in one run can't share one.`,
+		hint: `Only index is required. Every member (filters, sort, limit, page, cursor, search, aggregations, args), the operators and paging: <a href="${QUERY_REFERENCE_URL}" target="_blank">Query reference</a>. An optional "id" labels the query's result (else its position among the queries sent); two queries in one run can't share one.`,
 		// Also what an AI Agent reads when it fills this field ($fromAI), so it states the whole format.
 		description:
 			'A Context Graph query as a JSON object, sent as written. "index" (required): the index shape name. "filters": { "field", "operator", "value" } or { "and": [...] } / { "or": [...] }, nested freely; operators: equals, notEquals, greaterThan, greaterThanOrEquals, lessThan, lessThanOrEquals, contains, in (value is a list). "sort": [{ "field", "direction": "asc" | "desc" }]. "limit": results per page, up to 100 (default 20). "page": from 0. "cursor": the previous result\'s "next". "search": { "query", "literal"?, "fields"?, "language"? }. "aggregations": [{ "type": "values" | "metrics" | "range", "name", "field", "size"?, "ranges"? }]. "args": values for ${token} placeholders. Only fields the index declares as filterable or sortable can be filtered or sorted on.',
@@ -307,10 +308,18 @@ function buildQuery(this: IExecuteFunctions, itemIndex: number): IDataObject {
 	return query;
 }
 
-/** The platform's own message from a failed answer's body, when it has one. */
+/**
+ * The platform's own message from a failed answer's body, when it has one: its
+ * `message`, else a problem body's `detail` (e.g. the `503` when search can't
+ * answer, delivery/ADR-052).
+ */
 function platformMessage(data: unknown): string | undefined {
 	const body = typeof data === 'string' ? (parseOrUndefined(data) ?? data) : data;
-	if (isObject(body) && typeof body.message === 'string') return body.message;
+	if (isObject(body)) {
+		if (typeof body.message === 'string') return body.message;
+		if (typeof body.detail === 'string' && body.detail.trim()) return body.detail;
+		return undefined;
+	}
 	return typeof body === 'string' && body.trim() ? body : undefined;
 }
 
@@ -342,12 +351,61 @@ function requestError(this: IExecuteFunctions, error: unknown, url: string): Nod
 	return new NodeApiError(this.getNode(), { httpCode }, { message, httpCode });
 }
 
+/** `[]`, the array around a request's queries. */
+const BODY_OVERHEAD_BYTES = 2;
+
+const byteLength = (text: string) => new TextEncoder().encode(text).length;
+
+interface PendingQuery {
+	itemIndex: number;
+	id: string;
+	query: IDataObject;
+	/** The query's share of the body, with its id and a separating comma. */
+	bytes: number;
+}
+
+/** Groups queries into requests whose bodies stay under MAX_BODY_BYTES. */
+function toRequests(queries: PendingQuery[]): PendingQuery[][] {
+	const requests: PendingQuery[][] = [];
+	let current: PendingQuery[] = [];
+	let bytes = BODY_OVERHEAD_BYTES;
+	for (const q of queries) {
+		if (current.length && bytes + q.bytes > MAX_BODY_BYTES) {
+			requests.push(current);
+			current = [];
+			bytes = BODY_OVERHEAD_BYTES;
+		}
+		current.push(q);
+		bytes += q.bytes;
+	}
+	if (current.length) requests.push(current);
+	return requests;
+}
+
+/** Names the first id two queries share, or undefined when every id is distinct. */
+function duplicateId(queries: PendingQuery[]): string | undefined {
+	const seen = new Map<string, number>();
+	for (const { itemIndex, id } of queries) {
+		const first = seen.get(id);
+		if (first !== undefined) {
+			return `Items ${first} and ${itemIndex} both have the query id "${id}". Each query in a run needs its own id.`;
+		}
+		seen.set(id, itemIndex);
+	}
+	return undefined;
+}
+
 /**
- * Sends every item's query to `POST {deliveryUrl}/query/v1/{manifest}` in one
- * request (delivery/ADR-030 §3), as written, and outputs each query's result
+ * Sends every item's query to `POST {deliveryUrl}/query/v1/{manifest}`
+ * (delivery/ADR-030 §3), as written, and outputs each query's result
  * unchanged, paired to its item by id: the query's own, else its position in
- * the request (query-envelope contract). The platform rejects the whole batch
- * when one query is invalid, so a failed request fails every query in it.
+ * the run (query-envelope contract). Delivery refuses a body over 32 KiB, so
+ * the queries are split into requests that stay under MAX_BODY_BYTES. A query
+ * without an id then gets its position among the run's queries as an explicit
+ * id, since a positional id would restart in each request, and the run is
+ * refused when two derived ids repeat, as one request would be. The platform rejects a whole
+ * request when one query in it is invalid, so a failed request fails every
+ * query in it.
  */
 export async function execute(
 	this: IExecuteFunctions,
@@ -355,14 +413,18 @@ export async function execute(
 ): Promise<INodeExecutionData[]> {
 	const items = this.getInputData();
 	const results: INodeExecutionData[] = [];
-	const queries: Array<{ itemIndex: number; id: string; query: IDataObject }> = [];
+	const queries: PendingQuery[] = [];
 
 	for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 		try {
 			const query = buildQuery.call(this, itemIndex);
-			// The platform's own rule: the query's id if it has one, else its position in the request.
+			// The platform's own rule: the query's id if it has one, else its position.
 			const id = query.id === undefined || query.id === null ? String(queries.length) : String(query.id);
-			queries.push({ itemIndex, id, query });
+			const bytes = byteLength(JSON.stringify({ ...query, id })) + 1;
+			if (BODY_OVERHEAD_BYTES + bytes > MAX_BODY_BYTES) {
+				throw new NodeOperationError(this.getNode(), 'Query is larger than the Delivery URL accepts in one request.');
+			}
+			queries.push({ itemIndex, id, query, bytes });
 		} catch (error) {
 			const message = `Item ${itemIndex}: ${(error as Error).message}`;
 			if (!this.continueOnFail()) throw new NodeOperationError(this.getNode(), message, { itemIndex });
@@ -370,34 +432,52 @@ export async function execute(
 		}
 	}
 
-	if (queries.length) {
-		const url = `${creds.deliveryUrl}/query/v1/${encodeURIComponent(creds.manifestVersion)}`;
+	const url = `${creds.deliveryUrl}/query/v1/${encodeURIComponent(creds.manifestVersion)}`;
+	const requests = toRequests(queries);
+	// One request is sent exactly as written; positions in it are the run's.
+	const split = requests.length > 1;
+
+	// Delivery refuses a request whose derived ids repeat, failing every query in it. Split, two
+	// queries sharing an id could land in different requests, so the node refuses the run the same way.
+	const duplicate = split ? duplicateId(queries) : undefined;
+	if (duplicate) {
+		const nodeError = new NodeOperationError(this.getNode(), duplicate);
+		if (!this.continueOnFail()) throw nodeError;
+		for (const { itemIndex } of queries) {
+			results[itemIndex] = { json: { error: nodeError.message }, pairedItem: { item: itemIndex } };
+		}
+		return results.filter(Boolean);
+	}
+
+	for (const request of requests) {
 		let response: unknown;
 		try {
 			response = await contextGraphApiRequest.call(this, {
 				method: 'POST',
 				url,
-				body: queries.map((q) => q.query),
+				body: request.map((q) =>
+					split && (q.query.id === undefined || q.query.id === null) ? { ...q.query, id: q.id } : q.query,
+				),
 				json: true,
 			});
 		} catch (error) {
-			// Two queries sharing an id is the platform's to refuse: it answers the batch 400.
+			// Two queries sharing an id is the platform's to refuse: it answers the request 400.
 			const nodeError = requestError.call(this, error, url);
 			if (!this.continueOnFail()) throw nodeError;
-			for (const { itemIndex } of queries) {
+			for (const { itemIndex } of request) {
 				results[itemIndex] = {
 					json: { error: nodeError.message, description: nodeError.description ?? undefined },
 					pairedItem: { item: itemIndex },
 				};
 			}
-			return results.filter(Boolean);
+			continue;
 		}
 
 		const answers = new Map<string, IDataObject>();
 		for (const answer of Array.isArray(response) ? response : []) {
 			if (isObject(answer)) answers.set(String(answer.id), answer);
 		}
-		for (const { itemIndex, id } of queries) {
+		for (const { itemIndex, id } of request) {
 			const answer = answers.get(id);
 			if (answer) results[itemIndex] = { json: answer, pairedItem: { item: itemIndex } };
 			else {

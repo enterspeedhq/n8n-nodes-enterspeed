@@ -113,12 +113,12 @@ Every resource follows one rule: **output the service's answer unchanged**. The 
 
 | Resource › Operation | Request | Items → requests | Contract / ADR |
 |---|---|---|---|
-| Artifact › Upload | `POST {ingestUrl}/sources/{alias}/artifacts`, the bytes to `upload.url` without the credential, then `POST …/artifacts/{id}/commit` | One export file per item | *Ingest artifact*, *Ingest artifact format*; ingest/ADR-017, 018, 019; cross/ADR-022 |
-| Entity › Push | `POST {ingestUrl}/entities` | One record per item, one request per item | *Ingest NDJSON*, *Ingest bulk result*; ingest/ADR-005, 013, 020 |
-| Entity › Push Many | `POST {ingestUrl}/entities` | One item holding a list, split only at the body limit | as Push; cross/ADR-022 |
+| Artifact › Upload | `POST {ingestUrl}/v1/sources/{alias}/artifacts`, the bytes to `upload.url` without the credential, then `POST …/artifacts/{id}/commit` | One export file per item | *Ingest artifact*, *Ingest artifact format*; ingest/ADR-017, 018, 019; cross/ADR-022 |
+| Entity › Push | `POST {ingestUrl}/v1/entities` | One record per item, one request per item | *Ingest NDJSON*, *Ingest bulk result*; ingest/ADR-005, 013, 020 |
+| Entity › Push Many | `POST {ingestUrl}/v1/entities` | One item holding a list, split only at the body limit | as Push; cross/ADR-022 |
 | Shape › Get | `GET {deliveryUrl}/shapes/v1/{manifest}/{key…}` | One key per item | *Shape key*; delivery/ADR-030 §3 |
 | Shape › Get Many | `POST {deliveryUrl}/shapes/v1/{manifest}` | One item holding a list, split at 30 KiB | *Shapes batch envelope* |
-| Index › Query | `POST {deliveryUrl}/query/v1/{manifest}` | One query per item, all in one request | *Query envelope*; delivery/ADR-030 §3, ADR-037 |
+| Index › Query | `POST {deliveryUrl}/query/v1/{manifest}` | One query per item, split only at the body limit | *Query envelope*; delivery/ADR-030 §3, ADR-037 |
 | Index › Get | `GET {deliveryUrl}/query/v1/{manifest}/{index}/{id}` | One document per item | delivery/ADR-030 §3, ADR-022 |
 | Representation › Get | `GET {deliveryUrl}/v1/{manifest}{route}`, then the same with `X-Resume` per resume round | One route per item | *Representation envelope*, *Representation slot*; delivery/ADR-030 §3, ADR-033, ADR-050 |
 | Schema › Get | `GET {deliveryUrl}/schema/{kind}/v1/{manifest}[/{prefix}]` | Once per run, first item | delivery/ADR-030 §3, ADR-036 |
@@ -131,7 +131,7 @@ Records follow the *Ingest NDJSON* contract and are sent unchanged as NDJSON lin
 - **Push Many** takes one item holding a list of records (`={{ $json.data }}`, as an Aggregate node makes it); each record keeps its own `$` fields.
 - **Values are sent as given.** A non-string `$id` or `$type` is reported as failed without being sent, because the contract makes it a parse error. `$source` is required by ingest (cross/ADR-010 retired the source derived from the key); a record without one is sent as it is, and the service's per-record rejection is its result. A delete line carries only the `$` fields. `$modifiedAt` is passed as given, on saves and deletes (ingest/ADR-013).
 - **Not the bulk path.** A source's complete export is an artifact upload (cross/ADR-022, ingest/ADR-017, *Ingest artifact* contract): reserve, signed upload, commit, then a paced drain. Ingest and the SDK dev-server serve it; the node sends it with Artifact › Upload (section 3.9). Push Many splits a list only at the body limit: a request closes before 29,000,000 bytes, well under ingest's 32 MiB write body limit (ingest/ADR-020 D5), and requests are sent one at a time.
-- **Throttling.** A `429` is retried after its `Retry-After`, up to 3 times, as ingest/ADR-020 requires of workflow-tool integrations.
+- **Throttling.** A `429` (a problem body with `Retry-After` in seconds, nothing written) is retried after its `Retry-After`, up to 3 times, as ingest/ADR-020 requires of workflow-tool integrations.
 - **Result.** The service answers a per-line `{ id, accepted, error?, statusCode }` array in line order (`200` all accepted, `207` otherwise), zipped back onto the records.
 
 ### 3.3 Shape: Get and Get Many
@@ -147,9 +147,9 @@ Shapes are read by the canonical shape key, `{shapeName}:{segKey}:{value}:…` (
 
 ### 3.4 Index: Query and Get
 
-- **Query** sends every item's query in one array. *Query From* › **JSON** sends the item's query as written; › **Builder** assembles it from schema-filled fields (section 4): filters `and`-combined, values typed by the field's value class (delivery/ADR-037), each sort as `direction` `asc`/`desc` (*Query sort order* contract; a saved `Ascending`/`Descending` is read the same), *Results Per Page* from 1 to 100. The 100 is the platform-wide maximum (delivery/ADR-037, sc-12248 amendment; the MSD's `queryLimits.max`): a direct `/query` asking for more is a `400` for the whole request, so an item over it fails before sending and the other items are still sent.
-- **Query ids.** A query's `id` is its own, else its position in the request (*Query envelope*). Two queries that would share an id are sent as they are: the platform answers such a batch `400` with its own message (delivery, and the dev-server since sc-12132), which fails every query in it.
-- **Query results.** Each `{ id, index, items, totalCount, next }` is output unchanged, paired to its item by `id`. One invalid query makes the platform reject the batch (`400`, its message passed through), so a failed request fails every query in it.
+- **Query** sends every item's query in one array, split into several requests only to keep each body under 30 KiB (delivery caps it at 32 KiB), sent one at a time. A single query over that fails before sending. *Query From* › **JSON** sends the item's query as written; › **Builder** assembles it from schema-filled fields (section 4): filters `and`-combined, values typed by the field's value class (delivery/ADR-037), each sort as `direction` `asc`/`desc` (*Query sort order* contract; a saved `Ascending`/`Descending` is read the same), *Results Per Page* from 1 to 100. The 100 is the platform-wide maximum (delivery/ADR-037, sc-12248 amendment; the MSD's `queryLimits.max`): a direct `/query` asking for more is a `400` for the whole request, so an item over it fails before sending and the other items are still sent.
+- **Query ids.** A query's `id` is its own, else its position in the request (*Query envelope*). When the run is split, a query without an id is sent with its position among the run's queries as an explicit `id`, since a positional id restarts in each request; an unsplit run is sent exactly as written. In one request, two queries that would share an id are sent as they are: the platform answers such a batch `400` with its own message (delivery, and the dev-server since sc-12132), which fails every query in it. Split, they could land in different requests that each pass, so the node checks the run's derived ids before sending and fails every query the same way.
+- **Query results.** Each `{ id, index, items, totalCount, next }` is output unchanged, paired to its item by `id`. One invalid query makes the platform reject the batch (`400`, its message passed through), so a failed request fails every query in it, and no other request. When search can't answer, delivery answers `503` + `Retry-After` with a problem body, or `500` when a retry fails the same way (delivery/ADR-052); the node shows its `detail` (it reads `message`, else `detail`, else names the status). Retrying it is sc-14796.
 - **Get** is the point read: one percent-encoded document id, the colon-joined key the document is stored under, which is the `$id` each Query match carries (delivery/ADR-022: a query result's `$id` is the point-read id; delivery's importer uses the same key for both). The body (the document's displayed fields, delivery/ADR-022) is output unchanged; a bodiless `404` fails the item. The SDK dev-server doesn't serve this route yet, so it is unit-tested only.
 
 ### 3.5 Representation: Get
@@ -175,7 +175,7 @@ Reads the manifest's schema, `kind` being `msd`, `openapi` or `jsonschema`, opti
 
 | Field | Used for |
 |---|---|
-| `ingestUrl`, `ingestApiKey` | Writes: `POST /entities`, and the artifact routes (reserve, commit) |
+| `ingestUrl`, `ingestApiKey` | Writes: `POST /v1/entities`, and the artifact routes (reserve, commit) |
 | `deliveryUrl`, `deliveryApiKey` | Every read, the schema and the credential test |
 | `manifestVersion` | The `{manifest}` segment of every Delivery route. For an SDK-published schema, the manifest id, a content hash (sdk/ADR-016) |
 
@@ -304,7 +304,7 @@ The trigger receives Enterspeed's view webhooks and, with *Fetch Full View*, cal
 
 ### 6.2 Context Graph Node → Ingest
 
-Writes only, `POST {ingestUrl}/entities` with the Ingest API Key. Ingest is the platform's only write path; the node relies on its per-line result and its throttle (section 3.2). An export goes through ingest's artifact routes with the same key; only its bytes go elsewhere, to the storage URL ingest signs (section 3.9).
+Writes only, `POST {ingestUrl}/v1/entities` with the Ingest API Key. Ingest serves every route under `/v1` (`INGEST_API_VERSION` in `actions/entity/shared.ts`); an unversioned path answers `404`. Ingest is the platform's only write path; the node relies on its per-line result and its throttle (section 3.2). An export goes through ingest's artifact routes with the same key; only its bytes go elsewhere, to the storage URL ingest signs (section 3.9).
 
 ### 6.3 Context Graph Node → Delivery
 

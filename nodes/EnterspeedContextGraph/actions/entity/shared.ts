@@ -3,6 +3,12 @@ import { NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
 import { contextGraphApiRequest, httpFailure } from '../../transport';
 
 /**
+ * Ingest serves every route under `/v1` (cross/ADR-055); an unversioned path
+ * answers 404. The credential holds only the host, so each ingest URL adds it.
+ */
+export const INGEST_API_VERSION = 'v1';
+
+/**
  * ingest/ADR-020: a request over the environment's concurrency cap is refused
  * with 429 and a Retry-After, with nothing written, and "any workflow-tool
  * integration retry with the given delay". The refused request is resent
@@ -181,7 +187,7 @@ async function send(this: IExecuteFunctions, ingestUrl: string, body: string): P
 		try {
 			return await contextGraphApiRequest.call(this, {
 				method: 'POST',
-				url: `${ingestUrl}/entities`,
+				url: `${ingestUrl}/${INGEST_API_VERSION}/entities`,
 				headers: { 'Content-Type': 'application/x-ndjson' },
 				body,
 				json: false,
