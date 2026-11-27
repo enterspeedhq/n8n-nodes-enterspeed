@@ -60,6 +60,7 @@ node scripts/execute-workflow.mjs  # triggers a workflow by name (N8N_WORKFLOW_N
   automated fix-verify loop.
 - When adding or changing a workflow template under `workflows/templates/`,
   always re-check it against the rules in `AGENTS.md` (placeholder
-  credential ID, `CUSTOM.enterspeed` node type) before considering the
+  credential ID, `CUSTOM.enterspeed` / `CUSTOM.enterspeedContextGraph`
+  node type) before considering the
   change done — `tests/workflow-templates.test.ts` will fail loudly but it's
   faster to get it right first.
