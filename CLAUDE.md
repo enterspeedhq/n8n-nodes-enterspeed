@@ -41,8 +41,10 @@ node scripts/execute-workflow.mjs  # triggers a workflow by name (N8N_WORKFLOW_N
 The Context Graph end to end (Node 26, `npm install` in `e2e/` first; CI runs it):
 
 ```bash
-N8N_WORKFLOW_DIRS=workflows/templates,e2e/workflows node scripts/setup.mjs
-node e2e/context-graph.mjs         # dev-server + export + checks, then stops
+export CONTEXT_GRAPH_INGEST_API_KEY=e2e-ingest-key CONTEXT_GRAPH_DELIVERY_API_KEY=e2e-delivery-key
+CONTEXT_GRAPH_INGEST_URL=http://host.docker.internal:5201 \
+  N8N_WORKFLOW_DIRS=workflows/templates,e2e/workflows node scripts/setup.mjs
+node e2e/context-graph.mjs         # dev-server behind deployed-style hosts + export + checks, then stops
 ```
 
 ## Code style
